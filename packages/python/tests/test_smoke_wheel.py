@@ -85,6 +85,23 @@ def test_rejects_entries_outside_the_package(tmp_path: Path, path: str, message:
     assert any(message in p for p in problems), problems
 
 
+@pytest.mark.parametrize("name", ["entry_points.txt", "RECORD.jws", "RECORD.p7s", "top_level.txt", "direct_url.json", "INSTALLER", "sub/METADATA"])
+def test_rejects_dist_info_files_beyond_the_allowlist(tmp_path: Path, name: str) -> None:
+    payload = b"[console_scripts]\nevil = mercurifi:x\n" if name == "entry_points.txt" else b"x"
+    problems = smoke.check_wheel(make_wheel(tmp_path, extra={f"{DIST}/{name}": payload}), V)
+    assert any("may hold only" in p for p in problems), problems
+
+
+def test_accepts_the_license_under_dist_info(tmp_path: Path) -> None:
+    assert smoke.check_wheel(make_wheel(tmp_path, extra={f"{DIST}/licenses/LICENSE": b"MIT"}), V) == []
+
+
+def test_rejects_the_review_wheel_with_entry_points(tmp_path: Path) -> None:
+    # Shape of the crafted wheel that once slipped past an earlier version of the check: a clean package plus a RECORD-listed entry_points.txt.
+    whl = make_wheel(tmp_path, extra={f"{DIST}/entry_points.txt": b"[console_scripts]\nmercurifi = mercurifi:main\n"})
+    assert any("entry_points.txt" in p for p in smoke.check_wheel(whl, V))
+
+
 def test_rejects_a_file_missing_from_record(tmp_path: Path) -> None:
     problems = smoke.check_wheel(make_wheel(tmp_path, unlisted={"mercurifi/hidden.py": b"x"}), V)
     assert any("missing from RECORD" in p for p in problems), problems

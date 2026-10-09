@@ -30,8 +30,9 @@ from pathlib import Path
 PKG = Path(__file__).resolve().parent.parent
 CONSTRAINTS = PKG / "build-constraints.txt"
 NAMES = ["AsyncClient", "Client", "create_client", "local_key", "generate_agent_key", "decode_revert", "verify_built_tx", "open_stream", "wrap_untrusted"]
-# Signature files are allowed beside RECORD but are not listed in it.
-UNLISTED = ("RECORD.jws", "RECORD.p7s")
+# The dist-info files the real hatchling wheel holds, and nothing else: no entry_points.txt (console scripts or plugin
+# hooks), no signature files, no other metadata a tool could act on. licenses/** carries the LICENSE file.
+DIST_INFO_FILES = ("METADATA", "WHEEL", "RECORD")
 
 
 def online_from_env(env: Mapping[str, str]) -> bool:
@@ -66,7 +67,8 @@ def record_rows(whl: Path) -> list[tuple[str, str, str]]:
 
 
 def check_wheel(whl: Path, version: str) -> list[str]:
-    """The wheel holds mercurifi/** and its own dist-info only: no .pth, no *.data/, no other top-level entry, and RECORD
+    """The wheel holds mercurifi/** and its own dist-info only (METADATA, WHEEL, RECORD, licenses/**; so no
+    entry_points.txt): no .pth, no *.data/, no other top-level entry, and RECORD
     matches the archive exactly (no unlisted or missing file, no duplicate entry, every sha256 and size correct)."""
     problems: list[str] = []
     expected_name = f"mercurifi-{version}-py3-none-any.whl"
@@ -91,7 +93,9 @@ def check_wheel(whl: Path, version: str) -> list[str]:
                 problems.append(f"*.data/ entries install outside the package and are not allowed: {n}")
             elif parts[0] not in ("mercurifi", dist) or len(parts) < 2:
                 problems.append(f"only mercurifi/** and {dist}/** are allowed: {n}")
-        unlisted = sorted(set(names) - set(listed) - {f"{dist}/{s}" for s in UNLISTED})
+            elif parts[0] == dist and not ((len(parts) == 2 and parts[1] in DIST_INFO_FILES) or (len(parts) > 2 and parts[1] == "licenses")):
+                problems.append(f"{dist}/ may hold only {', '.join(DIST_INFO_FILES)} and licenses/**: {n}")
+        unlisted = sorted(set(names) - set(listed))
         missing = sorted(set(listed) - set(names))
         if unlisted:
             problems.append(f"files missing from RECORD: {', '.join(unlisted)}")
