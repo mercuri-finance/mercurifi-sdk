@@ -9,10 +9,18 @@ import httpx
 from eth_utils.address import to_checksum_address
 from eth_utils.crypto import keccak
 
-from mercurifi.abi import AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY
+from eth_account.typed_transactions.typed_transaction import TypedTransaction
+from hexbytes import HexBytes
+
+from mercurifi.abi import (
+    AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, BONDING_CURVE, LAUNCH_TOKEN,
+)
+from mercurifi.abi import LAUNCH_FACTORY as LAUNCH_FACTORY_ABI
 from mercurifi.client import AsyncClient, create_client
 from mercurifi.codec import Contract, from_hex, to_hex
+from mercurifi.errors import MercurifiError
 from mercurifi.networks import local_network
+from mercurifi.policy import DEFAULT_POLICY, ChainPolicy
 
 
 def A(n: int) -> str:
@@ -212,3 +220,89 @@ Log = Callable[..., dict[str, Any]]
 def log(contract: Contract, address: str, name: str, **values: Any) -> dict[str, Any]:
     topics, data = contract.encode_log(name, values)
     return {"address": address, "topics": topics, "data": data, "blockNumber": "0x1", "transactionHash": "0x" + "00" * 32, "logIndex": "0x0"}
+
+
+FACTORY, LAUNCH_FACTORY = A(9), A(1)
+WAD = 10**18
+ZERO = "0x" + "00" * 20
+#: The spec 4.5 beta ceilings. minTokenAgeBlocks is a floor on-chain, so the beta value is 0.
+CEILINGS_ABI = {
+    "maxTradeUsdc": 1_000_000_000, "periodSpendCap": 10_000_000_000, "perTokenPeriodCap": 2_000_000_000, "periodSellCap": 10_000_000_000,
+    "maxActionsPerPeriod": 5_000, "launchesPerPeriod": 20, "maxPriceImpactBps": 2_000, "maxSnipeBps": 9_900,
+    "minTokenAgeBlocks": 0, "maxDeadlineSeconds": 600, "allowlistOnly": False,
+}
+
+
+def mock_account(rpc: MockRpc, *, owner: str, agent: str, agent_active: bool = True, agent_expires_at: int = 1_800_000_000,
+                 agent_permissions: int = 63, policy: ChainPolicy = DEFAULT_POLICY, increase_delay: int = 3_600, epoch: int = 1,
+                 write_seq: int = 1, basis: tuple[int, int, int] = (0, 0, 0),
+                 headroom: tuple[int, int, int, int] = (400_000_000, 500_000_000, 499, 3)) -> None:
+    """Factory, account and registry reads of one account. Registry calls take the account as args[0]."""
+    rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "isAccount", lambda a: a[0].lower() == ACCOUNT.lower())
+    rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "ceilings", CEILINGS_ABI)
+    rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "isPaused", False)
+    for fn, value in (("owner", owner), ("referrer", A(0x77)), ("REGISTRY", REGISTRY), ("basis", basis)):
+        rpc.read(ACCOUNT, AGENT_ACCOUNT, fn, value)
+    registry_reads: tuple[tuple[str, Any], ...] = (("owner", owner), ("policy", policy.to_abi()), ("periodSeconds", 86_400), ("increaseDelay", increase_delay),
+                      ("ownerPaused", False), ("activeAgentCount", 1), ("epoch", epoch), ("writeSeq", write_seq), ("retired", False),
+                      ("headroom", headroom), ("usage", (19_637, 100_000_000, 0, 1, 0)), ("tokenAllowed", False), ("tokenSpent", 0),
+                      ("policyWrite", 0), ("agentWrite", 0), ("tokenWrite", 0), ("delayWrite", 0))
+    for fn, value in registry_reads:
+        rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, fn, value)
+    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agent", lambda a: {"active": agent_active, "expiresAt": agent_expires_at, "permissions": agent_permissions}
+             if a[1].lower() == agent.lower() else {"active": False, "expiresAt": 0, "permissions": 0})
+    rpc.balances[ACCOUNT.lower()] = 1_000 * WAD
+
+
+def mock_curve(rpc: MockRpc, *, phase: int = 0, tokens_out: int = 1_000_000 * WAD, used: Callable[[int], int] | None = None,
+               sold: int = 100_000_000 * WAD, curve_supply: int = 800_000_000 * WAD, usdc_out: int = 9_900_000_000_000_000_000, balance: int = 0) -> None:
+    rpc.read(LAUNCH_FACTORY, LAUNCH_FACTORY_ABI, "curveOf", lambda a: CURVE if a[0].lower() == TOKEN.lower() else ZERO)
+    rpc.read(CURVE, BONDING_CURVE, "phase", phase)
+    rpc.read(CURVE, BONDING_CURVE, "quoteBuy", lambda a: (tokens_out, used(a[0]) if used else a[0], a[0] // 100, 0))
+    rpc.read(CURVE, BONDING_CURVE, "quoteSell", lambda a: (usdc_out, 10**17))
+    for fn, value in (("sold", sold), ("curveSupply", curve_supply), ("price", 6_000_000_000_000), ("currentSnipeBps", 0),
+                      ("launchBlock", 100), ("progressBps", 1_250), ("token", TOKEN)):
+        rpc.read(CURVE, BONDING_CURVE, fn, value)
+    rpc.read(TOKEN, LAUNCH_TOKEN, "balanceOf", balance)
+    rpc.read(TOKEN, LAUNCH_TOKEN, "name", "Example")
+    rpc.read(TOKEN, LAUNCH_TOKEN, "symbol", "EX")
+
+
+def agent_action_log(**values: Any) -> dict[str, Any]:
+    """The account's own AgentAction log (fills are decoded from it)."""
+    return log(AGENT_ACCOUNT, ACCOUNT, "AgentAction", **values)
+
+
+def registry_log(name: str, **values: Any) -> dict[str, Any]:
+    """A registry event; `account` (indexed topic 1) defaults to ACCOUNT."""
+    return log(AGENT_POLICY_REGISTRY, REGISTRY, name, **{"account": ACCOUNT, **values})
+
+
+def queue_log(queued_id: int, event: str = "AgentQueued") -> dict[str, Any]:
+    """A queue event carrying `id` (how chain-only queue listing discovers ids)."""
+    return registry_log(event, id=queued_id)
+
+
+def _tx(rpc: MockRpc, i: int) -> dict[str, Any]:
+    return dict(TypedTransaction.from_bytes(HexBytes(from_hex(rpc.sent[i]))).as_dict())
+
+
+def sent_call(rpc: MockRpc, contract: Contract, i: int = 0) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    tx = _tx(rpc, i)
+    name, args = contract.decode_input(to_hex(bytes(tx["data"])))
+    return name, args, tx
+
+
+def sent(rpc: MockRpc, i: int = 0) -> tuple[str, str, list[Any]]:
+    """The i-th sent transaction: its target (lowercased), function and positional args, decoded against the agent ABIs."""
+    tx = _tx(rpc, i)
+    data = to_hex(bytes(tx["data"]))
+    raw_to = tx["to"]
+    to = (raw_to if isinstance(raw_to, str) else to_hex(bytes(raw_to))).lower()
+    for contract in (AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY):
+        try:
+            name, args = contract.decode_input(data)
+        except MercurifiError:
+            continue
+        return to, name, list(args.values())
+    raise AssertionError(f"sent calldata {data[:10]} matches no agent ABI")

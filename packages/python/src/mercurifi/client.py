@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
@@ -16,6 +16,10 @@ from .redact import first_line, redact_url, redact_urls_in
 from .rpc import Rpc, RpcError
 from .tx import TxSender
 from .verify import verify_network
+
+if TYPE_CHECKING:
+    from .owner import OwnerClient
+    from .signers import Signer
 
 
 @dataclass(frozen=True, repr=False)
@@ -67,6 +71,12 @@ class AsyncClient:
 
     def warn(self, message: str) -> None:
         self._on_warning(message)
+
+    def owner(self, signer: Signer) -> OwnerClient:
+        """Owner-side actions (account creation, policy, agents, queue, withdrawals) signed by `signer`."""
+        from .owner import OwnerClient
+
+        return OwnerClient(self, signer)
 
     async def aclose(self) -> None:
         await self.rpc.aclose()
