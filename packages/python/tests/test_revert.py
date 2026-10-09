@@ -229,3 +229,10 @@ def test_never_raises_on_malformed_input() -> None:
     # Known selector, truncated or hostile arguments: never an exception.
     assert decode_revert(AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 5)[:20]).name == "UnknownError"
     assert decode_revert("0x4e487b71").name == "UnknownError"
+
+
+def test_hex_case_does_not_change_decoding() -> None:
+    data = AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 5)
+    upper = "0x" + data[2:].upper()
+    assert decode_revert(upper) == decode_revert(data)
+    assert decode_revert("0xDEADBEEF").selector == "0xdeadbeef"

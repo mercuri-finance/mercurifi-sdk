@@ -1414,6 +1414,66 @@
    "selector": "0x4e487b71",
    "out": "0x4e487b7100000000000000000000000000000000000000000000000000000000000000",
    "args": []
+  },
+  {
+   "data": "0x53572ee8000000000000000000000000000000000000000000000000000000000000012c",
+   "name": "BetaCeiling",
+   "source": "AgentPolicyRegistry",
+   "message": "The policy field field #300 is above the beta ceiling of this factory.",
+   "selector": "0x53572ee8",
+   "out": "0x53572ee8000000000000000000000000000000000000000000000000000000000000012c",
+   "args": [
+    "300"
+   ]
+  },
+  {
+   "data": "0x53572EE80000000000000000000000000000000000000000000000000000000000000003",
+   "name": "BetaCeiling",
+   "source": "AgentPolicyRegistry",
+   "message": "The policy field periodSellCap is above the beta ceiling of this factory.",
+   "selector": "0x53572ee8",
+   "out": "0x53572ee80000000000000000000000000000000000000000000000000000000000000003",
+   "args": [
+    "3"
+   ]
+  },
+  {
+   "data": "0x4E487B710000000000000000000000000000000000000000000000000000000000000011",
+   "name": "Panic",
+   "source": "Solidity",
+   "message": "Panic 0x11 (arithmetic or assertion failure).",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011",
+   "args": [
+    "17"
+   ]
+  },
+  {
+   "data": "0xDEADBEEF",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0xdeadbeef.",
+   "selector": "0xdeadbeef",
+   "out": "0xdeadbeef",
+   "args": []
+  },
+  {
+   "data": "0X30CD7471",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0x30CD7471",
+   "name": "NotOwner",
+   "source": "AgentAccount",
+   "message": "Only the account owner can do this.",
+   "selector": "0x30cd7471",
+   "out": "0x30cd7471",
+   "args": []
   }
  ],
  "reasons": [

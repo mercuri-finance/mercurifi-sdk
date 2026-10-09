@@ -211,11 +211,24 @@ def _error_string(body: bytes) -> str | None:
     return body[offset + 32 : offset + 32 + length].decode("utf-8", "replace")
 
 
+def _lenient_uint_error(contract: Contract, selector: str, body: bytes) -> tuple[str, list[Any]] | None:
+    """viem reads an integer argument without range checks (BetaCeiling(300) for a uint8); eth-abi rejects the dirty
+    padding. For an error whose arguments are all unsigned integers, read the words the same way."""
+    item = contract._errors.get(selector)
+    if item is None:
+        return None
+    inputs = item.get("inputs", [])
+    if not all(str(i.get("type", "")).startswith("uint") for i in inputs) or len(body) < 32 * len(inputs):
+        return None
+    return item["name"], [int.from_bytes(body[32 * n : 32 * n + 32], "big") for n in range(len(inputs))]
+
+
 def _decode(data: str | None) -> DecodedRevert:
     if data is None or data == "0x":
         return _decoded("EmptyRevert", [], "EVM", "0x", "0x")
     if not isinstance(data, str) or _HEX.fullmatch(data) is None:
         return _malformed("The revert data is not valid hex, so it could not be decoded.")
+    data = data.lower()  # hex digits are case-insensitive; selectors and the returned data are lower-case
     raw = from_hex(data)
     if len(raw) < 4:
         return _malformed("The revert data is shorter than a 4-byte selector, so it could not be decoded.", data=data)
@@ -232,7 +245,9 @@ def _decode(data: str | None) -> DecodedRevert:
         try:
             hit = contract.decode_error(data, strict=False)
         except Exception:  # selector known but the arguments are malformed: try the next ABI, as viem does
-            continue
+            hit = _lenient_uint_error(contract, selector, raw[4:])
+            if hit is None:
+                continue
         if hit is None:
             continue
         name, args = hit

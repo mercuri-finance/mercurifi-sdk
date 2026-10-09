@@ -34,8 +34,10 @@ def redact_urls_in(message: str) -> str:
 
 # --- Untrusted text ---------------------------------------------------------------------------------------------------
 # Mirrors neutralizeUntrusted / preBound / truncateChars in the TypeScript SDK (redact.ts); the shared vectors in
-# fixtures/vectors/ are the arbiter. Unicode categories come from this interpreter's unicodedata and the pictograph
-# table from the Unicode emoji data, so a character added to Unicode after either was built can differ between the SDKs.
+# fixtures/vectors/ are the arbiter. Unicode data dependency: categories (format characters, combining marks) come from
+# this interpreter's unicodedata and the pictograph table from the Unicode emoji data, so a character assigned after
+# either was built can be treated differently by the two SDKs, or by two Python versions. The output is hygiene, not a
+# security boundary; when the vectors and a Unicode release disagree, the vectors decide and the table is regenerated.
 
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]")
 _CONTROLS = re.compile("[\x00-\x1f\x7f-\x9f  ]+")
@@ -127,6 +129,9 @@ def neutralize_untrusted(raw: str, *, keep_urls: bool = False) -> str:
     a URL; blank letters and variation selectors outside emoji are removed; combining-mark runs are capped at four;
     URLs are reduced to hosts unless `keep_urls`; lone surrogates are dropped. Callers add their own quoting, length
     bound and framing.
+
+    The work is linear but proportional to the input: callers must `pre_bound` the text first (and normalise it, as
+    untrusted_reason does), or a megabyte of attacker text is sanitised for nothing.
     """
     text = _ANSI.sub("", join_surrogates(raw))
     text = _CONTROLS.sub(" ", text)

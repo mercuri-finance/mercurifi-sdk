@@ -157,6 +157,7 @@ export const decodeRevert = (data: Hex | undefined): DecodedRevert => {
   if (typeof data !== 'string' || !isHex(data, { strict: true }) || data.length % 2 !== 0) {
     return { name: 'MalformedRevert', args: [], source: 'unknown', selector: emptySelector, data: '0x', message: 'The revert data is not valid hex, so it could not be decoded.' };
   }
+  data = data.toLowerCase() as Hex; // hex digits are case-insensitive; selectors and the returned data are lower-case
   if (size(data) < 4) return { name: 'MalformedRevert', args: [], source: 'unknown', selector: emptySelector, data, message: 'The revert data is shorter than a 4-byte selector, so it could not be decoded.' };
   const selector = slice(data, 0, 4);
   for (const [source, abi] of SOURCES) {
