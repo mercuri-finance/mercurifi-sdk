@@ -325,6 +325,22 @@ async def test_malformed_api_keys_are_refused_without_echo(bad: str) -> None:
     assert "é" not in str(e2.value) and "X-Evil" not in str(e2.value)
 
 
+@pytest.mark.parametrize("body", [
+    {"error": {"code": "unauthorized", "message": f"bad key {KEY} (X-Api-Key: {KEY})"}},
+    {"error": {"code": KEY, "message": "nope"}},
+])
+async def test_a_key_echoed_in_a_server_error_body_is_redacted(body: dict[str, Any]) -> None:
+    with pytest.raises(ApiError) as e:
+        await keyed(transport(401, body)).get_account(ADDR)
+    assert KEY not in f"{e.value} {e.value.api_code}"
+    if body["error"]["code"] == "unauthorized":
+        assert "[redacted]" in str(e.value) and e.value.api_code == "unauthorized"
+
+
+def test_a_256_character_key_is_accepted() -> None:
+    HttpApi("https://x.example", 1, api_key="k" * 256)
+
+
 async def test_a_key_in_a_transport_failure_is_redacted_and_requests_ask_for_identity_encoding() -> None:
     def leaky(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError(f"Illegal header value b'{KEY}'")

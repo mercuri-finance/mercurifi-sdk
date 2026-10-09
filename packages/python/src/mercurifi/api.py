@@ -185,10 +185,7 @@ class HttpApi:
         except (asyncio.TimeoutError, httpx.TimeoutException):
             failure = ("timeout", f"timed out after {self._timeout:g} s")
         except Exception as exc:  # transport and anything else: the text may embed the URL, so it is redacted, first line only
-            text = str(exc)
-            if self._key is not None:
-                text = text.replace(self._key.reveal(), "[redacted]")
-            failure = ("network", f"{type(exc).__name__}: {first_line(text)}")
+            failure = ("network", f"{type(exc).__name__}: {first_line(self._keyless(str(exc)))}")
         # Raised outside the except block so the original exception (which embeds the URL) is not kept as context.
         if failure is not None:
             raise ApiError(0, failure[0], f"Request to {path} failed: {clean_text(failure[1])}", None)
@@ -200,8 +197,12 @@ class HttpApi:
                 body = None
         if status < 200 or status >= 300:
             err = body.get("error") if isinstance(body, dict) else None
+            # A server (or a proxy in front of it) may echo the request headers: the key is cut from its words first.
             code = err.get("code") if isinstance(err, dict) else None
-            message = clean_text(err.get("message")) if isinstance(err, dict) else ""
+            if isinstance(code, str) and self._keyless(code) != code:
+                code = None
+            said = err.get("message") if isinstance(err, dict) else None
+            message = clean_text(self._keyless(said)) if isinstance(said, str) else ""
             retry_raw = headers.get("Retry-After", "")
             retry = float(retry_raw) if len(retry_raw) <= 20 and _RETRY.fullmatch(retry_raw) else 0.0
             if 300 <= status < 400:
@@ -211,6 +212,10 @@ class HttpApi:
                 message or f"HTTP {status} from {path}", min(retry, 3600.0) if retry > 0 else None,
             )
         return body, headers
+
+    def _keyless(self, text: str) -> str:
+        """Text with every occurrence of the API key replaced, so no error can carry it."""
+        return text if self._key is None else text.replace(self._key.reveal(), "[redacted]")
 
     async def _request(self, method: str, path: str, *, json_body: Any = None, files: Any = None) -> Any:
         return (await self._send(method, path, json_body=json_body, files=files))[0]

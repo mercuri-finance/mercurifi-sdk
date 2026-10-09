@@ -129,6 +129,25 @@ describe('HttpApi hardening', () => {
     expect(err.message).not.toContain('k'.repeat(200));
   });
 
+  it('redacts the key from a server error body that echoes it, in the message and the code', async () => {
+    for (const body of [
+      { error: { code: 'unauthorized', message: `bad key ${KEY} (X-Api-Key: ${KEY})` } },
+      { error: { code: KEY, message: 'nope' } },
+    ]) {
+      const err = (await keyed(fakeFetch(401, body) as never).getAccount(ADDR).catch((e: unknown) => e)) as ApiError;
+      expect(err).toBeInstanceOf(ApiError);
+      expect(`${err.message} ${err.apiCode}`).not.toContain(KEY);
+    }
+    const said = (await keyed(fakeFetch(401, { error: { code: 'unauthorized', message: `bad key ${KEY}` } }) as never).getAccount(ADDR).catch((e: unknown) => e)) as ApiError;
+    expect(said.message).toContain('[redacted]');
+    expect(said.apiCode).toBe('unauthorized');
+  });
+
+  it('accepts a 256-character key and refuses 257', () => {
+    expect(() => new HttpApi({ baseUrl: 'https://x.example', chainId: 1, apiKey: 'k'.repeat(256) })).not.toThrow();
+    expect(() => new HttpApi({ baseUrl: 'https://x.example', chainId: 1, apiKey: 'k'.repeat(257) })).toThrow(InvalidInputError);
+  });
+
   it('redacts the key from transport failures and asks for identity encoding', async () => {
     const leaky = vi.fn(async () => { throw new Error(`Illegal header value ${KEY}`); });
     const err = (await keyed(leaky as never).getAccount(ADDR).catch((e: unknown) => e)) as ApiError;

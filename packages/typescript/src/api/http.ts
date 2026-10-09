@@ -86,6 +86,11 @@ export class HttpApi implements MercurifiApi {
     return `HttpApi { baseUrl: '${this.baseUrl}', chainId: ${this.chainId}, apiKey: ${this.#apiKey === undefined ? 'none' : '[redacted]'} }`;
   }
 
+  /** Text with every occurrence of the API key replaced, so no error can carry it. */
+  private keyless(text: string): string {
+    return this.#apiKey === undefined ? text : text.split(this.#apiKey).join('[redacted]');
+  }
+
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     return { Accept: 'application/json', 'Accept-Encoding': 'identity', ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }), ...extra };
   }
@@ -140,17 +145,19 @@ export class HttpApi implements MercurifiApi {
       }
       if (!response.ok) {
         const e = isObject(body) ? (body as ErrorBody).error : undefined;
-        const code = isObject(e) && typeof e.code === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(e.code) ? e.code : 'http_error';
-        const message = isObject(e) && typeof e.message === 'string' && cleanText(e.message) !== '' ? cleanText(e.message) : `HTTP ${response.status} from ${path}`;
+        // A server (or a proxy in front of it) may echo the request headers: the key is cut from its words before anything else.
+        const rawCode = isObject(e) && typeof e.code === 'string' ? e.code : '';
+        const code = /^[a-z0-9_.-]{1,64}$/i.test(rawCode) && this.keyless(rawCode) === rawCode ? rawCode : 'http_error';
+        const said = isObject(e) && typeof e.message === 'string' ? cleanText(this.keyless(e.message)) : '';
+        const message = said !== '' ? said : `HTTP ${response.status} from ${path}`;
         const retry = Number(response.headers.get('Retry-After'));
         throw new ApiError(response.status, code, message, Number.isFinite(retry) && retry > 0 ? Math.min(retry, 3600) : null);
       }
       return { body, headers: response.headers };
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
-      const keyless = (text: string): string => (this.#apiKey === undefined ? text : text.split(this.#apiKey).join('[redacted]'));
       const reason = timedOut ? `timed out after ${this.#timeoutMs} ms` : redactUrlsIn(String((error as { shortMessage?: string }).shortMessage ?? (error as Error)?.message ?? 'unknown error')).split('\n')[0];
-      throw new ApiError(0, timedOut ? 'timeout' : 'network', `Request to ${path} failed: ${cleanText(keyless(String(reason)))}`, null);
+      throw new ApiError(0, timedOut ? 'timeout' : 'network', `Request to ${path} failed: ${cleanText(this.keyless(String(reason)))}`, null);
     } finally {
       clearTimeout(timer);
     }
