@@ -8,7 +8,7 @@ import type {
   MercurifiApi, Page, QuoteKind, QuoteRequest, UploadedMetadata,
 } from './types.js';
 
-export interface HttpApiOptions { baseUrl: string; chainId: number; apiKey?: string; fetch?: typeof fetch; timeoutMs?: number }
+export interface HttpApiOptions { baseUrl: string; chainId: number; apiKey?: string; fetch?: typeof fetch; timeoutMs?: number; onWarning?: (message: string) => void }
 
 interface ErrorBody { error?: { code?: unknown; message?: unknown } }
 interface Answer { body: unknown; headers: Headers }
@@ -19,6 +19,7 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** Items per list answer; the API pages far below this. */
 const MAX_ITEMS = 1_000;
 const MAX_CURSOR = 256;
+const MAX_LIST_PAGES = 10;
 const CURSOR = /^[A-Za-z0-9_\-.:=~]+$/;
 const DECIMAL = /^\d{1,78}$/;
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
@@ -54,6 +55,7 @@ export class HttpApi implements MercurifiApi {
   readonly #apiKey: string | undefined;
   readonly #fetch: typeof fetch;
   readonly #timeoutMs: number;
+  readonly #warn: (message: string) => void;
 
   constructor(o: HttpApiOptions) {
     let url: URL;
@@ -73,6 +75,7 @@ export class HttpApi implements MercurifiApi {
     const timeoutMs = o.timeoutMs ?? 15_000;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new InvalidInputError('timeoutMs', 'timeoutMs must be a positive integer (milliseconds)');
     this.#timeoutMs = timeoutMs;
+    this.#warn = o.onWarning ?? (() => undefined);
   }
 
   toJSON(): Record<string, unknown> {
@@ -178,9 +181,22 @@ export class HttpApi implements MercurifiApi {
     return body as unknown as ApiAccount;
   }
 
+  /** Follows Next-Cursor up to MAX_LIST_PAGES pages and warns when the list was cut short. */
   async listAccounts(owner: Address): Promise<ApiAccountSummary[]> {
-    const path = `/v1/agent-accounts?owner=${addressParam('owner', owner)}`;
-    return (await this.page<ApiAccountSummary>(path, (v): v is ApiAccountSummary => isObject(v) && isAddr(v.account) && (v.owner === undefined || isAddr(v.owner)))).items;
+    const base = `/v1/agent-accounts?owner=${addressParam('owner', owner)}`;
+    const out: ApiAccountSummary[] = [];
+    let cursor: string | undefined;
+    for (let pages = 0; pages < MAX_LIST_PAGES; pages++) {
+      const page = await this.page<ApiAccountSummary>(
+        cursor === undefined ? base : `${base}&cursor=${encodeURIComponent(cursor)}`,
+        (v): v is ApiAccountSummary => isObject(v) && isAddr(v.account) && (v.owner === undefined || isAddr(v.owner)), cursor,
+      );
+      out.push(...page.items);
+      if (page.nextCursor === null) return out;
+      cursor = page.nextCursor;
+    }
+    this.#warn(`The account list was cut off after ${MAX_LIST_PAGES} pages; more accounts exist than were returned.`);
+    return out;
   }
 
   async listActions(account: Address, cursor?: string): Promise<Page<ApiAction>> {
@@ -228,6 +244,7 @@ export class HttpApi implements MercurifiApi {
     return r as unknown as ApiToken;
   }
 
+  /** The returned headers contain the API key: pass them to the stream client and never log or serialise this object. */
   streamRequest(topics: readonly string[]): { url: string; headers: Record<string, string> } {
     return { url: `${this.baseUrl}/v1/stream?topics=${topics.map((t) => encodeURIComponent(t)).join(',')}`, headers: this.headers() };
   }

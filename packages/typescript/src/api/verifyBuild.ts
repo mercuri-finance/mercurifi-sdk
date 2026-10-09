@@ -11,18 +11,19 @@ export interface BuildExpectation {
   chainId: number;
   account: Address;
   functionName: AgentFunction;
-  /** Arguments that must equal these values (addresses compare case-insensitively). Launch request fields are flattened. */
+  /** Arguments that must equal these values (addresses and bytes32 compare case-insensitively). Launch request fields are flattened. */
   exact?: Record<string, unknown>;
-  /** Arguments that must be at least these values (minimum outputs). */
+  /** Arguments that must be at least these values; allowed only for minimum-output arguments (`min…Out`). */
   atLeast?: Record<string, bigint>;
-  /** Window for the `deadline` argument (trades and launches; `claimFees` and `sweepToOwner` take none). */
+  /** Window for the `deadline` argument (required for trades and launches; `claimFees` and `sweepToOwner` take none). */
   deadline?: { min: bigint; max: bigint };
 }
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const HEX_ID = /^0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/; // addresses and bytes32 values compare case-insensitively
+const MIN_OUT = /^min[A-Za-z0-9]*Out$/;
 
 const same = (a: unknown, b: unknown): boolean => {
-  if (typeof a === 'string' && typeof b === 'string' && ADDRESS.test(a) && ADDRESS.test(b)) return a.toLowerCase() === b.toLowerCase();
+  if (typeof a === 'string' && typeof b === 'string' && HEX_ID.test(a) && HEX_ID.test(b)) return a.toLowerCase() === b.toLowerCase();
   if (typeof a === 'bigint' || typeof b === 'bigint') {
     try {
       return BigInt(a as bigint) === BigInt(b as bigint);
@@ -39,12 +40,19 @@ const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : nul
  * Decodes calldata the API built and checks it against what was asked for, before anything is signed:
  * target = own account, chain, zero value, the server's selector (when sent) matching the calldata, an agent trade
  * selector of AgentAccount, the requested arguments and no trailing bytes. Registry calls (owner functions on
- * AgentPolicyRegistry) never decode against AgentAccount and are refused. Only the arguments named in the expectation
- * are compared: name every one that matters (for a launch the creator and referrer are not arguments; the account
- * sets them, but `expectedConfigHash` and `deadline` are).
+ * AgentPolicyRegistry) never decode against AgentAccount and are refused.
+ *
+ * Verification is total and fails closed: every decoded top-level argument (launch request fields flattened) must be
+ * covered by `exact`, by `atLeast` (minimum outputs only) or be `deadline` with a deadline window; an uncovered argument
+ * is refused by name. For a launch that means all eight request fields (creator and referrer are not arguments: the
+ * account sets them).
  */
 export const verifyBuiltTx = (built: BuiltTx, e: BuildExpectation): { functionName: AgentFunction; args: Record<string, unknown> } => {
   if (!AGENT_FUNCTIONS.includes(e.functionName)) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
+  for (const k of Object.keys(e.atLeast ?? {})) if (!MIN_OUT.test(k)) throw new InvalidInputError('atLeast', `atLeast applies to minimum-output arguments only, not ${k}`);
+  if (e.deadline !== undefined && (typeof e.deadline.min !== 'bigint' || typeof e.deadline.max !== 'bigint' || e.deadline.min > e.deadline.max)) {
+    throw new InvalidInputError('deadline', 'the deadline window needs bigint min <= max');
+  }
   if (typeof built !== 'object' || built === null) throw new BuildMismatchError('the built transaction is not an object');
   if (built.chainId !== e.chainId) throw new BuildMismatchError(`chain ${String(built.chainId)} is not ${e.chainId}`);
   if (typeof built.to !== 'string' || !isAddress(built.to, { strict: false }) || built.to.toLowerCase() !== e.account.toLowerCase()) {
@@ -74,6 +82,10 @@ export const verifyBuiltTx = (built: BuiltTx, e: BuildExpectation): { functionNa
     if (input.type === 'tuple' && value !== null && typeof value === 'object') Object.assign(named, value);
     else named[input.name ?? `arg${i}`] = value;
   });
+  for (const name of Object.keys(named)) {
+    const covered = Object.hasOwn(e.exact ?? {}, name) || (Object.hasOwn(e.atLeast ?? {}, name) && MIN_OUT.test(name)) || (name === 'deadline' && e.deadline !== undefined);
+    if (!covered) throw new BuildMismatchError(`${name} of ${decoded.functionName} is not covered by your expectation`);
+  }
   for (const [k, v] of Object.entries(e.exact ?? {})) {
     if (!Object.hasOwn(named, k)) throw new BuildMismatchError(`${decoded.functionName} has no argument ${k}`);
     if (!same(named[k], v)) throw new BuildMismatchError(`${k} is ${String(named[k])}, asked for ${String(v)}`);

@@ -1,6 +1,7 @@
 import { bytesToHex, encodeFunctionData, isAddressEqual, zeroAddress, type Address, type Hex } from 'viem';
 
 import type { BuiltTx } from './api/types.js';
+import { BuildMismatchError } from './errors.js';
 import { verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
 import type { ImageUpload } from './api/types.js';
 import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
@@ -74,6 +75,7 @@ export interface Position {
   spentThisPeriod6: bigint;
 }
 
+const BUILT_PERMISSION: Partial<Record<string, Permission>> = { buy: 'buy', sell: 'sell', launch: 'launch', swapExactIn: 'swap', claimFees: 'claim', sweepToOwner: 'sweep' };
 const maxOf = (a: bigint, b: bigint): bigint => (a > b ? a : b);
 const MAX_UINT256 = (1n << 256n) - 1n;
 
@@ -413,10 +415,39 @@ export class AgentClient {
     return encodeFunctionData({ abi: agentAccountAbi, functionName, args } as never);
   }
 
-  /** Verifies API-built calldata against your expectation, then signs and sends it. Refuses on any mismatch. */
+  /**
+   * Verifies API-built calldata against your expectation, then signs and sends it. Refuses on any mismatch.
+   *
+   * The expectation must cover every argument (see verifyBuiltTx): buy, sell and swapExactIn need every token, amount and
+   * flag in `exact`, the `min…Out` in `atLeast` (or `exact`); sweepToOwner needs `token` and `amount`; claimFees nothing. A launch needs
+   * all eight request fields; its `expectedConfigHash` must be the factory's current `configHash()`, which is read here
+   * (omit it), and its deadline is checked against a window computed here from the latest block and the policy.
+   * Your own `deadline` window is intersected with that window, never widened. The local permission, pause and cap
+   * checks run first, and a buy always gets the graduation gas floor.
+   */
   async sendBuilt(built: BuiltTx, e: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
-    const { functionName } = verifyBuiltTx(built, { ...e, chainId: this.mf.network.chainId, account: this.account });
-    return this.send(built.data, false, functionName);
+    const permission = BUILT_PERMISSION[e.functionName];
+    if (permission === undefined) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
+    const { at, block, policy } = await this.gate(permission);
+    const own = BigInt(Math.min(this.deadlineSeconds, policy.maxDeadlineSeconds));
+    const window = { min: e.deadline?.min !== undefined && e.deadline.min > block.timestamp ? e.deadline.min : block.timestamp, max: block.timestamp + own };
+    if (e.deadline !== undefined && e.deadline.max < window.max) window.max = e.deadline.max;
+    let exact = e.exact;
+    if (e.functionName === 'launch') {
+      const configHash = (await this.mf.publicClient.readContract({
+        address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'configHash', blockNumber: at,
+      } as never)) as Hex;
+      if (exact?.expectedConfigHash !== undefined && String(exact.expectedConfigHash).toLowerCase() !== configHash.toLowerCase()) {
+        throw new BuildMismatchError('expectedConfigHash is not the factory\'s current configHash');
+      }
+      exact = { ...exact, expectedConfigHash: configHash };
+    }
+    verifyBuiltTx(built, {
+      ...e, ...(exact === undefined ? {} : { exact }), chainId: this.mf.network.chainId, account: this.account,
+      ...(e.functionName === 'claimFees' || e.functionName === 'sweepToOwner' ? {} : { deadline: window }),
+    });
+    // A decoded buy cannot be proven to stay off the graduation path, so it always gets the graduation gas floor.
+    return this.send(built.data, e.functionName === 'buy', e.functionName);
   }
 
   protected async send(data: Hex, mayGraduate: boolean, label: string): Promise<Fill> {

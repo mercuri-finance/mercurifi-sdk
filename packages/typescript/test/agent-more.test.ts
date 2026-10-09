@@ -389,15 +389,68 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
 
 describe('AgentClient.sendBuilt', () => {
   const claim = encodeFunctionData({ abi: agentAccountAbi, functionName: 'claimFees', args: [] });
+  const buyData = (over: Partial<{ token: Hex; min: bigint; dl: bigint }> = {}, ts = 1_700_000_000n) =>
+    encodeFunctionData({ abi: agentAccountAbi, functionName: 'buy', args: [over.token ?? TOKEN, 25_000_000n, over.min ?? 900n, over.dl ?? ts + 60n] } as never);
+  const buyE = { functionName: 'buy' as const, exact: { token: TOKEN, usdcIn: 25_000_000n }, atLeast: { minTokensOut: 900n } };
+  const LAUNCH_FIELDS = { name: 'Ok', symbol: 'OK', metadataURI: 'ipfs://m', salt: SALT, initialBuyUsdc: 0n, minTokensOut: 0n };
+  const launchData = (over: Record<string, unknown> = {}, ts = 1_700_000_000n) =>
+    encodeFunctionData({ abi: agentAccountAbi, functionName: 'launch', args: [{ ...LAUNCH_FIELDS, expectedConfigHash: HASH, deadline: ts + 60n, ...over }] } as never);
+  const tx = (data: Hex) => ({ chainId: 31337, to: ACCOUNT, data, value: '0' });
+
   it('signs API-built calldata only after it verifies against the expectation', async () => {
     const { agent, rpc } = await setup();
-    const tx = { chainId: 31337, to: ACCOUNT, data: claim, value: '0' };
-    await expect(agent.sendBuilt({ ...tx, to: A(0x77) }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
-    await expect(agent.sendBuilt({ ...tx, chainId: 5042002 }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
-    await expect(agent.sendBuilt(tx, { functionName: 'sweepToOwner' })).rejects.toThrow(BuildMismatchError);
+    await expect(agent.sendBuilt({ ...tx(claim), to: A(0x77) }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
+    await expect(agent.sendBuilt({ ...tx(claim), chainId: 5042002 }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
+    await expect(agent.sendBuilt(tx(claim), { functionName: 'sweepToOwner' })).rejects.toThrow(BuildMismatchError);
     expect(rpc.sent).toHaveLength(0);
-    await agent.sendBuilt(tx, { functionName: 'claimFees' });
+    await agent.sendBuilt(tx(claim), { functionName: 'claimFees' });
     expect(rpc.sent).toHaveLength(1);
     expect(sentCall(rpc).functionName).toBe('claimFees');
+  });
+
+  it('refuses a buy unless every argument is named and matches', async () => {
+    const { agent, rpc } = await setup();
+    rpc.read(ACCOUNT, agentAccountAbi, 'buy', 0n);
+    const refusedBuy = (data: Hex, e: Parameters<typeof agent.sendBuilt>[1] = buyE) => expect(agent.sendBuilt(tx(data), e)).rejects.toThrow(BuildMismatchError);
+    await refusedBuy(buyData(), { functionName: 'buy' });
+    await refusedBuy(buyData({ min: 1n }));
+    await refusedBuy(buyData({ token: A(0xcc) }));
+    await refusedBuy(buyData({ dl: 1_700_000_000n + 61n }));
+    await refusedBuy(buyData({ dl: 1_700_000_000n + 3_000n }), { ...buyE, deadline: { min: 0n, max: 9_999_999_999n } });
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('signs a matching buy with the graduation gas floor', async () => {
+    const { agent, rpc } = await setup();
+    rpc.read(ACCOUNT, agentAccountAbi, 'buy', 0n);
+    await agent.sendBuilt(tx(buyData()), buyE);
+    expect(parseTransaction(rpc.sent[0]!).gas).toBe(1_800_000n);
+  });
+
+  it('flips buyToken on a swap: refused', async () => {
+    const { agent, rpc } = await setup();
+    const swap = encodeFunctionData({ abi: agentAccountAbi, functionName: 'swapExactIn', args: [TOKEN, false, 5n, 4n, 1_700_000_030n] });
+    await expect(agent.sendBuilt(tx(swap), { functionName: 'swapExactIn', exact: { token: TOKEN, buyToken: true, amountIn: 5n }, atLeast: { minAmountOut: 4n } })).rejects.toThrow(/buyToken/);
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('launch: reads the chain configHash and its own deadline window; refuses missing or differing fields', async () => {
+    const { agent, rpc } = await setup();
+    const e = { functionName: 'launch' as const, exact: LAUNCH_FIELDS };
+    await expect(agent.sendBuilt(tx(launchData()), { functionName: 'launch', exact: { name: 'Ok' } })).rejects.toThrow(/not covered/);
+    await expect(agent.sendBuilt(tx(launchData({ expectedConfigHash: `0x${'55'.repeat(32)}` })), e)).rejects.toThrow(/expectedConfigHash/);
+    await expect(agent.sendBuilt(tx(launchData()), { ...e, exact: { ...LAUNCH_FIELDS, expectedConfigHash: `0x${'55'.repeat(32)}` } })).rejects.toThrow(/configHash/);
+    for (const over of [{ metadataURI: 'https://evil.example/x' }, { salt: `0x${'77'.repeat(32)}` }, { initialBuyUsdc: 1n }, { minTokensOut: 0n, deadline: 1_700_000_000n + 61n }]) {
+      await expect(agent.sendBuilt(tx(launchData(over)), e)).rejects.toThrow(BuildMismatchError);
+    }
+    expect(rpc.sent).toHaveLength(0);
+    await agent.sendBuilt(tx(launchData()), e);
+    expect(rpc.sent).toHaveLength(1);
+  });
+
+  it('runs the local permission gate first', async () => {
+    const { agent, rpc } = await setup({}, null, 3, { agentPermissions: 1 });
+    await expect(agent.sendBuilt(tx(claim), { functionName: 'claimFees' })).rejects.toMatchObject({ revert: { name: 'MissingPermission' } });
+    expect(rpc.sent).toHaveLength(0);
   });
 });

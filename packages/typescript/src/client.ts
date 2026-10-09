@@ -181,6 +181,6 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   const apiBaseUrl = options.apiBaseUrl ?? book.apiBaseUrl;
   const api = options.api !== undefined
     ? options.api
-    : apiBaseUrl === null ? null : new HttpApi({ baseUrl: apiBaseUrl, chainId: book.chainId, ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }) });
+    : apiBaseUrl === null ? null : new HttpApi({ baseUrl: apiBaseUrl, chainId: book.chainId, onWarning, ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }) });
   return new MercurifiClient(book, publicClient, api, settings, onWarning);
 };

@@ -186,4 +186,19 @@ describe('HttpApi hardening', () => {
     expect(mf.api!.baseUrl).toBe('https://api.example.org');
     await expect(createClient({ network: 'testnet', apiBaseUrl: 'http://api.example.org', transport: new MockRpc(5042002).transport() })).rejects.toThrow(/https/);
   });
+
+  it('follows Next-Cursor for listAccounts, and warns when it truncates', async () => {
+    const item = { account: LOWER, owner: LOWER };
+    const f = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([item]), { status: 200, headers: { 'Next-Cursor': 'c1' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([item]), { status: 200 }));
+    expect(await new HttpApi({ baseUrl: 'https://x.example', chainId: 1, fetch: f }).listAccounts(ADDR)).toHaveLength(2);
+    expect(String(f.mock.calls[1]![0])).toBe(`https://x.example/v1/agent-accounts?owner=${LOWER}&cursor=c1`);
+    let n = 0;
+    const endless = vi.fn(async () => new Response(JSON.stringify([item]), { status: 200, headers: { 'Next-Cursor': `c${n++}` } }));
+    const warnings: string[] = [];
+    const out = await new HttpApi({ baseUrl: 'https://x.example', chainId: 1, fetch: endless as never, onWarning: (m) => warnings.push(m) }).listAccounts(ADDR);
+    expect(out).toHaveLength(10);
+    expect(warnings[0]).toMatch(/cut off/);
+  });
 });

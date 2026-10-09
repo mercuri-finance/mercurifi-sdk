@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { agentAccountAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
 import { verifyBuiltTx, type BuildExpectation } from '../src/api/verifyBuild.js';
-import { BuildMismatchError } from '../src/errors.js';
+import { BuildMismatchError, InvalidInputError } from '../src/errors.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 
 const ACCOUNT: Address = '0x00000000000000000000000000000000000000aa';
@@ -19,6 +19,10 @@ const launch = (deadline: bigint) =>
       expectedConfigHash: `0x${'22'.repeat(32)}`, initialBuyUsdc: 0n, minTokensOut: 0n, deadline,
     }],
   } as never);
+const LAUNCH_EXACT = {
+  name: 'Robo', symbol: 'ROBO', metadataURI: 'https://x.example/m/ab.json', salt: `0x${'11'.repeat(32)}`,
+  expectedConfigHash: `0x${'22'.repeat(32)}`, initialBuyUsdc: 0n, minTokensOut: 0n,
+};
 const expectation: BuildExpectation = {
   chainId: 5042002, account: ACCOUNT, functionName: 'buy',
   exact: { token: TOKEN, usdcIn: 25_000_000n }, atLeast: { minTokensOut: 980n * WAD }, deadline: { min: 900n, max: 1_100n },
@@ -33,7 +37,7 @@ describe('verifyBuiltTx', () => {
   });
 
   it('flattens the launch request and checks its deadline window', () => {
-    const e: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: { symbol: 'ROBO' }, deadline: { min: 900n, max: 1_100n } };
+    const e: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: LAUNCH_EXACT, deadline: { min: 900n, max: 1_100n } };
     expect(verifyBuiltTx(built(launch(1_000n)), e).args).toMatchObject({ name: 'Robo', symbol: 'ROBO', deadline: 1_000n });
     expect(() => verifyBuiltTx(built(launch(5_000n)), e)).toThrow(/deadline/);
   });
@@ -62,8 +66,8 @@ describe('verifyBuiltTx', () => {
   it('compares addresses case-insensitively without throwing on a bad checksum, and refuses names the function lacks', () => {
     const mixed = `0x00000000000000000000000000000000000000Bb` as Address;
     expect(verifyBuiltTx(built(buy(), { to: '0x00000000000000000000000000000000000000AA' }), { ...expectation, exact: { token: mixed, usdcIn: 25_000_000n } }).functionName).toBe('buy');
-    expect(() => verifyBuiltTx(built(), { ...expectation, exact: { nope: 1n } })).toThrow(/no argument nope/);
-    expect(() => verifyBuiltTx(built(), { ...expectation, atLeast: { token: 1n } })).toThrow(/no numeric argument/);
+    expect(() => verifyBuiltTx(built(), { ...expectation, exact: { ...expectation.exact, nope: 1n } })).toThrow(/no argument nope/);
+    expect(() => verifyBuiltTx(built(), { ...expectation, atLeast: { token: 1n } })).toThrow(/minimum-output/);
     expect(() => verifyBuiltTx(built(), { ...expectation, functionName: 'sell' })).toThrow(/built buy, asked for sell/);
     expect(() => verifyBuiltTx(built(), { ...expectation, functionName: 'withdraw' as never })).toThrow(/not an agent trade function/);
     expect(() => verifyBuiltTx(built(buy(), { value: '-1' }), expectation)).toThrow(BuildMismatchError);
@@ -71,8 +75,60 @@ describe('verifyBuiltTx', () => {
   });
 
   it('pins the launch config hash and refuses a changed one', () => {
-    const e: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: { expectedConfigHash: `0x${'22'.repeat(32)}` }, deadline: { min: 900n, max: 1_100n } };
+    const e: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: LAUNCH_EXACT, deadline: { min: 900n, max: 1_100n } };
     expect(verifyBuiltTx(built(launch(1_000n)), e).functionName).toBe('launch');
-    expect(() => verifyBuiltTx(built(launch(1_000n)), { ...e, exact: { expectedConfigHash: `0x${'33'.repeat(32)}` } })).toThrow(/expectedConfigHash/);
+    expect(() => verifyBuiltTx(built(launch(1_000n)), { ...e, exact: { ...LAUNCH_EXACT, expectedConfigHash: `0x${'33'.repeat(32)}` } })).toThrow(/expectedConfigHash/);
+    expect(verifyBuiltTx(built(launch(1_000n)), { ...e, exact: { ...LAUNCH_EXACT, expectedConfigHash: `0x${'22'.repeat(32)}`.toUpperCase().replace('0X', '0x') } }).functionName).toBe('launch');
+  });
+
+  const buyFull: BuildExpectation = { ...expectation };
+  it('fails closed: every argument must be covered, by name', () => {
+    const { exact: _e, atLeast: _a, ...bare } = expectation;
+    for (const e of [
+      { ...bare }, { ...bare, deadline: expectation.deadline },
+      { ...expectation, exact: { usdcIn: 25_000_000n } }, // token uncovered
+      { ...expectation, atLeast: undefined }, // minTokensOut uncovered
+      { ...expectation, deadline: undefined }, // deadline uncovered
+    ] as BuildExpectation[]) {
+      expect(() => verifyBuiltTx(built(), e)).toThrow(BuildMismatchError);
+      expect(() => verifyBuiltTx(built(), e)).toThrow(/not covered by your expectation/);
+    }
+    expect(() => verifyBuiltTx(built(), { ...bare })).toThrow(/token of buy/);
+    expect(verifyBuiltTx(built(), buyFull).functionName).toBe('buy');
+  });
+
+  it('refuses hostile buys: another token, a floor of 1, a longer deadline', () => {
+    const other = encodeFunctionData({ abi: agentAccountAbi, functionName: 'buy', args: ['0x00000000000000000000000000000000000000cc', 25_000_000n, 980n * WAD, 1_000n] });
+    expect(() => verifyBuiltTx(built(other), buyFull)).toThrow(/token is/);
+    expect(() => verifyBuiltTx(built(buy(1n)), buyFull)).toThrow(/minTokensOut/);
+    expect(() => verifyBuiltTx(built(buy(980n * WAD, 1_101n)), buyFull)).toThrow(/deadline/);
+  });
+
+  it('covers swapExactIn (flipped buyToken) and sweepToOwner', () => {
+    const swap = (buyToken: boolean) => encodeFunctionData({ abi: agentAccountAbi, functionName: 'swapExactIn', args: [TOKEN, buyToken, 5n, 4n, 1_000n] });
+    const e: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'swapExactIn', exact: { token: TOKEN, buyToken: true, amountIn: 5n }, atLeast: { minAmountOut: 4n }, deadline: expectation.deadline };
+    expect(verifyBuiltTx(built(swap(true)), e).functionName).toBe('swapExactIn');
+    expect(() => verifyBuiltTx(built(swap(false)), e)).toThrow(/buyToken/);
+    const sweep = encodeFunctionData({ abi: agentAccountAbi, functionName: 'sweepToOwner', args: [TOKEN, 7n] });
+    const w: BuildExpectation = { chainId: 5042002, account: ACCOUNT, functionName: 'sweepToOwner', exact: { token: TOKEN, amount: 7n } };
+    expect(verifyBuiltTx(built(sweep), w).functionName).toBe('sweepToOwner');
+    expect(() => verifyBuiltTx(built(sweep), { ...w, exact: { token: TOKEN } })).toThrow(/amount of sweepToOwner/);
+    expect(() => verifyBuiltTx(built(sweep), { ...w, exact: { token: TOKEN, amount: 8n } })).toThrow(/amount/);
+  });
+
+  it('requires all eight launch fields', () => {
+    for (const k of Object.keys(LAUNCH_EXACT)) {
+      const { [k]: _drop, ...rest } = LAUNCH_EXACT as Record<string, unknown>;
+      expect(() => verifyBuiltTx(built(launch(1_000n)), { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: rest, deadline: expectation.deadline })).toThrow(new RegExp(`${k} of launch is not covered`));
+    }
+    expect(() => verifyBuiltTx(built(launch(1_000n)), { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: LAUNCH_EXACT })).toThrow(/deadline of launch is not covered/);
+    for (const [k, v] of [['metadataURI', 'https://evil.example/x'], ['salt', `0x${'99'.repeat(32)}`], ['initialBuyUsdc', 5n]] as const) {
+      expect(() => verifyBuiltTx(built(launch(1_000n)), { chainId: 5042002, account: ACCOUNT, functionName: 'launch', exact: { ...LAUNCH_EXACT, [k]: v }, deadline: expectation.deadline })).toThrow(new RegExp(k));
+    }
+  });
+
+  it('validates its own inputs: atLeast only for min…Out, a sane window', () => {
+    expect(() => verifyBuiltTx(built(), { ...expectation, atLeast: { usdcIn: 1n } })).toThrow(InvalidInputError);
+    expect(() => verifyBuiltTx(built(), { ...expectation, deadline: { min: 5n, max: 1n } })).toThrow(InvalidInputError);
   });
 });
