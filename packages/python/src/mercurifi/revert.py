@@ -63,7 +63,7 @@ def _usdc(v: Any) -> str:
 
 def _field(v: Any) -> str:
     if isinstance(v, int) and not isinstance(v, bool):
-        return ABI_NAMES[POLICY_FIELDS[v]] if 0 <= v < len(POLICY_FIELDS) else f"field #{v}"
+        return ABI_NAMES[POLICY_FIELDS[v]] if 0 <= v < len(POLICY_FIELDS) else f"#{v} (unknown)"
     if isinstance(v, str) and v.startswith("0x"):
         return from_hex(v).rstrip(b"\x00").decode("utf-8", "replace")
     return str(v)

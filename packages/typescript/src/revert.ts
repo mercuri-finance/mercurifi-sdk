@@ -30,7 +30,7 @@ const SOURCES: readonly (readonly [string, Abi])[] = [
 
 const usdc = (v: unknown): string => `${formatUsdc6(BigInt(v as bigint))} USDC`;
 const field = (v: unknown): string => {
-  if (typeof v === 'number' || typeof v === 'bigint') return POLICY_FIELDS[Number(v)] ?? `field #${String(v)}`;
+  if (typeof v === 'number' || typeof v === 'bigint') return POLICY_FIELDS[Number(v)] ?? `#${String(v)} (unknown)`;
   if (typeof v === 'string' && v.startsWith('0x')) return hexToString(v as Hex, { size: 32 }).replace(/\0+$/, '');
   return String(v);
 };

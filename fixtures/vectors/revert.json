@@ -1419,7 +1419,7 @@
    "data": "0x53572ee8000000000000000000000000000000000000000000000000000000000000012c",
    "name": "BetaCeiling",
    "source": "AgentPolicyRegistry",
-   "message": "The policy field field #300 is above the beta ceiling of this factory.",
+   "message": "The policy field #300 (unknown) is above the beta ceiling of this factory.",
    "selector": "0x53572ee8",
    "out": "0x53572ee8000000000000000000000000000000000000000000000000000000000000012c",
    "args": [
