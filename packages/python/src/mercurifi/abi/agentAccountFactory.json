@@ -1,0 +1,611 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "implementation_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "admin_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "guardian_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "ceilings_",
+        "type": "tuple",
+        "internalType": "struct Policy",
+        "components": [
+          {
+            "name": "maxTradeUsdc",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "periodSpendCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "perTokenPeriodCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "periodSellCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "maxActionsPerPeriod",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "launchesPerPeriod",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxPriceImpactBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxSnipeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minTokenAgeBlocks",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxDeadlineSeconds",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "allowlistOnly",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "VERSION",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "admin",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "adminSetPausedUntil",
+    "inputs": [
+      {
+        "name": "until",
+        "type": "uint40",
+        "internalType": "uint40"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "ceilings",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct Policy",
+        "components": [
+          {
+            "name": "maxTradeUsdc",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "periodSpendCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "perTokenPeriodCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "periodSellCap",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "maxActionsPerPeriod",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "launchesPerPeriod",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxPriceImpactBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "maxSnipeBps",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "minTokenAgeBlocks",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "maxDeadlineSeconds",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "allowlistOnly",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "createAccount",
+    "inputs": [
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "p",
+        "type": "tuple",
+        "internalType": "struct InitParams",
+        "components": [
+          {
+            "name": "referrer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "policy",
+            "type": "tuple",
+            "internalType": "struct Policy",
+            "components": [
+              {
+                "name": "maxTradeUsdc",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "periodSpendCap",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "perTokenPeriodCap",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "periodSellCap",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "maxActionsPerPeriod",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "launchesPerPeriod",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "maxPriceImpactBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "maxSnipeBps",
+                "type": "uint16",
+                "internalType": "uint16"
+              },
+              {
+                "name": "minTokenAgeBlocks",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "maxDeadlineSeconds",
+                "type": "uint32",
+                "internalType": "uint32"
+              },
+              {
+                "name": "allowlistOnly",
+                "type": "bool",
+                "internalType": "bool"
+              }
+            ]
+          },
+          {
+            "name": "periodSeconds",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "increaseDelay",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "firstAgent",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "firstAgentExpiresAt",
+            "type": "uint40",
+            "internalType": "uint40"
+          },
+          {
+            "name": "firstAgentPermissions",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "guardian",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "guardianDisabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "guardianPause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "implementation",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isPaused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pausedUntil",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint40",
+        "internalType": "uint40"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "predictAccount",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "setGuardian",
+    "inputs": [
+      {
+        "name": "g",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "AccountCreated",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "referrer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AgentsPausedUntil",
+    "inputs": [
+      {
+        "name": "until",
+        "type": "uint40",
+        "indexed": false,
+        "internalType": "uint40"
+      },
+      {
+        "name": "by",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GuardianSet",
+    "inputs": [
+      {
+        "name": "guardian",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AccountExists",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "FailedDeployment",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "GuardianDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ImplementationMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InsufficientBalance",
+    "inputs": [
+      {
+        "name": "balance",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "needed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InvalidCeiling",
+    "inputs": [
+      {
+        "name": "field",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NoActivePause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotGuardian",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "PauseCooldown",
+    "inputs": [
+      {
+        "name": "readyAt",
+        "type": "uint40",
+        "internalType": "uint40"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PauseTooLong",
+    "inputs": [
+      {
+        "name": "maxUntil",
+        "type": "uint40",
+        "internalType": "uint40"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddress",
+    "inputs": []
+  }
+]

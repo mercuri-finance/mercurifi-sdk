@@ -1,0 +1,17 @@
+{
+  "digest": "33b7d33f3b18236cdce099a7f0b0c89bfcf14a87667f4943097a6dc043f51540",
+  "contractsCommit": "c91872be396f",
+  "names": [
+    "agentAccount",
+    "agentPolicyRegistry",
+    "agentAccountFactory",
+    "bondingCurve",
+    "launchFactory",
+    "feeManager",
+    "graduationManager",
+    "launchHook",
+    "launchToken",
+    "v4Quoter",
+    "universalRouter"
+  ]
+}
