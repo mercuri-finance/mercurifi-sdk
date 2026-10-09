@@ -46,10 +46,11 @@ export const quoteExactIn = async (
 const WAD = 10n ** 18n;
 
 /**
- * Rough price impact of a swap in basis points, from the quoter alone: the trade's execution price against a probe a
- * thousandth of its size. For a constant-product pool the price moves by the square of the execution-price ratio, which is
- * what the account's own limit measures (the pool's sqrt price before and after). `null` when the probe gives no answer.
- * An estimate for a warning, never a refusal: the account enforces the real limit.
+ * Approximate price impact of a swap in basis points, from the quoter alone: the trade's execution price against a probe a
+ * thousandth of its size gives k > 1, the execution-price ratio. For a constant-product pool the sqrt price moves with it, so
+ * the price rises by k^2 - 1 (token1 -> token0 buys) or falls by 1 - 1/k^2 (`zeroForOne`), matching the direction rule of the
+ * account's own measure. `null` when the probe gives no answer. Approximate and for a warning only: the preflight and the
+ * account enforce the real limit.
  */
 export const estimatePoolImpactBps = async (
   client: PublicClient, book: NetworkBook, key: PoolKey, zeroForOne: boolean, amountIn: bigint, amountOut: bigint, account: Address, blockNumber?: bigint,
@@ -63,7 +64,8 @@ export const estimatePoolImpactBps = async (
     return null;
   }
   if (probeOut === 0n) return null;
-  const ratio = (probeOut * amountIn * WAD) / (amountOut * probeIn);
-  if (ratio <= WAD) return 0n;
-  return ((ratio * ratio) / WAD - WAD) * 10_000n / WAD;
+  const k = (probeOut * amountIn * WAD) / (amountOut * probeIn);
+  if (k <= WAD) return 0n;
+  const k2 = (k * k) / WAD;
+  return zeroForOne ? ((WAD - (WAD * WAD) / k2) * 10_000n) / WAD : ((k2 - WAD) * 10_000n) / WAD;
 };

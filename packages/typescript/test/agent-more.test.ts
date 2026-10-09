@@ -1,10 +1,12 @@
 import { decodeFunctionData, parseTransaction, type Hex } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
+import { estimatePoolImpactBps } from '../src/pool.js';
 import { agentAccountAbi, agentAccountFactoryAbi, graduationManagerAbi, launchFactoryAbi, v4QuoterAbi } from '../src/abi/index.js';
 import type { MercurifiApi } from '../src/api/types.js';
 import { InvalidInputError } from '../src/errors.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
+import { MercurifiError } from '../src/errors.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
 import { agentActionLog, eventLog, FACTORY, LAUNCH_FACTORY, mockAccount, mockCurve, type AccountMockOptions, type CurveMockOptions } from './helpers/account.js';
@@ -65,7 +67,7 @@ describe('AgentClient.launch', () => {
     const { rpc, agent } = await setup();
     await expect(agent.launch({ name: 'é'.repeat(17), symbol: 'EX', metadataURI: '' })).rejects.toThrow(/1–32 bytes/);
     await expect(agent.launch({ name: 'Ok', symbol: 'TOOLONGSYMB', metadataURI: '' })).rejects.toThrow(/1–10 bytes/);
-    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: 'x'.repeat(257) })).rejects.toThrow(/256 bytes/);
+    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://${'x'.repeat(250)}` })).rejects.toThrow(/longer than 256 bytes/);
     // The account checks maxTradeUsdc (initial buy + fee) before the factory checks maxInitialBuyTokens.
     await refused(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', initialBuyUsdc: '100' }), 'TradeTooLarge');
     await refused(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', initialBuyUsdc: '10000' }), 'TradeTooLarge');
@@ -224,7 +226,7 @@ describe('AgentClient pool swaps', () => {
     expect(none.rpc.sent).toHaveLength(0);
   });
 
-  it('refuses a sell larger than the balance, after the basis check', async () => {
+  it('refuses a sell larger than the balance with a plain message, before valuing it', async () => {
     const { rpc, agent } = await setup({ phase: 2, balance: WAD }, null, 5);
     quoter(rpc, () => 1_000n);
     await expect(agent.swapExactIn({ token: TOKEN, side: 'sell', amountWei: 2n * WAD })).rejects.toThrow(/holds less/);
@@ -236,7 +238,7 @@ describe('AgentClient pool swaps', () => {
     const heavy = await warnings({ phase: 2 }, { policy: { ...DEFAULT_POLICY, maxPriceImpactBps: 300 } });
     quoter(heavy.rpc, ({ exactAmount }) => (exactAmount * R * WAD) / (R + exactAmount) / 1_000_000n);
     await heavy.agent.swapExactIn({ token: TOKEN, side: 'buy', usdc: '100' });
-    expect(heavy.seen.join(' ')).toMatch(/moves the pool price by roughly 2\d{3} bps/);
+    expect(heavy.seen.join(' ')).toMatch(/move the pool price by about 2\d{3} bps/);
     expect(heavy.rpc.sent).toHaveLength(1);
     const light = await warnings({ phase: 2 });
     quoter(light.rpc, ({ exactAmount }) => (exactAmount * (100n * R) * WAD) / (100n * R + exactAmount) / 1_000_000n);
@@ -284,5 +286,76 @@ describe('AgentClient claims and sweeps', () => {
     const paused = await setup({}, null, 6);
     paused.rpc.read(FACTORY, agentAccountFactoryAbi, 'isPaused', true);
     await refused(paused.agent.claimFees(), 'Paused');
+  });
+});
+
+describe('metadata URI validation, expiry margin, ordering and balances', () => {
+  const bad = ['', 'javascript:alert(1)', 'data:text/plain;base64,AAAA', 'http://insecure.example/m', 'https://exa\u202Emple/m', 'https://a b/m', `https://${'x'.repeat(249)}`];
+  const launchWith = async (uri: unknown) => {
+    const upload = vi.fn(async () => ({ metadataURI: uri as string, imageStatus: null }));
+    const t = await setup({}, { uploadLaunchMetadata: upload } as unknown as MercurifiApi);
+    return { ...t, run: t.agent.launch({ name: 'Ok', symbol: 'OK', description: 'hi' }) };
+  };
+
+  it.each([undefined, ...bad])('treats an uploaded URI as untrusted: %j', async (uri) => {
+    const t = await launchWith(uri);
+    const err = await t.run.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MercurifiError);
+    expect((err as MercurifiError).code).toBe('API_BAD_RESPONSE');
+    expect(String((err as Error).message)).not.toContain('javascript');
+    expect(t.rpc.sent).toHaveLength(0);
+  });
+
+  it('accepts https and ipfs URIs at the byte limit, and rejects bad user-supplied ones', async () => {
+    const ok = await launchWith(`ipfs://${'x'.repeat(249)}`);
+    await ok.run;
+    expect(ok.rpc.sent).toHaveLength(1);
+    const { agent, rpc } = await setup();
+    for (const uri of bad.slice(1)) await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: uri })).rejects.toThrow(InvalidInputError);
+    await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: 'https://example.com/m.json' });
+    expect(rpc.sent).toHaveLength(1);
+  });
+
+  it('refuses a key that expires before the transaction can land (latest + 1 >= expiresAt)', async () => {
+    const soon = await setup({}, null, 3, { agentExpiresAt: 1_700_000_001 });
+    await refused(soon.agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '' }), 'AgentExpired');
+    const fine = await setup({}, null, 3, { agentExpiresAt: 1_700_000_002 });
+    await fine.agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '' });
+    expect(fine.rpc.sent).toHaveLength(1);
+  });
+
+  it('checks TradeTooLarge before AmountTooLarge on a launch', async () => {
+    const { agent } = await setup();
+    await refused(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', initialBuyUsdc6: 1n << 250n }), 'TradeTooLarge');
+  });
+
+  it('estimates a falling price as 1 - 1/k^2 when selling token0', async () => {
+    const t = await setup({ phase: 2 });
+    const R = 1_000n * WAD;
+    t.rpc.read(A(8), v4QuoterAbi, 'quoteExactInputSingle', (args) => {
+      const a = (args[0] as { exactAmount: bigint }).exactAmount;
+      return [(a * R) / (R + a), 0n];
+    });
+    const mf = await localClient(t.rpc);
+    const key = { currency0: TOKEN, currency1: USDC, fee: 0, tickSpacing: 60, hooks: A(4) } as const;
+    const amountIn = 500n * WAD; // x = 0.5 of the reserve: the sqrt price moves by 1/1.5, the price by 1 - 1/2.25
+    const out = (amountIn * R) / (R + amountIn);
+    const down = await estimatePoolImpactBps(mf.publicClient, mf.network, key, true, amountIn, out, ACCOUNT);
+    expect(Number(down)).toBeGreaterThan(5_400);
+    expect(Number(down)).toBeLessThan(5_600);
+    const up = await estimatePoolImpactBps(mf.publicClient, mf.network, key, false, amountIn, out, ACCOUNT);
+    expect(Number(up)).toBeGreaterThan(12_000);
+  });
+
+  it('checks explicit amounts against the balance first, with a plain message', async () => {
+    const basis = [110_000_000n, 11_000n * WAD, 10n ** 23n] as const;
+    const pool = await setup({ phase: 2, balance: WAD }, null, 5, { basis });
+    pool.rpc.read(A(3), graduationManagerAbi, 'poolKey', poolKey);
+    await expect(pool.agent.swapExactIn({ token: TOKEN, side: 'sell', amountWei: 2_000n * WAD })).rejects.toThrow(/holds less of this token/);
+    const native = await setup({}, null, 7);
+    await expect(native.agent.sweepToOwner({ usdc: '5000' })).rejects.toThrow(/holds 1000 USDC, less than/);
+    const token = await setup({ balance: WAD }, null, 7);
+    await expect(token.agent.sweepToOwner({ token: TOKEN, amount: '2' })).rejects.toThrow(/holds less of this token/);
+    expect(pool.rpc.sent.length + native.rpc.sent.length + token.rpc.sent.length).toBe(0);
   });
 });

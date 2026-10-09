@@ -5,7 +5,7 @@ import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } fr
 import { curveSellValue6, poolSellValue6, readBasis, recordedSellValue6 } from './basis.js';
 import type { MercurifiClient } from './client.js';
 import { buyImpactBps, mayGraduateBuy, PHASE, quoteFreshBuy, sellImpactBps, type LaunchConfigValue } from './curve.js';
-import { InvalidInputError } from './errors.js';
+import { InvalidInputError, MercurifiError } from './errors.js';
 import { fillFromReceipt, type Fill } from './fills.js';
 import type { AgentBook } from './networks.js';
 import { estimatePoolImpactBps, quoteExactIn, readPoolKey, UINT128_MAX } from './pool.js';
@@ -37,6 +37,15 @@ export interface SwapParams { token: Address; side: 'buy' | 'sell'; usdc?: strin
 export interface SweepParams { token?: Address; usdc?: string; usdc6?: bigint; all?: boolean; amount?: string; amountWei?: bigint }
 
 const utf8Length = (v: string): number => new TextEncoder().encode(v).length;
+
+/** Why a metadata URI cannot be used, or null: https:// or ipfs://, no whitespace, control or format characters, at most 256 bytes. The value is never echoed. */
+export const metadataUriProblem = (uri: unknown): string | null => {
+  if (typeof uri !== 'string' || uri === '') return 'it is empty or not a string';
+  if (!/^(https|ipfs):\/\/./.test(uri)) return 'it must start with https:// or ipfs://';
+  if (/[\s\p{Cc}\p{Cf}]/u.test(uri)) return 'it contains whitespace or control characters';
+  if (utf8Length(uri) > 256) return 'it is longer than 256 bytes';
+  return null;
+};
 
 export interface Headroom {
   spendUsdc6: bigint;
@@ -210,7 +219,10 @@ export class AgentClient {
     if (typeof p.symbol !== 'string' || utf8Length(p.symbol) < 1 || utf8Length(p.symbol) > 10) throw new InvalidInputError('symbol', 'symbol must be 1–10 bytes (UTF-8)');
     const hasMetadata = p.description !== undefined || p.links !== undefined || p.image !== undefined;
     if (p.metadataURI !== undefined && hasMetadata) throw new InvalidInputError('metadataURI', 'pass either metadataURI or description, links and image, not both');
-    if (p.metadataURI !== undefined && utf8Length(p.metadataURI) > 256) throw new InvalidInputError('metadataURI', 'metadataURI must be at most 256 bytes');
+    if (p.metadataURI !== undefined && p.metadataURI !== '') {
+      const problem = metadataUriProblem(p.metadataURI);
+      if (problem !== null) throw new InvalidInputError('metadataURI', `metadataURI is not usable: ${problem}`);
+    }
     if (p.metadataURI === undefined && hasMetadata && this.mf.api === null) {
       throw new InvalidInputError('metadataURI', 'Uploading a description, links or an image needs the Mercurifi API; pass metadataURI to launch chain-only.');
     }
@@ -228,11 +240,11 @@ export class AgentClient {
       ...raw, tradeFeeBps: Number(raw.tradeFeeBps), creatorShareBps: Number(raw.creatorShareBps), referrerShareBps: Number(raw.referrerShareBps),
       snipeStartBps: Number(raw.snipeStartBps), snipeBlocks: Number(raw.snipeBlocks),
     };
-    if (firstBuy6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
-    const firstBuyWei = usdc6ToWei(firstBuy6);
     // The account's own test: the initial buy and the launch fee (usdc6, rounded up) must both fit in maxTradeUsdc.
     const feeUsdc6 = weiToUsdc6Ceil(config.launchFee);
     if (firstBuy6 > policy.maxTradeUsdc || feeUsdc6 > policy.maxTradeUsdc - firstBuy6) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+    if (firstBuy6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
+    const firstBuyWei = usdc6ToWei(firstBuy6);
     if (launchPaused) throw localRevert('EnforcedPause');
     // The initial buy runs tax-exempt in the launch block, before any other trade, so this quote is exact.
     const quote = firstBuy6 === 0n ? null : quoteFreshBuy(config, firstBuyWei);
@@ -248,7 +260,8 @@ export class AgentClient {
     if (p.metadataURI === undefined && hasMetadata) {
       const meta = { ...(p.description !== undefined ? { description: p.description } : {}), ...(p.links !== undefined ? { links: p.links } : {}) };
       metadataURI = (await this.mf.api!.uploadLaunchMetadata(meta, p.image)).metadataURI;
-      if (utf8Length(metadataURI) > 256) throw new InvalidInputError('metadataURI', 'The uploaded metadata URI is longer than 256 bytes; the factory would refuse it.');
+      const problem = metadataUriProblem(metadataURI);
+      if (problem !== null) throw new MercurifiError('API_BAD_RESPONSE', `The API returned a metadata URI that cannot be used (${problem}); nothing was signed.`);
     }
     // After the upload, so a slow upload cannot use up the deadline window.
     const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
@@ -290,10 +303,10 @@ export class AgentClient {
       }
       if (amountIn > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
     } else {
+      if (amountIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
       basis = await readBasis(client, this.account, p.token, at);
       // Before the swap the account values only the recorded part; the excess is added once the proceeds are known.
       if (recordedSellValue6(basis, amountIn).value6 > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
-      if (amountIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
     }
 
     const zeroForOne = isAddressEqual(buyToken ? book.launch.usdc : p.token, key.currency0);
@@ -315,7 +328,7 @@ export class AgentClient {
     }
     const impact = await estimatePoolImpactBps(client, book, key, zeroForOne, amountIn, out, this.account, at);
     if (impact !== null && impact > BigInt(policy.maxPriceImpactBps)) {
-      this.mf.warn(`This swap moves the pool price by roughly ${impact} bps, above the account limit of ${policy.maxPriceImpactBps} bps; the account will refuse it if the real move is above the limit. Try a smaller amount.`);
+      this.mf.warn(`This swap may move the pool price by about ${impact} bps (approximate), above the account limit of ${policy.maxPriceImpactBps} bps. The account's own check enforces the real limit and refuses the swap if it is exceeded; try a smaller amount.`);
     }
     // Slippage floor on the quote; never zero. (A sell's output is usdc6, a buy's is token wei.)
     const minAmountOut = maxOf(applySlippageFloor(out, bps), 1n);
@@ -346,12 +359,16 @@ export class AgentClient {
     let amount: bigint;
     if (native) {
       const everything = p.all === true || p.amount === 'all';
-      amount = everything ? await this.mf.publicClient.getBalance({ address: this.account, blockNumber: at }) : usdc6ToWei(resolveUsdc6(p));
+      const balance = await this.mf.publicClient.getBalance({ address: this.account, blockNumber: at });
+      amount = everything ? balance : usdc6ToWei(resolveUsdc6(p));
+      if (amount > balance) throw new InvalidInputError('usdc', `The account holds ${formatUsdc6(balance / SCALE)} USDC, less than the amount to sweep.`);
     } else {
       token = p.token!;
       await this.curveOf(token, at); // TokenNotRegistered: only Launch tokens can be swept
       const wanted = p.all === true ? 'all' : resolveTokenAmount(p);
-      amount = wanted === 'all' ? await this.balanceOf(token, at) : wanted;
+      const balance = await this.balanceOf(token, at);
+      amount = wanted === 'all' ? balance : wanted;
+      if (amount > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sweep.');
     }
     if (amount === 0n) throw new InvalidInputError('amount', 'Nothing to sweep.');
     return this.send(this.encode('sweepToOwner', [token, amount]), false, 'sweep');
@@ -379,7 +396,8 @@ export class AgentClient {
   /** The registry's authorize() preamble: active, unexpired, permitted, and an action left in the period. */
   protected checkAgent(agent: AgentInfo, permission: Permission, room: readonly [bigint, bigint, number, number], now: bigint): void {
     if (!agent.active) throw localRevert('NotAgent');
-    if (now >= BigInt(agent.expiresAt)) throw localRevert('AgentExpired');
+    // The transaction lands at least one block-time after `latest`, so a key expiring that soon cannot succeed.
+    if (now + 1n >= BigInt(agent.expiresAt)) throw localRevert('AgentExpired');
     if ((agent.permissionBits & PERMISSIONS[permission]) === 0) throw localRevert('MissingPermission');
     if (Number(room[2]) === 0) throw localRevert('ActionLimit');
   }
