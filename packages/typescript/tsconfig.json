@@ -13,7 +13,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "declaration": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": { "@mercurifi/sdk": ["./src/index.ts"] }
   },
   "include": ["src", "test", "examples"]
 }
