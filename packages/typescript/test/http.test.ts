@@ -121,6 +121,22 @@ describe('HttpApi hardening', () => {
     expect(Object.values(mf.settings)).not.toContain('mfk_test_clientsecret');
   });
 
+  it.each(['mfk_test_k\n', ' mfk_test_k', 'mfk_test_\r\nX-Evil: 1', 'mfk_test_\0k', 'mfk_test_é', '', '  '])('refuses a malformed key without echoing it: %j', async (bad) => {
+    expect(() => new HttpApi({ baseUrl: 'https://x.example', chainId: 1, apiKey: bad })).toThrow(InvalidInputError);
+    const err = await createClient({ network: 'testnet', apiKey: bad, transport: new MockRpc(5042002).transport() }).catch((e: unknown) => e) as Error;
+    expect(err).toBeInstanceOf(InvalidInputError);
+    expect(err.message).not.toMatch(/X-Evil|é/);
+  });
+
+  it('redacts the key from transport failures and asks for identity encoding', async () => {
+    const leaky = vi.fn(async () => { throw new Error(`Illegal header value ${KEY}`); });
+    const err = (await keyed(leaky as never).getAccount(ADDR).catch((e: unknown) => e)) as ApiError;
+    expect(err.message).not.toContain(KEY);
+    const f = fakeFetch(200, { account: ADDR });
+    await keyed(f).getAccount(ADDR);
+    expect((f.mock.calls[0]![1]!.headers as Record<string, string>)['Accept-Encoding']).toBe('identity');
+  });
+
   it('refuses redirects, so the key cannot follow one', async () => {
     const f = fakeFetch(200, {});
     await keyed(f).getAccount(ADDR).catch(() => undefined);

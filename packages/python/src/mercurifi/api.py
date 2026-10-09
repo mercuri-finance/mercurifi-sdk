@@ -32,6 +32,7 @@ _DECIMAL = re.compile(r"[0-9]{1,78}")
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _HEX = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
 _SELECTOR = re.compile(r"0x[0-9a-fA-F]{8}")
+_KEY = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _API_CODE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 _RETRY = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
@@ -135,8 +136,8 @@ class HttpApi:
         if not _is_int(chain_id) or chain_id < 1:
             raise InvalidInputError("chain_id", "chain_id must be a positive integer")
         self.chain_id = chain_id
-        if api_key is not None and (not isinstance(api_key, str) or api_key.strip(" \t\r\n") == ""):
-            raise InvalidInputError("api_key", "api_key is empty")
+        if api_key is not None and (not isinstance(api_key, str) or _KEY.fullmatch(api_key) is None):
+            raise InvalidInputError("api_key", "api_key is malformed: expected 1-256 letters, digits, '_' or '-' (check for a stray newline or space)")
         self._key = None if api_key is None else _Secret(api_key)
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout < math.inf:
             raise InvalidInputError("timeout", "timeout must be a positive number (seconds)")
@@ -154,7 +155,7 @@ class HttpApi:
         raise TypeError("HttpApi holds an API key and cannot be pickled")
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
-        h = {"Accept": "application/json"}
+        h = {"Accept": "application/json", "Accept-Encoding": "identity"}  # identity: the body cap then bounds memory
         if self._key is not None:
             h["X-Api-Key"] = self._key.reveal()
         h.update(extra or {})
@@ -184,7 +185,10 @@ class HttpApi:
         except (asyncio.TimeoutError, httpx.TimeoutException):
             failure = ("timeout", f"timed out after {self._timeout:g} s")
         except Exception as exc:  # transport and anything else: the text may embed the URL, so it is redacted, first line only
-            failure = ("network", f"{type(exc).__name__}: {first_line(str(exc))}")
+            text = str(exc)
+            if self._key is not None:
+                text = text.replace(self._key.reveal(), "[redacted]")
+            failure = ("network", f"{type(exc).__name__}: {first_line(text)}")
         # Raised outside the except block so the original exception (which embeds the URL) is not kept as context.
         if failure is not None:
             raise ApiError(0, failure[0], f"Request to {path} failed: {clean_text(failure[1])}", None)

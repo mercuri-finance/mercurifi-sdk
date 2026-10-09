@@ -27,7 +27,7 @@ _SELECTOR_LEN = 10
 
 
 def _is_int(v: object) -> TypeGuard[int]:
-    return isinstance(v, int) and not isinstance(v, bool)
+    return type(v) is int  # exactly int: not bool, and not a subclass that overrides comparison
 
 
 def _show(v: object) -> str:
@@ -43,10 +43,10 @@ def _same(got: object, want: object) -> bool:
     if isinstance(got, int):
         if _is_int(want):
             return got == want
-        if isinstance(want, str) and _DECIMAL.fullmatch(want):
+        if type(want) is str and _DECIMAL.fullmatch(want):
             return got == int(want)
         raise InvalidInputError("exact", "a numeric expectation must be an int or a decimal string")
-    if isinstance(got, str) and isinstance(want, str):
+    if type(got) is str and type(want) is str:
         if _HEX_ID.fullmatch(got) and _HEX_ID.fullmatch(want):
             return got.lower() == want.lower()
         return got == want
@@ -95,7 +95,14 @@ def snapshot_built(built: Mapping[str, Any]) -> dict[str, Any]:
     """The five fields verification and sending use, read once each, so the bytes verified are the bytes signed."""
     if not isinstance(built, Mapping):
         raise BuildMismatchError("the built transaction is not a mapping")
-    return {k: built[k] for k in ("chainId", "to", "data", "value", "selector") if k in built}
+    snap = {k: built[k] for k in ("chainId", "to", "data", "value", "selector") if k in built}
+    for k in ("to", "data", "value", "selector"):
+        # Exactly str: a subclass could answer differently each time it is read, compared or converted.
+        if k in snap and type(snap[k]) is not str:
+            raise BuildMismatchError(f"{k} is a {type(snap[k]).__name__}, not a string")
+    if "chainId" in snap and type(snap["chainId"]) is not int:
+        raise BuildMismatchError(f"chainId is a {type(snap['chainId']).__name__}, not an integer")
+    return snap
 
 
 def verify_built_tx(

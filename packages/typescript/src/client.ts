@@ -145,8 +145,8 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new InvalidInputError('rpcUrl', 'rpcUrl must start with http:// or https://');
   if (book.name === 'local' && !isLoopbackUrl(rpcUrl)) throw new NetworkMismatchError('a local address book needs a loopback RPC (127.0.0.1, localhost or [::1])');
-  if (options.apiKey !== undefined && options.apiKey.trim() === '') {
-    throw new InvalidInputError('apiKey', 'apiKey is empty; omit it for keyless use, or pass a key that starts with mfk_live_ or mfk_test_');
+  if (options.apiKey !== undefined && (typeof options.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(options.apiKey))) {
+    throw new InvalidInputError('apiKey', "apiKey is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key");
   }
   if (options.apiKey !== undefined && book.apiKeyPrefix !== null && !options.apiKey.startsWith(book.apiKeyPrefix)) {
     throw new NetworkMismatchError(`This API key belongs to the other network; ${book.name} keys start with ${book.apiKeyPrefix}`);

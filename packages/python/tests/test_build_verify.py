@@ -55,7 +55,7 @@ def test_flattens_the_launch_request_and_checks_its_deadline() -> None:
     (built(buy() + "deadbeef"), "trailing"),
     (built(AGENT_ACCOUNT.encode("withdraw", TOKEN, 1)), "not an agent trade function"),
     (built(AGENT_POLICY_REGISTRY.encode("setPolicy", ACCOUNT, DEFAULT_POLICY.to_abi())), "does not decode against AgentAccount"),
-    (built("0x12"), "not hex"), (built("nothex"), "not hex"), ({**built(), "data": 5}, "not hex"), (built(buy()[:-2]), "trailing"),
+    (built("0x12"), "not hex"), (built("nothex"), "not hex"), ({**built(), "data": 5}, "not a string"), (built(buy()[:-2]), "trailing"),
 ])
 def test_refuses(bad: dict[str, object], pattern: str) -> None:
     with pytest.raises(BuildMismatchError, match=pattern):
@@ -237,3 +237,44 @@ def test_error_text_sanitises_attacker_values() -> None:
     with pytest.raises(BuildMismatchError) as e:
         verify_built_tx(built(launch(1_000, metadataURI=evil)), **LAUNCH_EXP)
     assert "token=1" not in str(e.value) and len(str(e.value)) < 400
+
+
+def test_str_subclasses_in_the_built_tx_are_refused() -> None:
+    class Sneaky(str):
+        def __str__(self) -> str:
+            return CLAIM_OTHER
+
+        def lower(self) -> str:
+            return ACCOUNT.lower()
+
+    for field in ("to", "data", "value", "selector"):
+        base = built()
+        base[field] = Sneaky(str(base.get(field, "0")))
+        with pytest.raises(BuildMismatchError, match="not a string"):
+            verify(base)
+    with pytest.raises(BuildMismatchError, match="chainId is a bool"):
+        verify(built(chainId=True))
+    with pytest.raises(BuildMismatchError, match="chainId is a str"):
+        verify(built(chainId="5042002"))
+
+
+CLAIM_OTHER = AGENT_ACCOUNT.encode("claimFees")
+
+
+def test_int_subclasses_in_the_expectation_are_refused() -> None:
+    class Liar(int):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __lt__(self, other: object) -> bool:
+            return False
+
+        __gt__ = __lt__
+        __hash__ = int.__hash__
+
+    with pytest.raises(InvalidInputError):
+        verify(built(), exact={"token": TOKEN, "usdcIn": Liar(1)})
+    with pytest.raises(InvalidInputError):
+        verify(built(), at_least={"minTokensOut": Liar(0)})
+    with pytest.raises(InvalidInputError):
+        verify(built(), deadline=(Liar(0), Liar(10**12)))

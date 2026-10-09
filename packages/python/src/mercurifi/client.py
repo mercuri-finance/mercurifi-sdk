@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -168,8 +169,8 @@ async def create_client(
     if book.name == "local" and not is_loopback_url(url):
         raise NetworkMismatchError("a local address book needs a loopback RPC (127.0.0.1, localhost or ::1)")
     if api_key is not None:
-        if not isinstance(api_key, str) or api_key.strip(" \t\r\n") == "":
-            raise InvalidInputError("api_key", "api_key is empty; omit it for keyless use, or pass a key that starts with mfk_live_ or mfk_test_")
+        if not isinstance(api_key, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,256}", api_key) is None:
+            raise InvalidInputError("api_key", "api_key is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key")
         if book.api_key_prefix is not None and not api_key.startswith(book.api_key_prefix):
             raise NetworkMismatchError(f"This API key belongs to the other network; {book.name} keys start with {book.api_key_prefix}")
     if isinstance(deadline_seconds, bool) or not isinstance(deadline_seconds, int) or not (1 <= deadline_seconds <= MAX_DEADLINE_SECONDS):

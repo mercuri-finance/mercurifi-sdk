@@ -470,7 +470,7 @@ class AgentClient:
         verify_built_tx(snap, chain_id=self._mf.network.chain_id, account=self.account, function_name=function_name,
                         exact=expected, at_least=least_c, deadline=window)
         # A decoded buy cannot be proven to stay off the graduation path, so it always gets the graduation gas floor.
-        return await self._send(str(snap["data"]), function_name == "buy", function_name)
+        return await self._send(snap["data"], function_name == "buy", function_name)
 
     async def _gate(self, permission: str) -> Gate:
         """The registry's authorize() preamble against one pinned block: Paused first (the account owner's pause or the

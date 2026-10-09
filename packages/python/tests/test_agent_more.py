@@ -651,3 +651,14 @@ async def test_send_built_signs_the_bytes_it_verified() -> None:
     rpc, agent = await setup()
     await agent.send_built(Flip(tx(CLAIM)), function_name="claimFees")
     assert sent_call(rpc, AGENT_ACCOUNT)[0] == "claimFees"
+
+
+async def test_send_built_signs_the_exact_str_it_verified_and_refuses_a_str_subclass() -> None:
+    class Sneaky(str):
+        def __str__(self) -> str:
+            return AGENT_ACCOUNT.encode("sweepToOwner", TOKEN, 1)
+
+    rpc, agent = await setup()
+    with pytest.raises(BuildMismatchError):
+        await agent.send_built(tx(Sneaky(CLAIM)), function_name="claimFees")
+    assert rpc.sent == []

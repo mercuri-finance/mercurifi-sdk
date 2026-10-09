@@ -69,7 +69,7 @@ export class HttpApi implements MercurifiApi {
     this.baseUrl = `${url.origin}${url.pathname}`.replace(/\/+$/, '');
     if (!Number.isInteger(o.chainId) || o.chainId < 1) throw new InvalidInputError('chainId', 'chainId must be a positive integer');
     this.chainId = o.chainId;
-    if (o.apiKey !== undefined && (typeof o.apiKey !== 'string' || o.apiKey.trim() === '')) throw new InvalidInputError('apiKey', 'apiKey is empty');
+    if (o.apiKey !== undefined && (typeof o.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(o.apiKey))) throw new InvalidInputError('apiKey', "apiKey is malformed: expected 1-256 letters, digits, '_' or '-' (check for a stray newline or space)");
     this.#apiKey = o.apiKey;
     this.#fetch = o.fetch ?? globalThis.fetch.bind(globalThis);
     const timeoutMs = o.timeoutMs ?? 15_000;
@@ -87,7 +87,7 @@ export class HttpApi implements MercurifiApi {
   }
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
-    return { Accept: 'application/json', ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }), ...extra };
+    return { Accept: 'application/json', 'Accept-Encoding': 'identity', ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }), ...extra };
   }
 
   private async readBody(response: Response, path: string): Promise<string> {
@@ -148,8 +148,9 @@ export class HttpApi implements MercurifiApi {
       return { body, headers: response.headers };
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
+      const keyless = (text: string): string => (this.#apiKey === undefined ? text : text.split(this.#apiKey).join('[redacted]'));
       const reason = timedOut ? `timed out after ${this.#timeoutMs} ms` : redactUrlsIn(String((error as { shortMessage?: string }).shortMessage ?? (error as Error)?.message ?? 'unknown error')).split('\n')[0];
-      throw new ApiError(0, timedOut ? 'timeout' : 'network', `Request to ${path} failed: ${cleanText(reason)}`, null);
+      throw new ApiError(0, timedOut ? 'timeout' : 'network', `Request to ${path} failed: ${cleanText(keyless(String(reason)))}`, null);
     } finally {
       clearTimeout(timer);
     }

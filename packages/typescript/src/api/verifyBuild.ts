@@ -76,7 +76,7 @@ export const verifyBuiltTx = (built: BuiltTx, expectation: BuildExpectation): { 
     throw new InvalidInputError('deadline', 'the deadline window needs bigint min <= max');
   }
   if (typeof built !== 'object' || built === null) throw new BuildMismatchError('the built transaction is not an object');
-  if (built.chainId !== e.chainId) throw new BuildMismatchError(`chain ${String(built.chainId)} is not ${e.chainId}`);
+  if (built.chainId !== e.chainId) throw new BuildMismatchError(typeof built.chainId === 'number' ? `chain ${built.chainId} is not ${e.chainId}` : `chainId is a ${typeof built.chainId}, not a number`);
   if (typeof built.to !== 'string' || !isAddress(built.to, { strict: false }) || built.to.toLowerCase() !== e.account.toLowerCase()) {
     throw new BuildMismatchError(`target is not your account ${e.account}`);
   }

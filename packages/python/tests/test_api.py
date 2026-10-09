@@ -313,3 +313,24 @@ async def test_logs_never_carry_the_key_path(caplog: pytest.LogCaptureFixture) -
     with caplog.at_level(logging.DEBUG):
         await keyed(transport(200, {"account": ADDR})).get_account(ADDR)
     assert KEY not in caplog.text
+
+
+@pytest.mark.parametrize("bad", ["mfk_test_k\n", " mfk_test_k", "mfk_test_\r\nX-Evil: 1", "mfk_test_\x00k", "mfk_test_é", "", "  ", "a" * 257])
+async def test_malformed_api_keys_are_refused_without_echo(bad: str) -> None:
+    with pytest.raises(InvalidInputError) as e:
+        HttpApi("https://x.example", 1, api_key=bad)
+    assert bad.strip() not in str(e.value) or bad.strip() == ""
+    with pytest.raises(InvalidInputError) as e2:
+        await create_client("testnet", api_key=bad, rpc_transport=MockRpc(5042002).transport())
+    assert "é" not in str(e2.value) and "X-Evil" not in str(e2.value)
+
+
+async def test_a_key_in_a_transport_failure_is_redacted_and_requests_ask_for_identity_encoding() -> None:
+    def leaky(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"Illegal header value b'{KEY}'")
+    with pytest.raises(ApiError) as e:
+        await keyed(httpx.MockTransport(leaky)).get_account(ADDR)
+    assert KEY not in str(e.value) and "[redacted]" in str(e.value)
+    seen: list[httpx.Request] = []
+    await keyed(transport(200, {"account": ADDR}, seen=seen)).get_account(ADDR)
+    assert seen[0].headers["Accept-Encoding"] == "identity"
