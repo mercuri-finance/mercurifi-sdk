@@ -48,7 +48,7 @@ describe('openStream', () => {
   it('waits Retry-After on 429 and fails fast on 400', async () => {
     const sleep = vi.fn(async () => undefined);
     const f = vi.fn().mockResolvedValueOnce(sse(429, [], { 'Retry-After': '5' })).mockResolvedValueOnce(sse(200, []));
-    await collect(openStream(REQ, { fetch: f, maxReconnects: 0, sleep }));
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 0, sleep, random: () => 0 }));
     expect(sleep).toHaveBeenCalledWith(5_000);
     await expect(collect(openStream(REQ, { fetch: vi.fn(async () => sse(400)), sleep }))).rejects.toThrow(StreamError);
   });
@@ -125,7 +125,7 @@ describe('openStream', () => {
   it('clamps a hostile retry hint and Retry-After', async () => {
     const sleep = vi.fn(async (_ms: number) => undefined);
     const f = vi.fn().mockResolvedValueOnce(sse(200, ['retry: 999999999\ndata: 1\n\n'])).mockResolvedValueOnce(sse(429, [], { 'Retry-After': '99999999' }));
-    await collect(openStream(REQ, { fetch: f, maxReconnects: 1, sleep }));
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 1, sleep, random: () => 0 }));
     expect(sleep.mock.calls.map((c: unknown[]) => c[0])).toEqual([30_000, 300_000]);
   });
 
@@ -179,6 +179,100 @@ describe('openStream', () => {
 
   it('rejects a malformed lastEventId', async () => {
     await expect(collect(openStream(REQ, { lastEventId: 'a b\nc', fetch: vi.fn() }))).rejects.toThrow(InvalidInputError);
+  });
+});
+
+describe('openStream reconnect storms and signals', () => {
+  const sleepLog = () => {
+    const waits: number[] = [];
+    return { waits, sleep: async (ms: number) => { waits.push(ms); } };
+  };
+
+  it('keeps backing off when every connection sends one event and closes (no reset on delivery)', async () => {
+    const { waits, sleep } = sleepLog();
+    const f = vi.fn(async () => sse(200, ['id: 1-0\nevent: t\ndata: 1\n\n']));
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 4, sleep, random: () => 1, minBackoffMs: 100, maxBackoffMs: 10_000 }));
+    expect(waits).toEqual([100, 200, 400, 800]);
+  });
+
+  it('keeps backing off across reset events', async () => {
+    const { waits, sleep } = sleepLog();
+    const f = vi.fn(async () => sse(200, ['event: reset\ndata: {}\n\n']));
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 3, sleep, random: () => 1, minBackoffMs: 100 }));
+    expect(waits).toEqual([100, 200, 400]);
+  });
+
+  it('starts the backoff over only after a connection lived the minimum lifetime', async () => {
+    const { waits, sleep } = sleepLog();
+    let clock = 0;
+    let n = 0;
+    const f = vi.fn(async () => {
+      n++;
+      if (n === 3) clock += 12_000; // the third connection lives 12 s
+      return sse(200, []);
+    });
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 4, sleep, random: () => 1, minBackoffMs: 100, now: () => clock }));
+    expect(waits).toEqual([100, 200, 100, 200]);
+  });
+
+  it('jitters server retry hints upwards and never undercuts the backoff after a short connection', async () => {
+    const { waits, sleep } = sleepLog();
+    const f = vi.fn(async () => sse(200, ['retry: 0\ndata: 1\n\n']));
+    await collect(openStream(REQ, { fetch: f, maxReconnects: 1, sleep, random: () => 0, minBackoffMs: 100, maxBackoffMs: 1_000 }));
+    expect(waits).toEqual([100]); // retry: 0 clamps to the minimum
+    const hi = sleepLog();
+    const g = vi.fn(async () => sse(200, ['retry: 2000\ndata: 1\n\n']));
+    await collect(openStream(REQ, { fetch: g, maxReconnects: 1, sleep: hi.sleep, random: () => 0.5, minBackoffMs: 100, maxBackoffMs: 1_000 }));
+    expect(hi.waits).toEqual([1_250]); // clamped to 1000, then x1.25
+  });
+
+  it('jitters Retry-After on a 429 so clients do not synchronise', async () => {
+    const a = sleepLog();
+    const b = sleepLog();
+    const mk = () => vi.fn(async () => sse(429, [], { 'Retry-After': '10' }));
+    await collect(openStream(REQ, { fetch: mk(), maxReconnects: 0, sleep: a.sleep, random: () => 0 }));
+    await collect(openStream(REQ, { fetch: mk(), maxReconnects: 0, sleep: b.sleep, random: () => 0.99 }));
+    expect(a.waits).toEqual([10_000]);
+    expect(b.waits[0]).toBeGreaterThan(14_000);
+    expect(b.waits[0]).toBeLessThanOrEqual(15_000);
+  });
+
+  it('strips a leading BOM and ignores an id containing NUL', async () => {
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('id: 1-0\nevent: t\ndata: 1\n\nid: 2\u00000\nevent: t\ndata: 2\n\n')]);
+    const f = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(bom); c.close(); } }), { status: 200 }));
+    expect(await collect(openStream(REQ, { fetch: f, maxReconnects: 0, sleep: nosleep }))).toEqual([{ id: '1-0', type: 't', data: 1 }]);
+  });
+
+  it('calls onReconnect with attempt, delay and a redacted reason, and survives a throwing observer', async () => {
+    const infos: { attempt: number; delayMs: number; reason: string }[] = [];
+    const req = { url: 'https://x.example/secret-path/v1/stream?k=SECRETQ', headers: { 'X-Api-Key': 'mfk_live_SECRET' } };
+    const f = vi.fn()
+      .mockRejectedValueOnce(new Error('connect ECONNREFUSED https://x.example/secret-path with mfk_live_SECRET'))
+      .mockResolvedValueOnce(sse(503))
+      .mockResolvedValueOnce(sse(200, []))
+      .mockResolvedValueOnce(sse(200, []));
+    await collect(openStream(req, {
+      fetch: f, maxReconnects: 3, sleep: nosleep, random: () => 1, minBackoffMs: 100,
+      onReconnect: (i) => { infos.push(i); throw new Error('observer bug'); },
+    }));
+    expect(infos).toEqual([
+      { attempt: 1, delayMs: 100, reason: 'network error' },
+      { attempt: 2, delayMs: 200, reason: 'HTTP 503' },
+      { attempt: 3, delayMs: 400, reason: 'stream ended' },
+    ]);
+    expect(JSON.stringify(infos)).not.toMatch(/SECRET|secret-path|x\.example/);
+  });
+
+  it('does not run the idle timer while the consumer is busy', async () => {
+    let n = 0;
+    const f = vi.fn(async () => { n++; return sse(200, ['id: 1-0\nevent: t\ndata: 1\n\nid: 2-0\nevent: t\ndata: 2\n\n']); });
+    const out: string[] = [];
+    for await (const ev of openStream(REQ, { fetch: f, idleTimeoutMs: 20, maxReconnects: 0, sleep: nosleep })) {
+      out.push(ev.id ?? '');
+      await new Promise((r) => setTimeout(r, 60)); // slower than the idle timeout
+    }
+    expect(out).toEqual(['1-0', '2-0']);
+    expect(n).toBe(1);
   });
 });
 

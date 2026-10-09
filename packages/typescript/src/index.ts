@@ -24,4 +24,4 @@ export { fillFromReceipt, type Fill, type ReceiptLike } from './fills.js';
 export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, mayGraduateBuy, PHASE, type LaunchConfigValue } from './curve.js';
 export { HttpApi, type HttpApiOptions } from './api/http.js';
 export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/verifyBuild.js';
-export { openStream, validateTopics, type StreamEvent, type StreamOptions } from './stream.js';
+export { openStream, validateTopics, type ReconnectInfo, type StreamEvent, type StreamOptions } from './stream.js';
