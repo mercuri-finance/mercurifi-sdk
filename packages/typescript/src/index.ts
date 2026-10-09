@@ -7,3 +7,4 @@ export * from './networks.js';
 export { verifyNetwork } from './verify.js';
 export * from './api/types.js';
 export { createClient, redactUrl, redactUrlsIn, MercurifiClient, type CreateClientOptions, type ClientSettings } from './client.js';
+export { decodeRevert, extractRevertData, ERROR_MESSAGES, ContractRevertError, TxRevertedError, localRevert, type DecodedRevert } from './revert.js';
