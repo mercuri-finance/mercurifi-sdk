@@ -1,6 +1,7 @@
 // Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
 // OWNER_KEY=0x… node --experimental-strip-types examples/quickstart-testnet.ts <launch token>   (after `npm run build`, Node 22+)
-// Fund the owner wallet with testnet USDC at https://faucet.circle.com (Arc testnet) first.
+// Runs once a testnet deployment is recorded; then fund the owner wallet with testnet USDC at https://faucet.circle.com (Arc testnet).
+// No Agent Accounts deployment exists on any public network yet, so until then agent calls throw NotDeployedError.
 import type { Address } from 'viem';
 import { createClient, generateAgentKey, localKey } from '@mercurifi/sdk';
 

@@ -50,7 +50,7 @@ async def main() -> None:
                 name, args = call["name"], call.get("input", {})
                 if not isinstance(name, str) or not isinstance(args, dict):
                     raise ValueError
-            except (ValueError, KeyError, TypeError, AttributeError):
+            except (ValueError, KeyError, TypeError):
                 print(json.dumps({"code": "BAD_INPUT"}), flush=True)
                 continue
             print(json.dumps(await handle(mf, agent, name, args)), flush=True)

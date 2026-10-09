@@ -58,3 +58,10 @@ describe('the security model matches the contracts as built', () => {
     expect(readme).toContain('pool_trade');
   });
 });
+
+describe('no stale "testnet only" claims', () => {
+  const files = ['../../../README.md', '../README.md', '../../../docs/security-model.md', '../../../docs/releasing.md', '../../python/README.md',
+    '../examples/quickstart-testnet.ts', '../examples/market-maker.ts', '../examples/launch-bot.ts', '../examples/llm-tools.ts',
+    '../../python/examples/quickstart_testnet.py', '../../python/examples/market_maker.py', '../../python/examples/launch_bot.py', '../../python/examples/llm_tools.py'];
+  it.each(files)('%s', (p) => expect(read(p)).not.toMatch(/Testnet only|[Uu]se ['"`]{1,2}testnet['"`]{1,2}/));
+});

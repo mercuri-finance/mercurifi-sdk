@@ -38,7 +38,7 @@ Narrowing a policy takes effect at once. Widening one (more cap, a new agent, a 
 - Generate agent keys on your own server with `generateAgentKey()` (TypeScript) or `generate_agent_key()` (Python).
 - The SDK never transmits, logs or stores a private key; use one key per process.
 - Never put the owner key on a trading server.
-- API keys (`mfk_live_...`, `mfk_test_...`): A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours.
+- API keys (`mfk_live_...`, `mfk_test_...`) set a rate tier, attribution and route scopes (read, stream, build, upload), and never authorise funds. Uploads need the key owner's agent account to be older than 24 hours.
 
 See "Handling agent keys" in each package README for the language-specific rules.
 
@@ -53,7 +53,7 @@ Token names, symbols, descriptions and links are written by whoever launched the
 
 ## RPC URLs and API keys
 
-RPC provider URLs usually carry a key in the path. The SDK shows only the host in its errors, and the Python SDK installs a redacting filter on the `httpx` and `httpcore` loggers. API keys are held privately by the HTTP client and are never part of an error, a log line or a serialised object. A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public hostname like any other client.
+RPC provider URLs usually carry a key in the path. The SDK shows only the host in its errors, and the Python SDK installs a redacting filter on the `httpx` and `httpcore` loggers. API keys are held privately by the HTTP client and are never part of an error, a log line or a serialised object. A key sets a rate tier, attribution and route scopes (read, stream, build, upload), and never authorise funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public hostname like any other client.
 
 ## The API
 

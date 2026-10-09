@@ -43,3 +43,14 @@ def test_readme_quickstart_is_the_example() -> None:
     example = (PKG / "examples" / "quickstart_testnet.py").read_text()
     body = example[example.index("import asyncio"):].strip()
     assert body in readme
+
+
+def test_no_stale_testnet_only_claims() -> None:
+    import re
+
+    root = PKG.parents[1]
+    files = [root / "README.md", *(root / "docs").glob("*.md"), *PKG.glob("README.md"), *(PKG.parent / "typescript").glob("README.md"),
+             *(PKG / "examples").glob("*.py"), *(PKG.parent / "typescript" / "examples").glob("*.ts")]
+    assert len(files) >= 12
+    for f in files:
+        assert not re.search(r"Testnet only|[Uu]se ['\"`]{1,2}testnet['\"`]{1,2}", f.read_text()), f
