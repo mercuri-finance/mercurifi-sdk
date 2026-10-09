@@ -30,4 +30,4 @@ addopts = "-m 'not integration'"
 
 [tool.mypy]
 strict = true
-files = ["src/mercurifi"]
+files = ["src/mercurifi", "tests"]

@@ -156,7 +156,7 @@ class Contract:
         if not matches and items:
             raise AbiEncodeError(f"{self.name}.{fn} takes {len(items[0].get('inputs', []))} argument(s), not {arity}")
         if not matches:
-            raise KeyError(f"{self.name} has no function {fn}")
+            raise AbiUnknownSelectorError(f"{self.name} has no function {fn}")
         if len(matches) > 1:
             raise AbiEncodeError(f"{self.name}.{fn} is overloaded; pass the arity")
         return matches[0]

@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from eth_utils import keccak, to_checksum_address
+from eth_utils.address import to_checksum_address
+from eth_utils.crypto import keccak
 
 from mercurifi.abi import REVERT_DECODER, REVERT_ORDER, UNIVERSAL_ROUTER, V4_QUOTER, ALL, AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, LAUNCH_FACTORY
 from mercurifi.codec import AbiDecodeError, AbiEncodeError, AbiUnknownSelectorError, Contract, ErrorDecoder
@@ -32,7 +33,7 @@ def test_round_trips_registry_calls_with_structs() -> None:
     assert name == "setPolicy"
     assert args["account"] == ACCOUNT
     assert list(args.values())[1] == DEFAULT_POLICY.to_abi()
-    with pytest.raises(KeyError):
+    with pytest.raises(AbiUnknownSelectorError):
         AGENT_ACCOUNT.function("setPolicy")
 
 
@@ -226,28 +227,38 @@ VECTORS = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vector
 BY_FILE = {c.name[0].lower() + c.name[1:]: c for c in ALL}
 
 
-def _revive(x: Any) -> Any:
-    if isinstance(x, str) and x.lstrip("-").isdigit():
+def _revive(param: dict[str, Any], x: Any) -> Any:
+    """Integers travel as decimal strings in the vectors; revive by ABI type, never by how the text looks."""
+    t: str = param["type"]
+    if t.endswith("]"):
+        return [_revive({**param, "type": t[: t.rindex("[")]}, i) for i in x]
+    if t == "tuple":
+        if isinstance(x, dict):
+            return {c["name"]: _revive(c, x[c["name"]]) for c in param["components"]}
+        return [_revive(c, i) for c, i in zip(param["components"], x)]
+    if t.startswith(("uint", "int")):
         return int(x)
-    if isinstance(x, list):
-        return [_revive(i) for i in x]
-    if isinstance(x, dict):
-        return {k: _revive(v) for k, v in x.items()}
     return x
+
+
+def _revive_all(params: list[dict[str, Any]], xs: list[Any]) -> list[Any]:
+    return [_revive(p, x) for p, x in zip(params, xs)]
 
 
 @pytest.mark.parametrize("vec", VECTORS["calls"], ids=lambda v: v["fn"])
 def test_call_vectors_match_typescript(vec: dict[str, Any]) -> None:
     c = BY_FILE[vec["contract"]]
-    assert c.encode(vec["fn"], *_revive(vec["args"])) == vec["data"]
+    args_in = _revive_all(c.function(vec["fn"], len(vec["args"]))["inputs"], vec["args"])
+    assert c.encode(vec["fn"], *args_in) == vec["data"]
     name, args = c.decode_input(vec["data"])
-    assert name == vec["fn"] and list(args.values()) == _revive(vec["args"])
+    assert name == vec["fn"] and list(args.values()) == args_in
 
 
 @pytest.mark.parametrize("vec", VECTORS["logs"], ids=lambda v: v["event"])
 def test_log_vectors_match_typescript(vec: dict[str, Any]) -> None:
     c = BY_FILE[vec["contract"]]
-    values = _revive(vec["values"])
+    inputs = {p["name"]: p for p in c._events_by_name[vec["event"]]["inputs"]}
+    values = {k: _revive(inputs[k], v) for k, v in vec["values"].items()}
     assert c.encode_log(vec["event"], values) == (vec["topics"], vec["data"])
     decoded = c.decode_log(vec["topics"], vec["data"])
     assert decoded is not None and decoded[0] == vec["event"]

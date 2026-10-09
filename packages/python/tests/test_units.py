@@ -1,6 +1,7 @@
 import json
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,7 +15,7 @@ V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "
 
 
 @pytest.mark.parametrize("case", V["parseUsdc"])
-def test_parse_usdc(case: dict) -> None:
+def test_parse_usdc(case: dict[str, Any]) -> None:
     if "error" in case:
         with pytest.raises(InvalidInputError) as e:
             parse_usdc(case["in"])
@@ -24,17 +25,17 @@ def test_parse_usdc(case: dict) -> None:
 
 
 @pytest.mark.parametrize("case", V["parseTokens"])
-def test_parse_tokens(case: dict) -> None:
+def test_parse_tokens(case: dict[str, Any]) -> None:
     assert parse_tokens(case["in"]) == int(case["out"])
 
 
 @pytest.mark.parametrize("case", V["formatUsdc6"])
-def test_format_usdc6(case: dict) -> None:
+def test_format_usdc6(case: dict[str, Any]) -> None:
     assert format_usdc6(int(case["in"])) == case["out"]
 
 
 @pytest.mark.parametrize("case", V["slippageToBps"])
-def test_slippage(case: dict) -> None:
+def test_slippage(case: dict[str, Any]) -> None:
     if "error" in case:
         with pytest.raises(InvalidInputError):
             slippage_to_bps(case["in"])
@@ -43,7 +44,7 @@ def test_slippage(case: dict) -> None:
 
 
 @pytest.mark.parametrize("case", V["applySlippageFloor"])
-def test_floor(case: dict) -> None:
+def test_floor(case: dict[str, Any]) -> None:
     if "error" in case:
         with pytest.raises(InvalidInputError):
             apply_slippage_floor(int(case["amount"]), case["bps"])
@@ -52,15 +53,16 @@ def test_floor(case: dict) -> None:
 
 
 @pytest.mark.parametrize("case", V["weiToUsdc6"])
-def test_rounding(case: dict) -> None:
+def test_rounding(case: dict[str, Any]) -> None:
     assert wei_to_usdc6_floor(int(case["wei"])) == int(case["floor"])
     assert wei_to_usdc6_ceil(int(case["wei"])) == int(case["ceil"])
 
 
 def test_rejects_int_and_float() -> None:  # Review Focus 1
-    for bad in (25, 25.0, True):
+    bad_human: tuple[Any, ...] = (25, 25.0, True)
+    for bad in bad_human:
         with pytest.raises(InvalidInputError, match="usdc6"):
-            resolve_usdc6(bad, None)  # type: ignore[arg-type]
+            resolve_usdc6(bad, None)
     with pytest.raises(InvalidInputError, match="usdc6 must be an int"):
         resolve_usdc6(None, 25.0)  # type: ignore[arg-type]
 
@@ -97,9 +99,10 @@ def test_slippage_edges() -> None:
     for bad in (True, float("nan"), float("inf"), None, "0.01"):
         with pytest.raises(InvalidInputError):
             slippage_to_bps(bad)
-    for bad_bps in (-1, 10_001, True, 1.0):
+    bad_bps_values: tuple[Any, ...] = (-1, 10_001, True, 1.0)
+    for bad_bps in bad_bps_values:
         with pytest.raises(InvalidInputError):
-            apply_slippage_floor(1000, bad_bps)  # type: ignore[arg-type]
+            apply_slippage_floor(1000, bad_bps)
 
 
 def test_decimal_and_all() -> None:
@@ -109,7 +112,7 @@ def test_decimal_and_all() -> None:
     with pytest.raises(InvalidInputError):
         resolve_usdc6(Decimal("-1"), None)
     with pytest.raises(InvalidInputError):
-        resolve_token_amount(None, True)  # type: ignore[arg-type]
+        resolve_token_amount(None, True)
     with pytest.raises(InvalidInputError):
         resolve_token_amount(None, None)
 
@@ -142,6 +145,7 @@ def test_whitespace_is_ascii_only() -> None:
 
 
 def test_floor_amount_type() -> None:
-    for bad in (True, 1.0, "1", -1, None):
+    bad_amounts: tuple[Any, ...] = (True, 1.0, "1", -1, None)
+    for bad in bad_amounts:
         with pytest.raises(InvalidInputError):
-            apply_slippage_floor(bad, 0)  # type: ignore[arg-type]
+            apply_slippage_floor(bad, 0)

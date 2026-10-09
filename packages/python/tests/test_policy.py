@@ -1,6 +1,7 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -24,11 +25,13 @@ def test_defaults_match_spec() -> None:
 
 
 @pytest.mark.parametrize("case", V["direction"])
-def test_direction(case: dict) -> None:
+def test_direction(case: dict[str, Any]) -> None:
     field = SNAKE[case["field"]]
     conv = (lambda x: int(x)) if isinstance(getattr(DEFAULT_POLICY, field), int) and not isinstance(getattr(DEFAULT_POLICY, field), bool) else (lambda x: x)
-    current = replace(DEFAULT_POLICY, **{field: conv(case["current"])})
-    nxt = replace(DEFAULT_POLICY, **{field: conv(case["next"])})
+    patch_current: dict[str, Any] = {field: conv(case["current"])}
+    patch_next: dict[str, Any] = {field: conv(case["next"])}
+    current = replace(DEFAULT_POLICY, **patch_current)
+    nxt = replace(DEFAULT_POLICY, **patch_next)
     assert field_direction(field, current, nxt) == case["out"]
 
 
@@ -104,7 +107,7 @@ def test_encode_rejects_unknown(bad: object) -> None:
 
 
 @pytest.mark.parametrize("case", V["permissionsDecode"])
-def test_decode_vectors(case: dict) -> None:
+def test_decode_vectors(case: dict[str, Any]) -> None:
     if "error" in case:
         with pytest.raises(InvalidInputError):
             decode_permissions(case["in"])
