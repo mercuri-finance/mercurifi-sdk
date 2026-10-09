@@ -1,7 +1,12 @@
 name: release-pypi
 
-# Inert until the owner creates the repository, the PyPI pending publisher and the pypi-release environment with required
-# reviewers. Manual dispatch only; the environment gate is the owner's approval for this specific publish.
+# Inert until the owner creates the repository, the pypi-release environment (with required reviewers, before the first
+# dispatch) and the PyPI pending publisher bound to this workflow and that environment. Manual dispatch only.
+#
+# Two jobs: "build" holds no OIDC token and no environment; it runs every check and the tests, builds with hashed build
+# constraints, smoke-tests the exact wheel and sdist it uploads, and writes the SBOM. "publish" holds the OIDC token
+# behind the environment's approval and runs nothing but the download of those files and the pinned publish action
+# (scripts/check-workflows.mjs enforces this).
 on:
   workflow_dispatch:
 
@@ -9,19 +14,17 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance'
+  build:
+    name: Build, test and smoke-test the dist
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: pypi-release
     permissions:
       contents: read
-      id-token: write # OIDC token for trusted publishing and provenance; this job only
     defaults:
       run:
         working-directory: packages/python
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Install the pinned CI tools (hashed)
@@ -31,15 +34,40 @@ jobs:
           echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"
       - run: uv sync --frozen
       - run: uv run python scripts/check_pyproject.py && uv run ruff check . && uv run mypy && uv run pytest -q
-      - run: uv build
-      - run: uv run python scripts/smoke_wheel.py
+      - run: uv build --build-constraints build-constraints.txt --require-hashes --out-dir dist
+      # The exact files uploaded below: wheel content gate, sdist rebuild comparison, install and import.
+      - run: python3 scripts/smoke_wheel.py dist/mercurifi-*.whl --sdist dist/mercurifi-*.tar.gz
+        env:
+          MERCURIFI_SMOKE_ONLINE: '1'
       - run: uv export --frozen --no-dev --no-emit-project --format requirements-txt -o requirements.lock.txt && cyclonedx-py requirements requirements.lock.txt -o sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pypi-dist
+          path: packages/python/dist/
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pypi-sbom
           path: packages/python/sbom.cdx.json
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance' && github.triggering_actor == 'mercurifinance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi-release
+    permissions:
+      id-token: write # OIDC token for trusted publishing and attestations; this job only
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pypi-dist
+          path: dist
       # PyPI Trusted Publishing: no API token is stored; attestations are published with the files.
       - uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1.12.4
         with:
-          packages-dir: packages/python/dist
+          packages-dir: dist/
           attestations: true

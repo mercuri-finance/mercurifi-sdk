@@ -1,7 +1,11 @@
 name: release-npm
 
-# Inert until the owner creates the repository, the npm trusted publisher and the npm-release environment with required
-# reviewers. Manual dispatch only; the environment gate is the owner's approval for this specific publish.
+# Inert until the owner creates the repository, the npm-release environment (with required reviewers, before the first
+# dispatch) and the npm trusted publisher bound to this workflow and that environment. Manual dispatch only.
+#
+# Two jobs: "build" holds no OIDC token and no environment; it runs every check, the tests and the smoke tests, then
+# packs the exact tarball. "publish" holds the OIDC token behind the environment's approval and runs nothing but the
+# download of that tarball and npm publish (scripts/check-workflows.mjs enforces this).
 on:
   workflow_dispatch:
 
@@ -9,25 +13,23 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance'
+  build:
+    name: Build, test and pack
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: npm-release
     permissions:
       contents: read
-      id-token: write # OIDC token for trusted publishing and provenance; this job only
     defaults:
       run:
         working-directory: packages/typescript
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      # No dependency cache in a release workflow (cache poisoning).
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
+          node-version-file: .nvmrc
       - name: Install the pinned CI tools (hashed)
         run: |
           python3 -m venv "$RUNNER_TEMP/ci"
@@ -36,11 +38,43 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm audit signatures
       - run: npm audit --omit=dev --audit-level=high
-      - run: npm run check:package && npm run typecheck && npm test && npm run build && npm run smoke:dist
+      - run: npm run check:package && npm run typecheck && npm test && npm run build
+      - run: npm run smoke:dist
+        env:
+          MERCURIFI_SMOKE_ONLINE: '1'
       - run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cdx.json
+      # The tarball the publish job uploads byte for byte (.npmrc sets ignore-scripts, and the package has no pack scripts).
+      - run: mkdir -p "$RUNNER_TEMP/pkg" && npm pack --pack-destination "$RUNNER_TEMP/pkg"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/pkg/*.tgz
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: npm-sbom
           path: packages/typescript/sbom.cdx.json
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    needs: build
+    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance' && github.triggering_actor == 'mercurifinance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-release
+    permissions:
+      id-token: write # OIDC token for trusted publishing and provenance; this job only
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: npm-package
+          path: pkg
+      # Node 24 ships npm >= 11.5.1, which trusted publishing needs. No cache.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
       # Trusted publishing: the OIDC token is minted for this job only; no long-lived npm token is stored.
-      - run: npm publish --provenance --access public
+      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts

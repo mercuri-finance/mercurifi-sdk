@@ -15,18 +15,25 @@ concurrency:
 
 jobs:
   typescript:
+    name: TypeScript (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is .nvmrc (the development version; a test keeps them equal). 24 is the release publish job's version
+        # (npm >= 11.5.1 for trusted publishing), so the suite is proven on both.
+        node: ['22', '24']
     defaults:
       run:
         working-directory: packages/typescript
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: packages/typescript/package-lock.json
       - name: Install the pinned CI tools (hashed)
@@ -44,17 +51,21 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      # ESM and CJS imports in fresh processes, then the built Python wheel in an isolated venv.
+      # ESM and CJS imports in fresh processes, then the built Python wheel in an isolated venv. Online (hash-checked) on a
+      # fresh runner: CI=true selects it, and the explicit flag keeps it so if that default ever changes.
       - run: npm run smoke:dist
+        env:
+          MERCURIFI_SMOKE_ONLINE: '1'
 
   python:
+    name: Python
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
         working-directory: packages/python
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - name: Install the pinned CI tools (hashed)
@@ -69,13 +80,14 @@ jobs:
       - run: uv run pytest -q
 
   workflows:
+    name: Workflow audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: .nvmrc
       - name: Install the pinned CI tools (hashed)
