@@ -3,13 +3,13 @@ import { encodeFunctionData, isAddressEqual, zeroAddress, type Address, type Hex
 import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
 import { curveSellValue6, readBasis, recordedSellValue6 } from './basis.js';
 import type { MercurifiClient } from './client.js';
-import { buyImpactBps, isSellOutQuote, PHASE, sellImpactBps } from './curve.js';
+import { buyImpactBps, mayGraduateBuy, PHASE, sellImpactBps } from './curve.js';
 import { InvalidInputError } from './errors.js';
 import { fillFromReceipt, type Fill } from './fills.js';
 import type { AgentBook } from './networks.js';
 import { PERMISSIONS, type Permission } from './permissions.js';
 import type { ChainPolicy } from './policy.js';
-import { latestTimestamp, readAgent, readPolicy, readRegistry, type AgentInfo } from './reads.js';
+import { latestTimestamp, readAgent, readPaused, readPolicy, readRegistry, type AgentInfo } from './reads.js';
 import { localRevert } from './revert.js';
 import type { Signer } from './signers.js';
 import { chainDeadline } from './time.js';
@@ -64,11 +64,13 @@ export class AgentClient {
   async headroom(): Promise<Headroom> {
     const client = this.mf.publicClient;
     const registry = this.agents.registry;
+    // One block for all four reads, so the numbers describe the same moment.
+    const at = (await client.getBlock({ blockTag: 'latest' })).number;
     const [room, usage, policy, periodSeconds] = await Promise.all([
-      readRegistry<readonly [bigint, bigint, number, number]>(client, registry, 'headroom', [this.account]),
-      readRegistry<readonly [bigint, bigint, bigint, number, number]>(client, registry, 'usage', [this.account]),
-      this.policy(),
-      readRegistry<number>(client, registry, 'periodSeconds', [this.account]),
+      readRegistry<readonly [bigint, bigint, number, number]>(client, registry, 'headroom', [this.account], at),
+      readRegistry<readonly [bigint, bigint, bigint, number, number]>(client, registry, 'usage', [this.account], at),
+      this.policy(at),
+      readRegistry<number>(client, registry, 'periodSeconds', [this.account], at),
     ]);
     const [spend, sell, actions, launches] = room;
     const periodId = BigInt(usage[0]);
@@ -97,34 +99,32 @@ export class AgentClient {
     const usdc6 = resolveUsdc6(p);
     if (usdc6 === 0n) throw new InvalidInputError('usdc', 'The buy amount must be above zero.');
     const bps = this.bps(p.slippage);
-    const curve = await this.curveOf(p.token);
     const client = this.mf.publicClient;
-    const [policy, agent, room, tokenSpent, block, phase, launchBlock, snipe] = await Promise.all([
-      this.policy(),
-      this.status(),
-      readRegistry<readonly [bigint, bigint, number, number]>(client, this.agents.registry, 'headroom', [this.account]),
-      readRegistry<bigint>(client, this.agents.registry, 'tokenSpent', [this.account, p.token]),
-      client.getBlock({ blockTag: 'latest' }),
-      this.curveRead<number>(curve, 'phase'),
-      this.curveRead<bigint>(curve, 'launchBlock'),
-      this.curveRead<bigint>(curve, 'currentSnipeBps'),
+    // Everything below reads one block, in the account's order: pause and agent checks first, then the token.
+    const { at, block, policy, room } = await this.gate('buy');
+    const curve = await this.curveOf(p.token, at);
+    const [tokenSpent, phase, launchBlock, snipe] = await Promise.all([
+      readRegistry<bigint>(client, this.agents.registry, 'tokenSpent', [this.account, p.token], at),
+      this.curveRead<number>(curve, 'phase', undefined, at),
+      this.curveRead<bigint>(curve, 'launchBlock', undefined, at),
+      this.curveRead<bigint>(curve, 'currentSnipeBps', undefined, at),
     ]);
-    this.checkAgent(agent, 'buy', room, block.timestamp);
     if (Number(phase) !== PHASE.Trading) throw localRevert('NotTrading');
     if (policy.allowlistOnly) {
-      const allowed = await readRegistry<boolean>(client, this.agents.registry, 'tokenAllowed', [this.account, p.token]);
+      const allowed = await readRegistry<boolean>(client, this.agents.registry, 'tokenAllowed', [this.account, p.token], at);
       if (!allowed) throw localRevert('TokenNotAllowed');
     }
-    if (block.number - BigInt(launchBlock) < BigInt(policy.minTokenAgeBlocks)) throw localRevert('TokenTooNew');
+    // The transaction lands in a later block than `latest`, so its age is at least one block more.
+    if (block.number + 1n - BigInt(launchBlock) < BigInt(policy.minTokenAgeBlocks)) throw localRevert('TokenTooNew');
     if (BigInt(snipe) > BigInt(policy.maxSnipeBps)) throw localRevert('SnipeTaxTooHigh', [BigInt(snipe)]);
     if (usdc6 > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
     if (usdc6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
     const valueWei = usdc6ToWei(usdc6);
     const [sold, curveSupply, price, quote] = await Promise.all([
-      this.curveRead<bigint>(curve, 'sold'),
-      this.curveRead<bigint>(curve, 'curveSupply'),
-      this.curveRead<bigint>(curve, 'price'),
-      this.curveRead<readonly [bigint, bigint, bigint, bigint]>(curve, 'quoteBuy', [valueWei]),
+      this.curveRead<bigint>(curve, 'sold', undefined, at),
+      this.curveRead<bigint>(curve, 'curveSupply', undefined, at),
+      this.curveRead<bigint>(curve, 'price', undefined, at),
+      this.curveRead<readonly [bigint, bigint, bigint, bigint]>(curve, 'quoteBuy', [valueWei], at),
     ]);
     const [tokensOut, usdcUsed, fee, tax] = quote;
     if (tokensOut === 0n) throw localRevert('ZeroOutput');
@@ -136,7 +136,7 @@ export class AgentClient {
     const tokenLeft = policy.perTokenPeriodCap > BigInt(tokenSpent) ? policy.perTokenPeriodCap - BigInt(tokenSpent) : 0n;
     if (spend6 > tokenLeft) throw localRevert('TokenCapExceeded', [tokenLeft]);
     const minTokensOut = maxOf(maxOf(applySlippageFloor(tokensOut, bps), p.minTokensOut ?? 0n), 1n);
-    const mayGraduate = isSellOutQuote({ usdcIn: valueWei, usdcUsed, tokensOut, tokensRemaining: curveSupply - sold });
+    const mayGraduate = mayGraduateBuy({ usdcIn: valueWei, usdcUsed, tokensOut, tokensRemaining: curveSupply - sold });
     const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
     return this.send(this.encode('buy', [p.token, usdc6, minTokensOut, deadline]), mayGraduate, 'buy');
   }
@@ -149,38 +149,55 @@ export class AgentClient {
   async sell(p: SellParams): Promise<Fill> {
     const amount = resolveTokenAmount(p);
     const bps = this.bps(p.slippage);
-    const curve = await this.curveOf(p.token);
     const client = this.mf.publicClient;
-    const balance = await this.balanceOf(p.token);
+    const { at, policy, room } = await this.gate('sell');
+    const curve = await this.curveOf(p.token, at);
+    const balance = await this.balanceOf(p.token, at);
     const tokensIn = amount === 'all' ? balance : amount;
     if (tokensIn === 0n) throw new InvalidInputError('amount', amount === 'all' ? 'The account holds none of this token.' : 'The sell amount must be above zero.');
     if (tokensIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
-    const [policy, agent, room, block, phase, price, quote, basis] = await Promise.all([
-      this.policy(),
-      this.status(),
-      readRegistry<readonly [bigint, bigint, number, number]>(client, this.agents.registry, 'headroom', [this.account]),
-      client.getBlock({ blockTag: 'latest' }),
-      this.curveRead<number>(curve, 'phase'),
-      this.curveRead<bigint>(curve, 'price'),
-      this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn]),
-      readBasis(client, this.account, p.token),
+    const [phase, price, quote, basis] = await Promise.all([
+      this.curveRead<number>(curve, 'phase', undefined, at),
+      this.curveRead<bigint>(curve, 'price', undefined, at),
+      this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn], at),
+      readBasis(client, this.account, p.token, at),
     ]);
-    this.checkAgent(agent, 'sell', room, block.timestamp);
     if (Number(phase) === PHASE.Graduated) throw localRevert('NotTrading');
     if (p.minUsdcOut6 !== undefined && p.minUsdcOut6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
     const { recorded } = recordedSellValue6(basis, tokensIn);
-    const excessOutWei = tokensIn > recorded ? (await this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn - recorded]))[0] : 0n;
+    const excessOutWei = tokensIn > recorded ? (await this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn - recorded], at))[0] : 0n;
     const basisValue = curveSellValue6(basis, tokensIn, excessOutWei);
     if (basisValue > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
     const [out, fee] = quote;
     if (out === 0n) throw localRevert('ZeroOutput');
+    // The account takes the floor in usdc6; proceeds under one micro-USDC cannot carry a non-zero minimum.
+    if (out < SCALE) throw new InvalidInputError('amount', 'The sell proceeds are below 1 micro-USDC; sell a larger amount.');
     const impact = sellImpactBps(out + fee, tokensIn, price);
     if (impact > BigInt(policy.maxPriceImpactBps)) throw localRevert('PriceImpactTooHigh', [impact]);
     if (basisValue > BigInt(room[1])) throw localRevert('PeriodSellExceeded', [BigInt(room[1])]);
-    const minUsdcOut6 = maxOf(weiToUsdc6Floor(applySlippageFloor(out, bps)), p.minUsdcOut6 ?? 0n);
-    if (minUsdcOut6 === 0n) throw localRevert('ZeroMinOut');
+    // out >= 1e12 here, so a slippage floor that rounds to zero is raised to the smallest valid minimum.
+    const minUsdcOut6 = maxOf(maxOf(weiToUsdc6Floor(applySlippageFloor(out, bps)), 1n), p.minUsdcOut6 ?? 0n);
     const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
     return this.send(this.encode('sell', [p.token, tokensIn, minUsdcOut6, deadline]), false, 'sell');
+  }
+
+  /**
+   * The registry's authorize() preamble against one pinned block: Paused first (the account owner's pause or the platform
+   * pause), then the agent, then the policy and headroom. Every later read of the same action uses `at`.
+   */
+  protected async gate(permission: Permission): Promise<{ at: bigint; block: { number: bigint; timestamp: bigint }; policy: ChainPolicy; room: readonly [bigint, bigint, number, number] }> {
+    const client = this.mf.publicClient;
+    const block = await client.getBlock({ blockTag: 'latest' });
+    const at = block.number;
+    const [paused, agent, policy, room] = await Promise.all([
+      readPaused(client, this.agents, this.account, at),
+      readAgent(client, this.agents, this.account, this.signer.address, block.timestamp, at),
+      this.policy(at),
+      readRegistry<readonly [bigint, bigint, number, number]>(client, this.agents.registry, 'headroom', [this.account], at),
+    ]);
+    if (paused) throw localRevert('Paused');
+    this.checkAgent(agent, permission, room, block.timestamp);
+    return { at, block, policy, room };
   }
 
   /** The registry's authorize() preamble: active, unexpired, permitted, and an action left in the period. */
@@ -204,24 +221,26 @@ export class AgentClient {
     return slippage === undefined ? this.slippageBps : slippageToBps(slippage);
   }
 
-  protected async curveOf(token: Address): Promise<Address> {
+  protected async curveOf(token: Address, at?: bigint): Promise<Address> {
     const curve = (await this.mf.publicClient.readContract({
-      address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'curveOf', args: [token],
+      address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'curveOf', args: [token], ...(at === undefined ? {} : { blockNumber: at }),
     } as never)) as Address;
     if (isAddressEqual(curve, zeroAddress)) throw localRevert('TokenNotRegistered');
     return curve;
   }
 
-  protected curveRead<T>(curve: Address, functionName: string, args?: readonly unknown[]): Promise<T> {
-    return this.mf.publicClient.readContract({ address: curve, abi: bondingCurveAbi, functionName, args } as never) as Promise<T>;
+  protected curveRead<T>(curve: Address, functionName: string, args?: readonly unknown[], at?: bigint): Promise<T> {
+    return this.mf.publicClient.readContract({ address: curve, abi: bondingCurveAbi, functionName, args, ...(at === undefined ? {} : { blockNumber: at }) } as never) as Promise<T>;
   }
 
   /** The account's policy, from the registry. */
-  protected policy(): Promise<ChainPolicy> {
-    return readPolicy(this.mf.publicClient, this.agents, this.account);
+  protected policy(at?: bigint): Promise<ChainPolicy> {
+    return readPolicy(this.mf.publicClient, this.agents, this.account, at);
   }
 
-  protected balanceOf(token: Address): Promise<bigint> {
-    return this.mf.publicClient.readContract({ address: token, abi: launchTokenAbi, functionName: 'balanceOf', args: [this.account] } as never) as Promise<bigint>;
+  protected balanceOf(token: Address, at?: bigint): Promise<bigint> {
+    return this.mf.publicClient.readContract({
+      address: token, abi: launchTokenAbi, functionName: 'balanceOf', args: [this.account], ...(at === undefined ? {} : { blockNumber: at }),
+    } as never) as Promise<bigint>;
   }
 }

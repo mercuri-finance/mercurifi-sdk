@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { buyImpactBps, isSellOutQuote, sellImpactBps, quoteFreshBuy, type LaunchConfigValue } from '../src/curve.js';
+import { buyImpactBps, isSellOutQuote, mayGraduateBuy, sellImpactBps, quoteFreshBuy, type LaunchConfigValue } from '../src/curve.js';
 
 const v = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/curve.json', import.meta.url), 'utf8'));
 const c = v.config;
@@ -26,5 +26,16 @@ describe('curve maths', () => {
     expect(sellImpactBps(10n * 10n ** 18n, 5n * 10n ** 18n, 2n * 10n ** 18n)).toBe(0n);
     // ceil: a 1 wei shortfall still costs one basis point
     expect(sellImpactBps(10n * 10n ** 18n - 1n, 5n * 10n ** 18n, 2n * 10n ** 18n)).toBe(1n);
+  });
+});
+
+describe('mayGraduateBuy', () => {
+  const base = { usdcIn: 100n, usdcUsed: 100n, tokensOut: 10n, tokensRemaining: 100n };
+  it('adds the half-of-remaining rule to the exact sell-out test', () => {
+    expect(mayGraduateBuy(base)).toBe(false);
+    expect(mayGraduateBuy({ ...base, tokensOut: 49n })).toBe(false);
+    expect(mayGraduateBuy({ ...base, tokensOut: 50n })).toBe(true);
+    expect(mayGraduateBuy({ ...base, tokensOut: 100n })).toBe(true);
+    expect(mayGraduateBuy({ ...base, usdcUsed: 99n })).toBe(true);
   });
 });

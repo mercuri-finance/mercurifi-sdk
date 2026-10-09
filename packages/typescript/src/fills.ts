@@ -49,11 +49,12 @@ export const fillFromReceipt = (receipt: ReceiptLike, account: Address, launchFa
   const created = parseEventLogs({
     abi: launchFactoryAbi, eventName: 'TokenCreated', logs: receipt.logs.filter((l) => isAddressEqual(l.address, launchFactory)),
   } as never) as unknown as { args: { token: Address; curve: Address } }[];
+  const action = ACTIONS[Number(a.action)];
+  if (action === undefined) throw new MercurifiError('UNKNOWN_ACTION', `${account} reported an unknown action code ${String(a.action)} in ${receipt.transactionHash}; this SDK version does not know it.`);
   const delta = BigInt(a.tokenDelta);
   const abs = delta < 0n ? -delta : delta;
   return {
-    action: ACTIONS[Number(a.action)] ?? 'buy',
-    account, agent: a.agent, token: a.token,
+    action, account, agent: a.agent, token: a.token,
     usdcSpent6: BigInt(a.usdcSpent), usdcReceived6: BigInt(a.usdcReceived), basisValue6: BigInt(a.basisValue),
     tokenDelta: delta, tokensOut: delta > 0n ? delta : 0n, tokensIn: delta < 0n ? -delta : 0n,
     usdcSpent: formatUsdc6(BigInt(a.usdcSpent)), usdcReceived: formatUsdc6(BigInt(a.usdcReceived)), tokens: formatTokens(abs),

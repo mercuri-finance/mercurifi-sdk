@@ -1,12 +1,12 @@
-import { decodeFunctionData, encodeFunctionData, parseTransaction } from 'viem';
+import { decodeFunctionData, encodeFunctionData, getAbiItem, parseTransaction, toFunctionSelector } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import { agentAccountAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
+import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 import { InvalidInputError } from '../src/errors.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
-import { agentActionLog, mockAccount, mockCurve, type AccountMockOptions, type CurveMockOptions } from './helpers/account.js';
+import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, type AccountMockOptions, type CurveMockOptions } from './helpers/account.js';
 import { A, ACCOUNT, AGENT_KEY, localClient, localRpc, REGISTRY, TOKEN } from './helpers/local.js';
 
 const signer = localKey(AGENT_KEY);
@@ -194,5 +194,77 @@ describe('AgentClient preflight mirrors the account', () => {
     const { rpc, agent } = await setup();
     rpc.receiptLogs = [];
     await expect(agent.buy({ token: TOKEN, usdc: '1' })).rejects.toMatchObject({ code: 'FILL_NOT_FOUND' });
+  });
+
+  it('checks Paused first: the owner pause or the platform pause, before the agent and the token', async () => {
+    const owner = await setup({}, { agentActive: false });
+    owner.rpc.read(REGISTRY, agentPolicyRegistryAbi, 'ownerPaused', true);
+    await refused(owner.agent.buy({ token: TOKEN, usdc: '1' }), 'Paused');
+    const platform = await setup({ phase: 2 });
+    platform.rpc.read(FACTORY, agentAccountFactoryAbi, 'isPaused', true);
+    await refused(platform.agent.buy({ token: A(0xdd), usdc: '1' }), 'Paused');
+    await refused(platform.agent.sell({ token: TOKEN, amount: 'all' }), 'Paused');
+    expect(owner.rpc.sent.length + platform.rpc.sent.length).toBe(0);
+  });
+
+  it('flags a buy that may complete the curve when it takes half or more of what is left', async () => {
+    // remaining = 800M - 100M = 700M; half = 350M
+    const half = await setup({ tokensOut: 350_000_000n * WAD });
+    await half.agent.buy({ token: TOKEN, usdc: '25' });
+    expect(sent(half.rpc).gas).toBe(1_800_000n);
+    const under = await setup({ tokensOut: 349_999_999n * WAD });
+    await under.agent.buy({ token: TOKEN, usdc: '25' });
+    expect(sent(under.rpc).gas).toBe(180_000n);
+  });
+
+  it('compares the token age against the block the transaction will land in (latest + 1)', async () => {
+    // latest 1000, launchBlock 100: age 900 now, 901 when included.
+    const ok = await setup({}, { policy: { ...DEFAULT_POLICY, minTokenAgeBlocks: 901 } });
+    await ok.agent.buy({ token: TOKEN, usdc: '1' });
+    expect(ok.rpc.sent).toHaveLength(1);
+    await refused((await setup({}, { policy: { ...DEFAULT_POLICY, minTokenAgeBlocks: 902 } })).agent.buy({ token: TOKEN, usdc: '1' }), 'TokenTooNew');
+  });
+
+  it('sells dust with a minimum of one micro-USDC, and refuses proceeds below it', async () => {
+    const dust = await setup({ balance: 5n * WAD, usdcOut: 1_500_000_000_000n });
+    await dust.agent.sell({ token: TOKEN, amount: 'all', slippage: 0.49 });
+    expect(sent(dust.rpc).args![2]).toBe(1n);
+    const below = await setup({ balance: 5n * WAD, usdcOut: 999_999_999_999n });
+    await expect(below.agent.sell({ token: TOKEN, amount: 'all' })).rejects.toThrow(/below 1 micro-USDC/);
+    expect(below.rpc.sent).toHaveLength(0);
+  });
+
+  it('reads the agent preflight and headroom from one block', async () => {
+    // The sender's own simulation of the trade is a separate, deliberate "latest" call.
+    const trade = new Set([toFunctionSelector(getAbiItem({ abi: agentAccountAbi, name: 'buy' }) as never), toFunctionSelector(getAbiItem({ abi: agentAccountAbi, name: 'sell' }) as never)]);
+    const pinned = (calls: unknown[][]) => calls.filter((c) => !trade.has((c[0] as { data: string }).data.slice(0, 10) as `0x${string}`)).map((c) => c[1]);
+    const { rpc, agent } = await setup({ balance: 5n * WAD });
+    for (const run of [() => agent.buy({ token: TOKEN, usdc: '1' }), () => agent.sell({ token: TOKEN, amount: 'all' })]) {
+      const from = rpc.methods('eth_call').length;
+      await run();
+      const blocks = pinned(rpc.methods('eth_call').slice(from));
+      expect(blocks.length).toBeGreaterThan(8);
+      expect(new Set(blocks)).toEqual(new Set(['0x3e8']));
+    }
+    const from = rpc.methods('eth_call').length;
+    await agent.headroom();
+    expect(new Set(pinned(rpc.methods('eth_call').slice(from)))).toEqual(new Set(['0x3e8']));
+  });
+
+  it('throws on an AgentAction code it does not know, instead of reporting a buy', async () => {
+    const { rpc, agent } = await setup();
+    rpc.receiptLogs = [agentActionLog({ agent: signer.address, action: 9, token: TOKEN, periodId: 1n })];
+    await expect(agent.buy({ token: TOKEN, usdc: '1' })).rejects.toMatchObject({ code: 'UNKNOWN_ACTION' });
+  });
+
+  it('ignores an AgentAction from another account and rejects two from this one', async () => {
+    const { rpc, agent } = await setup();
+    const own = agentActionLog({ agent: signer.address, action: 1, token: TOKEN, usdcSpent: 3_000_000n, tokenDelta: 2n * WAD, periodId: 4n });
+    const other = eventLog(agentAccountAbi, A(0xab), 'AgentAction', { agent: signer.address, action: 1, token: TOKEN, usdcSpent: 99_000_000n, tokenDelta: 99n * WAD, periodId: 9n });
+    rpc.receiptLogs = [other, own];
+    const fill = await agent.buy({ token: TOKEN, usdc: '3' });
+    expect([fill.usdcSpent6, fill.periodId]).toEqual([3_000_000n, 4n]);
+    rpc.receiptLogs = [own, own];
+    await expect(agent.buy({ token: TOKEN, usdc: '3' })).rejects.toMatchObject({ code: 'FILL_NOT_FOUND' });
   });
 });

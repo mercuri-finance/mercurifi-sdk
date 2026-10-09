@@ -12,16 +12,28 @@ export const toChainPolicy = (p: ChainPolicy): ChainPolicy => ({
   maxDeadlineSeconds: Number(p.maxDeadlineSeconds), allowlistOnly: Boolean(p.allowlistOnly),
 });
 
+/** `blockNumber` pins a read; omitted, the node's latest block answers. */
+const at = (blockNumber: bigint | undefined): { blockNumber?: bigint } => (blockNumber === undefined ? {} : { blockNumber });
+
 /** Untyped read of the account (funds, basis, owner, referrer): the generated ABI types are exact, but the SDK reads by name. */
-export const readAccount = <T>(client: PublicClient, account: Address, functionName: string, args?: readonly unknown[]): Promise<T> =>
-  client.readContract({ address: account, abi: agentAccountAbi, functionName, args } as never) as Promise<T>;
+export const readAccount = <T>(client: PublicClient, account: Address, functionName: string, args?: readonly unknown[], blockNumber?: bigint): Promise<T> =>
+  client.readContract({ address: account, abi: agentAccountAbi, functionName, args, ...at(blockNumber) } as never) as Promise<T>;
 
 /** Untyped read of the policy registry. Every registry view takes the account as its first argument. */
-export const readRegistry = <T>(client: PublicClient, registry: Address, functionName: string, args: readonly unknown[]): Promise<T> =>
-  client.readContract({ address: registry, abi: agentPolicyRegistryAbi, functionName, args } as never) as Promise<T>;
+export const readRegistry = <T>(client: PublicClient, registry: Address, functionName: string, args: readonly unknown[], blockNumber?: bigint): Promise<T> =>
+  client.readContract({ address: registry, abi: agentPolicyRegistryAbi, functionName, args, ...at(blockNumber) } as never) as Promise<T>;
 
-export const readPolicy = async (client: PublicClient, agents: AgentBook, account: Address): Promise<ChainPolicy> =>
-  toChainPolicy(await readRegistry<ChainPolicy>(client, agents.registry, 'policy', [account]));
+export const readPolicy = async (client: PublicClient, agents: AgentBook, account: Address, blockNumber?: bigint): Promise<ChainPolicy> =>
+  toChainPolicy(await readRegistry<ChainPolicy>(client, agents.registry, 'policy', [account], blockNumber));
+
+/** The registry's first check: the account owner's pause or the platform pause (`Paused`). */
+export const readPaused = async (client: PublicClient, agents: AgentBook, account: Address, blockNumber?: bigint): Promise<boolean> => {
+  const [owner, platform] = await Promise.all([
+    readRegistry<boolean>(client, agents.registry, 'ownerPaused', [account], blockNumber),
+    client.readContract({ address: agents.factory, abi: agentAccountFactoryAbi, functionName: 'isPaused', ...at(blockNumber) } as never) as Promise<boolean>,
+  ]);
+  return owner || platform;
+};
 
 export interface AccountState {
   account: Address;
@@ -79,10 +91,10 @@ export interface AgentInfo {
   permissionBits: number;
 }
 
-export const readAgent = async (client: PublicClient, agents: AgentBook, account: Address, agent: Address, now: bigint): Promise<AgentInfo> => {
+export const readAgent = async (client: PublicClient, agents: AgentBook, account: Address, agent: Address, now: bigint, blockNumber?: bigint): Promise<AgentInfo> => {
   const [a, retired] = await Promise.all([
-    readRegistry<{ active: boolean; expiresAt: number; permissions: number }>(client, agents.registry, 'agent', [account, agent]),
-    readRegistry<boolean>(client, agents.registry, 'retired', [account, agent]),
+    readRegistry<{ active: boolean; expiresAt: number; permissions: number }>(client, agents.registry, 'agent', [account, agent], blockNumber),
+    readRegistry<boolean>(client, agents.registry, 'retired', [account, agent], blockNumber),
   ]);
   const expiresAt = Number(a.expiresAt);
   return {

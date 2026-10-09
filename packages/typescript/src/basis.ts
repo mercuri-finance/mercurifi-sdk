@@ -18,8 +18,8 @@ export interface Basis {
 
 const ceilDiv = (a: bigint, b: bigint): bigint => (a + b - 1n) / b;
 
-export const readBasis = async (client: PublicClient, account: Address, token: Address): Promise<Basis> => {
-  const [costUsdc, tokens, highWater] = await readAccount<readonly [bigint, bigint, bigint]>(client, account, 'basis', [token]);
+export const readBasis = async (client: PublicClient, account: Address, token: Address, blockNumber?: bigint): Promise<Basis> => {
+  const [costUsdc, tokens, highWater] = await readAccount<readonly [bigint, bigint, bigint]>(client, account, 'basis', [token], blockNumber);
   return { costUsdc6: BigInt(costUsdc), tokens: BigInt(tokens), highWater: BigInt(highWater) };
 };
 
@@ -41,11 +41,12 @@ export const curveSellValue6 = (b: Basis, tokensIn: bigint, excessOutWei: bigint
   recordedSellValue6(b, tokensIn).value6 + ceilDiv(excessOutWei, SCALE);
 
 /**
- * A pool sell's value: the recorded part plus the excess's share of the quoted output (usdc6), rounded up. Advisory: the
- * contract values the excess at the output it measures after the swap.
+ * A pool sell's value, as `AgentAccount.swapExactIn`: the recorded part plus `ceil(ceil(proceedsWei × excess / amountIn) / 1e12)`.
+ * `quotedOutWei` is the proceeds in native wei (a usdc6 quote times 1e12); the contract uses the proceeds it measures,
+ * so a quote makes this advisory.
  */
-export const poolSellValue6 = (b: Basis, amountIn: bigint, quotedOut6: bigint): bigint => {
+export const poolSellValue6 = (b: Basis, amountIn: bigint, quotedOutWei: bigint): bigint => {
   const { recorded, value6 } = recordedSellValue6(b, amountIn);
   if (amountIn <= recorded) return value6;
-  return value6 + ceilDiv(quotedOut6 * (amountIn - recorded), amountIn);
+  return value6 + ceilDiv(ceilDiv(quotedOutWei * (amountIn - recorded), amountIn), SCALE);
 };

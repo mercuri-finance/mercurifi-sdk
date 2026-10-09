@@ -13,8 +13,9 @@
     { "name": "no position, all excess", "costUsdc": "0", "tokens": "0", "highWater": "0", "tokensIn": "5000000000000000000", "excessOutWei": "5000000000000", "value6": "5" }
   ],
   "poolExcess": [
-    { "name": "excess share of the quoted output, rounded up", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOut6": "1200000000", "value6": "1200000000" },
-    { "name": "a tiny excess share still costs one usdc6", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOut6": "7", "value6": "1100000001" },
-    { "name": "fully recorded sell adds nothing", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "1000000000000000000000", "quotedOut6": "5000000", "value6": "100000000" }
+    { "name": "excess share of the quoted output, rounded up", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOutWei": "1200000000000000000000", "value6": "1200000000" },
+    { "name": "a tiny excess share still costs one usdc6", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOutWei": "7000000000000", "value6": "1100000001" },
+    { "name": "a sub-micro wei share rounds up twice, to one usdc6", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOutWei": "7000000000001", "value6": "1100000001" },
+    { "name": "fully recorded sell adds nothing", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "1000000000000000000000", "quotedOutWei": "5000000000000000000", "value6": "100000000" }
   ]
 }
