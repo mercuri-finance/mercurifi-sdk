@@ -23,6 +23,20 @@ describe('check-workflows gate', () => {
     const r = spawnSync(process.execPath, [script], { encoding: 'utf8' });
     expect(r.status).toBe(0);
   });
+  it.each([
+    ['release-npm.yml', 'npm-package', 'npm-sbom'],
+    ['release-pypi.yml', 'pypi-dist', 'pypi-sbom'],
+  ])('pins the artifact a publish job downloads in %s', (file, name, other) => {
+    const text = real(file);
+    expect(text).toContain(`name: ${name}\n          path:`);
+    const wrong = run({ [file]: text.replace(new RegExp(`(download-artifact@[0-9a-f]{40} # v[\\d.]+\n        with:\n          )name: ${name}`), `$1name: ${other}`) });
+    expect(wrong.code).toBe(1);
+    expect(wrong.err).toMatch(new RegExp(`download-artifact name must be ${name} \\(found: ${other}\\)`));
+    const missing = run({ [file]: text.replace(new RegExp(`(download-artifact@[0-9a-f]{40} # v[\\d.]+\n        with:\n)          name: ${name}\n`), '$1') });
+    expect(missing.code).toBe(1);
+    expect(missing.err).toMatch(/download-artifact in a publish job must name its artifact/);
+  });
+
   it('rejects an action pinned to a tag', () => {
     const r = run({ 'ci.yml': real('ci.yml').replace(/actions\/checkout@[0-9a-f]{40}/, 'actions/checkout@v4') });
     expect(r.code).toBe(1);

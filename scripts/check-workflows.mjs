@@ -23,6 +23,9 @@ const PUBLISH_JOB_ACTIONS = new Map([
   ['pypa/gh-action-pypi-publish', new Map([['packages-dir', null], ['attestations', null]])],
 ]);
 const PUBLISH_ACTIONS = new Set(['pypa/gh-action-pypi-publish']);
+// The one artifact each release workflow's publish job may download: without a name, download-artifact fetches every
+// artifact of the run (the SBOM too), and another name could hand the publish step a different file.
+const PUBLISH_ARTIFACTS = new Map([['release-npm.yml', 'npm-package'], ['release-pypi.yml', 'pypi-dist']]);
 // npm publish of the downloaded tarball, in one fixed form: a relative .tgz path (globs allowed, no ..), provenance,
 // public access (the package is scoped, so npm would otherwise refuse the first publish) and no lifecycle scripts.
 const PUBLISH_RUN = /^npm publish (?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --ignore-scripts$/;
@@ -342,6 +345,12 @@ export function checkWorkflow(file, text) {
         if (allowed === undefined) problems.push(`${where}: ${action} is not allowed in a publish job`);
         if (PUBLISH_ACTIONS.has(action)) publishSteps++;
         if (w !== undefined && w.value !== '') problems.push(`${where}: write ${action}'s with: as a block mapping`);
+        if (action === 'actions/download-artifact') {
+          const name = w ? [...mapping(body, ...w.block)].find(([k]) => k === 'name')?.[1].value : undefined;
+          const want = PUBLISH_ARTIFACTS.get(file);
+          if (name === undefined) problems.push(`${where}: download-artifact in a publish job must name its artifact${want === undefined ? '' : ` (${want})`}`);
+          else if (want === undefined ? !/^[\w.-]+$/.test(name) : name !== want) problems.push(`${where}: download-artifact name must be ${want ?? 'a plain artifact name'} (found: ${name})`);
+        }
         for (const [k, v] of w ? mapping(body, ...w.block) : []) {
           if (k === 'cache') problems.push(`${where}: no dependency cache in a publish job`);
           else if (k === 'repository-url') problems.push(`${where}: repository-url is not allowed: publish only to the default index`);
