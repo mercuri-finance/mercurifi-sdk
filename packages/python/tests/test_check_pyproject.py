@@ -122,3 +122,36 @@ def test_rejects_a_hatch_toml_next_to_the_pyproject(tmp_path: Path) -> None:
 
 def test_accepts_the_plain_wheel_packages_setting(tmp_path: Path) -> None:
     assert run(tmp_path, GOOD, extra='[tool.hatch.build.targets.wheel]\npackages = ["src/x"]').returncode == 0
+
+
+# Two crafted pyproject files that once slipped past an earlier version of the gate.
+def test_rejects_backend_path(tmp_path: Path) -> None:
+    r = run(tmp_path, GOOD, build=BUILD + 'backend-path = ["shim"]\n')
+    assert r.returncode != 0 and "backend-path" in r.stderr
+
+
+def test_rejects_a_dynamic_version_from_code(tmp_path: Path) -> None:
+    f = tmp_path / "pyproject.toml"
+    f.write_text(f'{BUILD}\n[project]\nname = "x"\ndynamic = ["version"]\ndependencies = [{GOOD}]\n\n[tool.hatch.version]\nsource = "code"\npath = "evil.py"\n')
+    r = subprocess.run([sys.executable, str(SCRIPT), str(f)], capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "project.version must not be dynamic" in r.stderr
+    assert "tool.hatch.version is not allowed" in r.stderr
+
+
+def test_rejects_tool_hatch_version_alone(tmp_path: Path) -> None:
+    r = run(tmp_path, GOOD, extra='[tool.hatch.version]\npath = "src/x/__init__.py"')
+    assert r.returncode != 0 and "tool.hatch.version" in r.stderr
+
+
+@pytest.mark.parametrize("case", ["bp1", "bp2"])
+def test_rejects_the_review_files(tmp_path: Path, case: str) -> None:
+    real = (SCRIPT.parent.parent / "pyproject.toml").read_text()
+    if case == "bp1":
+        text = real.replace('build-backend = "hatchling.build"\n', 'build-backend = "hatchling.build"\nbackend-path = ["shim"]\n', 1)
+    else:
+        text = real.replace('version = "', 'dynamic = ["version"]\n_old_version = "', 1) + '\n[tool.hatch.version]\nsource = "code"\npath = "evil.py"\n'
+    assert text != real
+    f = tmp_path / "pyproject.toml"
+    f.write_text(text)
+    assert subprocess.run([sys.executable, str(SCRIPT), str(f)], capture_output=True).returncode != 0

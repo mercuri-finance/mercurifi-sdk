@@ -53,6 +53,13 @@ if not (
     problems.append("build-system.requires must be exactly one pinned hatchling==X.Y.Z")
 if build.get("build-backend") != "hatchling.build":
     problems.append("build-system.build-backend must be hatchling.build")
+if "backend-path" in build:
+    problems.append("build-system.backend-path is not allowed: it loads the build backend from the source tree")
+# The version is a static string in pyproject.toml; a dynamic version (tool.hatch.version) runs or reads source at build time.
+if "version" in project.get("dynamic", []):
+    problems.append("project.version must not be dynamic")
+if not isinstance(project.get("version"), str):
+    problems.append("project.version must be a static string")
 for key in ("scripts", "gui-scripts", "entry-points"):
     if key in project:
         problems.append(f"project.{key} is not allowed: the package installs no commands and no plugins")
@@ -62,6 +69,8 @@ for key in ("optional-dependencies", "scripts", "gui-scripts", "entry-points"):
 if "allow-direct-references" in data.get("tool", {}).get("hatch", {}).get("metadata", {}):
     problems.append("tool.hatch.metadata.allow-direct-references is not allowed: dependencies come from the index only")
 hatch = data.get("tool", {}).get("hatch", {})
+if "version" in hatch:
+    problems.append("tool.hatch.version is not allowed: the version is the static project.version")
 if "hooks" in hatch.get("metadata", {}):
     problems.append("tool.hatch.metadata.hooks is not allowed: metadata hooks run code at build time")
 # Keys that run code at build time, add files outside mercurifi/ (force-include, shared-data and shared-scripts land
