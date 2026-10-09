@@ -280,6 +280,30 @@ describe('check-workflows gate', () => {
     });
   });
 
+  // Crafted bypasses, set 3: a YAML escape in a double-quoted key spells a key the gate
+  // would read literally.
+  describe('crafted bypasses (set 3)', () => {
+    const PY = '  python:\n    name: Python\n';
+    const swap = (text: string, a: string, b: string) => {
+      expect(text.includes(a)).toBe(true);
+      return text.replace(a, b);
+    };
+    it.each([
+      ['T1 an escaped permissions key with id-token', 'ci.yml', () => swap(real('ci.yml'), PY, `${PY}    "p\\x65rmissions":\n      id-token: write\n`)],
+      ['T2 escaped permissions and scope keys', 'ci.yml', () => swap(real('ci.yml'), PY, `${PY}    "p\\x65rmissions":\n      "c\\x6fntents": write\n`)],
+      ['T3 a second, escaped permissions key on the build job', 'release-npm.yml', () => swap(real('release-npm.yml'), '    permissions:\n      contents: read\n    defaults:', '    permissions:\n      contents: read\n    "p\\x65rmissions":\n      id-token: write\n    defaults:')],
+      ['T6 escapes in a one-line flow permissions', 'ci.yml', () => swap(real('ci.yml'), PY, `${PY}    "p\\x65rmissions": { "id\\x2dtoken": "wr\\x69te" }\n`)],
+      ['a \\u escape', 'ci.yml', () => swap(real('ci.yml'), PY, `${PY}    "p\\u0065rmissions":\n      id-token: write\n`)],
+      ['a backslash in a run line', 'ci.yml', () => swap(real('ci.yml'), '      - run: npm test\n', '      - run: npm test \\\n'), ],
+    ])('refuses %s', (_, file, make) => {
+      const text = make();
+      expect(text).toContain('\\');
+      const r = run({ [file]: text });
+      expect(r.code).toBe(1);
+      expect(r.err).toMatch(/backslashes are not allowed/);
+    });
+  });
+
   it('runs the TypeScript suite on the .nvmrc Node version and on 24', () => {
     const nvmrc = readFileSync(new URL('../../../.nvmrc', import.meta.url), 'utf8').trim();
     const matrix = /node: \[([^\]]*)\]/.exec(real('ci.yml'))?.[1]?.split(',').map((v) => v.trim().replace(/'/g, ''));

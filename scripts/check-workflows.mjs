@@ -212,9 +212,10 @@ function permissionProblems(where, entry, idTokenAllowed) {
 
 export function checkWorkflow(file, text) {
   const problems = [];
-  // Byte rule, before any parsing: printable ASCII, space and \n only. A lone \r, NEL, U+2028/9 or any other line break
-  // the YAML reader honours but this gate's \n split does not could hide a job; NBSP, zero-width characters, a BOM and
-  // tabs could make a key or a command read differently. Nothing else is examined until the file is clean.
+  // Byte rule, before any parsing: printable ASCII (no backslash), space and \n only. A lone \r, NEL, U+2028/9 or any
+  // other line break the YAML reader honours but this gate's \n split does not could hide a job; NBSP, zero-width
+  // characters, a BOM and tabs could make a key or a command read differently. Nothing else is examined until the file
+  // is clean.
   if (text.includes('\r\n')) return [`${file}: CRLF line endings are not allowed (use LF)`];
   const bad = /[^\x20-\x7e\n]/.exec(text);
   if (bad !== null) {
@@ -223,6 +224,13 @@ export function checkWorkflow(file, text) {
     const col = bad.index - before.lastIndexOf('\n');
     const cp = bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
     return [`${file}:${line}:${col}: only printable ASCII, spaces and \\n are allowed (found U+${cp})`];
+  }
+  // No backslash anywhere: in a double-quoted scalar or key, "p\x65rmissions" is permissions to YAML but not to this
+  // gate, so an escape could hide a permissions block, a scope or any other key. The workflows need none.
+  const slash = text.indexOf('\\');
+  if (slash !== -1) {
+    const before = text.slice(0, slash);
+    return [`${file}:${before.split('\n').length}:${slash - before.lastIndexOf('\n')}: backslashes are not allowed (a YAML escape could spell a key the gate does not see)`];
   }
   // Full-line comments are blanked (line numbers kept); comments may mention forbidden names.
   const lines = text.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l));
