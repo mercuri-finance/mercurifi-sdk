@@ -1,6 +1,7 @@
 import { createPublicClient, defineChain, http, type Address, type Chain, type PublicClient, type Transport } from 'viem';
 
 import { AgentClient } from './agent.js';
+import { HttpApi } from './api/http.js';
 import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
@@ -22,6 +23,8 @@ export interface CreateClientOptions {
   apiKey?: string;
   /** Inject an API implementation, or `null` for chain-only use. */
   api?: MercurifiApi | null;
+  /** https (or loopback) base URL of the Mercurifi API, instead of the address book's host. Keyed clients need the public hostname: there is no origin bypass for keys. */
+  apiBaseUrl?: string;
   /** Test hook: a viem transport used instead of HTTP. */
   transport?: Transport;
   verify?: boolean;
@@ -42,7 +45,8 @@ export interface ClientSettings {
   maxFeePerGasCap: bigint | undefined;
   maxPriorityFeePerGas: bigint;
   deadlineSeconds: number;
-  apiKey: string | undefined;
+  /** Whether a key was given. The key itself is held only by the HttpApi, privately, so it never shows in inspect or JSON. */
+  hasApiKey: boolean;
 }
 
 export const arcChain = (book: NetworkBook, rpcUrl: string): Chain =>
@@ -172,8 +176,11 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     maxFeePerGasCap: options.maxFeePerGasCap,
     maxPriorityFeePerGas,
     deadlineSeconds,
-    apiKey: options.apiKey,
+    hasApiKey: options.apiKey !== undefined,
   };
-  const api = options.api === undefined ? null : options.api;
+  const apiBaseUrl = options.apiBaseUrl ?? book.apiBaseUrl;
+  const api = options.api !== undefined
+    ? options.api
+    : apiBaseUrl === null ? null : new HttpApi({ baseUrl: apiBaseUrl, chainId: book.chainId, ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }) });
   return new MercurifiClient(book, publicClient, api, settings, onWarning);
 };

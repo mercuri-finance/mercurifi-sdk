@@ -1,5 +1,7 @@
 import { bytesToHex, encodeFunctionData, isAddressEqual, zeroAddress, type Address, type Hex } from 'viem';
 
+import type { BuiltTx } from './api/types.js';
+import { verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
 import type { ImageUpload } from './api/types.js';
 import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
 import { curveSellValue6, poolSellValue6, readBasis, recordedSellValue6 } from './basis.js';
@@ -409,6 +411,12 @@ export class AgentClient {
 
   protected encode(functionName: string, args: readonly unknown[]): Hex {
     return encodeFunctionData({ abi: agentAccountAbi, functionName, args } as never);
+  }
+
+  /** Verifies API-built calldata against your expectation, then signs and sends it. Refuses on any mismatch. */
+  async sendBuilt(built: BuiltTx, e: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
+    const { functionName } = verifyBuiltTx(built, { ...e, chainId: this.mf.network.chainId, account: this.account });
+    return this.send(built.data, false, functionName);
   }
 
   protected async send(data: Hex, mayGraduate: boolean, label: string): Promise<Fill> {

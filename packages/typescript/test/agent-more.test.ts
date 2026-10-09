@@ -1,10 +1,10 @@
-import { decodeFunctionData, parseTransaction, type Hex } from 'viem';
+import { decodeFunctionData, encodeFunctionData, parseTransaction, type Hex } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import { estimatePoolImpactBps } from '../src/pool.js';
 import { agentAccountAbi, agentAccountFactoryAbi, graduationManagerAbi, launchFactoryAbi, v4QuoterAbi } from '../src/abi/index.js';
 import type { MercurifiApi } from '../src/api/types.js';
-import { InvalidInputError, MercurifiError } from '../src/errors.js';
+import { BuildMismatchError, InvalidInputError, MercurifiError } from '../src/errors.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
@@ -384,5 +384,20 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     const token = await setup({ balance: WAD }, null, 7);
     await expect(token.agent.sweepToOwner({ token: TOKEN, amount: '2' })).rejects.toThrow(/holds less of this token/);
     expect(pool.rpc.sent.length + native.rpc.sent.length + token.rpc.sent.length).toBe(0);
+  });
+});
+
+describe('AgentClient.sendBuilt', () => {
+  const claim = encodeFunctionData({ abi: agentAccountAbi, functionName: 'claimFees', args: [] });
+  it('signs API-built calldata only after it verifies against the expectation', async () => {
+    const { agent, rpc } = await setup();
+    const tx = { chainId: 31337, to: ACCOUNT, data: claim, value: '0' };
+    await expect(agent.sendBuilt({ ...tx, to: A(0x77) }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
+    await expect(agent.sendBuilt({ ...tx, chainId: 5042002 }, { functionName: 'claimFees' })).rejects.toThrow(BuildMismatchError);
+    await expect(agent.sendBuilt(tx, { functionName: 'sweepToOwner' })).rejects.toThrow(BuildMismatchError);
+    expect(rpc.sent).toHaveLength(0);
+    await agent.sendBuilt(tx, { functionName: 'claimFees' });
+    expect(rpc.sent).toHaveLength(1);
+    expect(sentCall(rpc).functionName).toBe('claimFees');
   });
 });

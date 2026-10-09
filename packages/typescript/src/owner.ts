@@ -239,7 +239,7 @@ export class OwnerClient {
     if (!(await isAgentAccount(this.mf.publicClient, agents, account))) {
       throw new InvalidInputError('account', `${account} is not a Mercurifi agent account on ${this.mf.network.name}`);
     }
-    const all = await listQueued(this.mf.publicClient, agents, account, { api: this.mf.settings.apiKey === undefined ? null : this.mf.api });
+    const all = await listQueued(this.mf.publicClient, agents, account, { api: !this.mf.settings.hasApiKey ? null : this.mf.api });
     return all.filter((q) => 'newOwner' in q.detail && isAddressEqual(q.detail.newOwner, this.signer.address));
   }
 }
@@ -405,7 +405,7 @@ export class AccountManager {
 
   /** Queued changes, from the API when a key is configured (verified on chain), else from bounded log scans. */
   listQueued(opts: { fromBlock?: bigint } = {}): Promise<QueuedChange[]> {
-    return listQueued(this.mf.publicClient, this.agents, this.account, { ...opts, api: this.mf.settings.apiKey === undefined ? null : this.mf.api });
+    return listQueued(this.mf.publicClient, this.agents, this.account, { ...opts, api: !this.mf.settings.hasApiKey ? null : this.mf.api });
   }
 
   /**
@@ -508,7 +508,7 @@ export class AccountManager {
         do {
           if (pages++ >= MAX_ACTION_PAGES) throw new Error('too many pages');
           const page = await api.listActions(this.account, cursor);
-          out.push(...page.items.map((a) => a.token));
+          out.push(...page.items.map((a) => a.token).filter((t): t is Address => typeof t === 'string'));
           cursor = page.nextCursor ?? undefined;
         } while (cursor !== undefined);
         return out;

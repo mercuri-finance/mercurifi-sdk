@@ -22,3 +22,5 @@ export { readPoolKey, quoteExactIn, estimatePoolImpactBps, UINT128_MAX, type Poo
 export { readBasis, recordedSellValue6, curveSellValue6, poolSellValue6, HIGH_WATER_SCALE, type Basis } from './basis.js';
 export { fillFromReceipt, type Fill, type ReceiptLike } from './fills.js';
 export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, mayGraduateBuy, PHASE, type LaunchConfigValue } from './curve.js';
+export { HttpApi, type HttpApiOptions } from './api/http.js';
+export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/verifyBuild.js';
