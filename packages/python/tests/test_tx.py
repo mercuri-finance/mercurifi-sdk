@@ -252,6 +252,23 @@ async def test_gas_fallback_only_on_node_estimation_errors() -> None:
     assert len(rpc.sent) == 1
 
 
+_EST = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "estimate-errors.json").read_text())
+
+
+@pytest.mark.parametrize("case", _EST["cases"], ids=[c["message"][:30] for c in _EST["cases"]])
+async def test_gas_fallback_never_for_a_provider_rate_limit(case: dict[str, Any]) -> None:
+    rpc = local_rpc()
+    mf = await _client(rpc)
+    rpc.on("eth_estimateGas", lambda p: (_ for _ in ()).throw(NodeError(case["code"], case["message"])))
+    if case["fallback"]:
+        await mf.sender.send(local_key(OWNER_KEY), req(may_graduate=True))
+        assert sent_tx(rpc)["gas"] == 1_800_000
+    else:
+        with pytest.raises(MercurifiError) as e:
+            await mf.sender.send(local_key(OWNER_KEY), req(may_graduate=True))
+        assert e.value.code == "RPC_ERROR" and rpc.sent == []
+
+
 async def test_priority_fee_is_capped_by_default_and_by_option() -> None:
     quote = lambda p: hex(500_000_000_000)  # noqa: E731
     rpc = local_rpc().on("eth_maxPriorityFeePerGas", quote)

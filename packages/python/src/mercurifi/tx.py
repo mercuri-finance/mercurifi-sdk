@@ -7,6 +7,7 @@ against the state its predecessor left behind. Every non-revert failure leaves a
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -43,6 +44,16 @@ class SentTx:
 def _positive(field: str, value: object) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < float("inf"):
         raise InvalidInputError(field, f"{field} must be a positive number (seconds)")
+
+
+# Provider throttling, not the node's verdict on the call: JSON-RPC codes and wording used by RPC providers.
+_RATE_LIMIT_CODES = frozenset({429, -32005, -32029})
+_RATE_LIMIT_TEXT = re.compile(r"rate[ -]?limit|too many requests|compute units", re.IGNORECASE)
+
+
+def _rate_limited(exc: RpcError) -> bool:
+    """A rate limit says nothing about the call, so it never earns the gas fallback."""
+    return exc.code in _RATE_LIMIT_CODES or _RATE_LIMIT_TEXT.search(str(exc)) is not None
 
 
 class TxSender:
@@ -152,7 +163,7 @@ class TxSender:
 
     async def _estimate(self, from_: str, req: WriteRequest) -> int | None:
         """A revert is reported as such; the 1.8M fallback (None) applies only when the node itself failed to estimate
-        (a JSON-RPC error answer), never to transport errors."""
+        (a JSON-RPC error answer), never to transport errors or provider rate limits."""
         revert: DecodedRevert | None = None
         try:
             return await self._rpc.estimate_gas(req.to, req.data, from_=from_, value=req.value)
@@ -160,7 +171,7 @@ class TxSender:
             data = extract_revert_data(exc)
             if data is not None:
                 revert = decode_revert(data)
-            elif req.may_graduate:
+            elif req.may_graduate and not _rate_limited(exc):
                 return None
             else:
                 raise

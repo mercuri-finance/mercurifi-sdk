@@ -1,0 +1,50 @@
+{
+  "_note": "A JSON-RPC error answer to eth_estimateGas without revert data on a buy that may complete the curve: fallback true means the SDK sends with the 1.8M graduation gas limit; false means it is a provider rate limit (codes 429, -32005, -32029, or a message saying rate limit, too many requests or compute units) and the send fails as RPC_ERROR without sending.",
+  "cases": [
+    {
+      "code": -32000,
+      "message": "gas required exceeds allowance (16000000)",
+      "fallback": true
+    },
+    {
+      "code": -32000,
+      "message": "header not found",
+      "fallback": true
+    },
+    {
+      "code": 3,
+      "message": "execution reverted",
+      "fallback": true
+    },
+    {
+      "code": 429,
+      "message": "Too Many Requests",
+      "fallback": false
+    },
+    {
+      "code": -32005,
+      "message": "limit exceeded",
+      "fallback": false
+    },
+    {
+      "code": -32029,
+      "message": "request limit reached",
+      "fallback": false
+    },
+    {
+      "code": -32000,
+      "message": "rate limit exceeded, retry in 1s",
+      "fallback": false
+    },
+    {
+      "code": -32603,
+      "message": "Your app has exceeded its compute units per second capacity",
+      "fallback": false
+    },
+    {
+      "code": -32000,
+      "message": "too many requests",
+      "fallback": false
+    }
+  ]
+}

@@ -33,16 +33,26 @@ export interface SenderDeps {
 
 const DEFAULT_PRIORITY = 1_000_000_000n;
 
-/** True when the node answered with a JSON-RPC error (a revert or execution failure), not when the transport failed. */
+/** Provider throttling, not the node's verdict on the call: JSON-RPC codes and wording used by RPC providers. */
+const RATE_LIMIT_CODES: ReadonlySet<number> = new Set([429, -32005, -32029]);
+const RATE_LIMIT_TEXT = /rate[ -]?limit|too many requests|compute units/i;
+
+/**
+ * True when the node answered with a JSON-RPC error (a revert or execution failure), not when the transport failed or
+ * the provider throttled the request (a rate limit says nothing about the call, so it never earns the gas fallback).
+ */
 const isNodeAnswer = (error: unknown): boolean => {
   let current: unknown = error;
+  let answered = false;
   for (let depth = 0; current !== null && typeof current === 'object' && depth < 16; depth += 1) {
-    const c = current as { code?: unknown; name?: unknown };
+    const c = current as { code?: unknown; name?: unknown; message?: unknown; details?: unknown };
+    if (typeof c.code === 'number' && RATE_LIMIT_CODES.has(c.code)) return false;
+    if ([c.message, c.details].some((t) => typeof t === 'string' && RATE_LIMIT_TEXT.test(t))) return false;
     // UnknownRpcError (code -1) is viem's wrapper for failures that were not a JSON-RPC answer (socket errors, bad bodies).
-    if (typeof c.code === 'number' && c.name !== 'UnknownRpcError') return true;
+    if (typeof c.code === 'number' && c.name !== 'UnknownRpcError') answered = true;
     current = (current as { cause?: unknown }).cause;
   }
-  return false;
+  return answered;
 };
 
 /**

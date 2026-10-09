@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { encodeErrorResult, encodeFunctionData, parseTransaction } from 'viem';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -169,6 +170,24 @@ describe('TxSender hardening', () => {
     expect((err as MercurifiError).code).toBe('RPC_ERROR');
     expect(rpc.sent).toHaveLength(1);
   });
+
+  it.each((JSON.parse(readFileSync(new URL('../../../fixtures/vectors/estimate-errors.json', import.meta.url), 'utf8')) as { cases: { code: number; message: string; fallback: boolean }[] }).cases)(
+    'estimate error %j: the 1.8M fallback only for a node answer, never a provider rate limit',
+    async (c) => {
+      const rpc = localRpc();
+      const mf = await setup(rpc);
+      rpc.on('eth_estimateGas', () => { throw Object.assign(new Error(c.message), { code: c.code }); });
+      const err = await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, mayGraduate: true, label: 'buy' }).catch((e: unknown) => e);
+      if (c.fallback) {
+        expect(err).not.toBeInstanceOf(Error);
+        expect(parseTransaction(rpc.sent[0]!).gas).toBe(1_800_000n);
+      } else {
+        expect((err as MercurifiError).code).toBe('RPC_ERROR');
+        expect(rpc.sent).toHaveLength(0);
+      }
+    },
+    20_000,
+  );
 
   it('caps the priority fee at 100 gwei by default and at a configured ceiling', async () => {
     const rpc = localRpc();
