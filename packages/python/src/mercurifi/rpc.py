@@ -44,7 +44,7 @@ class Rpc:
         self._max_bytes = max_response_bytes
         self._url = url
         self._host = redact_url(url)
-        self._http = httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False)
+        self._http = httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False, trust_env=False)
         self._id = 0
 
     def __repr__(self) -> str:

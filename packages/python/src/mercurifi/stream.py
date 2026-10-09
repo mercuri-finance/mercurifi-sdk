@@ -4,7 +4,6 @@ import asyncio
 import codecs
 import inspect
 import json
-import math
 import random as _random
 import re
 import time
@@ -150,14 +149,12 @@ def _parse_data(raw: str) -> Any:
 
 
 def _retry_after(headers: httpx.Headers) -> float:
-    try:
-        value = float(headers.get("Retry-After", ""))
-    except ValueError:
-        return 0.0
-    return value if math.isfinite(value) and value > 0 else 0.0
+    raw = headers.get("Retry-After", "").strip(" \t")
+    # Delta-seconds only (RFC 9110): digits, nothing else. HTTP dates, signs, decimals and "nan"/"inf" are ignored.
+    return float(raw) if _RETRY.fullmatch(raw) is not None and int(raw) > 0 else 0.0
 
 
-async def open_stream(
+def open_stream(
     request: tuple[str, dict[str, str]],
     *,
     last_event_id: str | None = None,
@@ -190,9 +187,34 @@ async def open_stream(
     is a fixed label and never contains the URL or the key. An awaitable result is not awaited; its exceptions are
     swallowed. The request carries the API key: nothing here logs it, error messages name the host only and
     redirects are refused so the key is never forwarded.
+
+    Arguments are validated when this is called, not on the first iteration, so a bad `last_event_id` fails where the
+    call is made. `on_reconnect` may be a coroutine function: an observer that is still running when the stream ends
+    is cancelled at exit, so keep it short. The HTTP client ignores environment proxies, `.netrc` and `SSL_CERT_*`
+    variables (`trust_env=False`): the request carries an API key and must go where the address book says.
     """
     if last_event_id is not None and not (isinstance(last_event_id, str) and _valid_id(last_event_id)):
         raise InvalidInputError("last_event_id", "not a valid stream event id")
+    return _run(
+        request, last_event_id, min_backoff, max_backoff, transport, sleep, random, max_reconnects, idle_timeout, healthy_after,
+        on_reconnect, now,
+    )
+
+
+async def _run(
+    request: tuple[str, dict[str, str]],
+    last_event_id: str | None,
+    min_backoff: float,
+    max_backoff: float,
+    transport: httpx.AsyncBaseTransport | None,
+    sleep: Callable[[float], Awaitable[None]],
+    random: Callable[[], float],
+    max_reconnects: int | None,
+    idle_timeout: float,
+    healthy_after: float,
+    on_reconnect: Callable[[int, int, str], Any] | None,
+    now: Callable[[], float],
+) -> AsyncIterator[StreamEvent]:
     url, headers = request
     lo = max(0.001, float(min_backoff))
     hi = max(lo, float(max_backoff))
@@ -238,7 +260,7 @@ async def open_stream(
 
     timeout = httpx.Timeout(10.0, read=None)
     try:
-        async with httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False) as http:
+        async with httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False, trust_env=False) as http:
             while True:
                 req_headers = {**headers, "Accept": "text/event-stream", "Accept-Encoding": "identity", **({"Last-Event-ID": last_id} if last_id else {})}
                 started = now()

@@ -273,7 +273,7 @@ async def test_timeout_and_redacted_errors() -> None:
 
 
 async def test_retry_after_is_bounded_and_parsed_strictly() -> None:
-    for header, want in (("5", 5.0), ("99999", 3600.0), ("-1", None), ("abc", None), ("nan", None), ("1e9", None), ("", None)):
+    for header, want in (("5", 5.0), ("99999", 3600.0), ("-1", None), ("abc", None), ("nan", None), ("1e9", None), ("", None), ("5.5", None), ("+5", None)):
         with pytest.raises(ApiError) as e:
             await keyed(transport(429, {}, {"Retry-After": header})).get_account(ADDR)
         assert e.value.retry_after_seconds == want
@@ -334,3 +334,9 @@ async def test_a_key_in_a_transport_failure_is_redacted_and_requests_ask_for_ide
     seen: list[httpx.Request] = []
     await keyed(transport(200, {"account": ADDR}, seen=seen)).get_account(ADDR)
     assert seen[0].headers["Accept-Encoding"] == "identity"
+
+
+async def test_http_clients_ignore_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    api = keyed(transport(200, {}))
+    assert api._http._trust_env is False  # no env proxies, netrc or SSL_CERT_* for a client that carries a key

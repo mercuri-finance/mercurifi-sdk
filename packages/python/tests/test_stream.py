@@ -201,7 +201,7 @@ async def test_hostile_hints_are_clamped() -> None:
     t = scripted(one("retry: 999999999\ndata: 1\n\n"), sse(429, headers={"Retry-After": "99999999"}))
     await collect(open_stream(REQ, transport=t, max_reconnects=1, sleep=sleep, random=lambda: 0))
     assert waits == [30.0, 300.0]
-    for ra in ("nan", "inf", "-5", "abc", ""):
+    for ra in ("nan", "inf", "-5", "abc", "", "5.5", "1e3", "0x10", "+5", "Wed, 21 Oct 2026 07:28:00 GMT"):
         w, s = sleeps()
         await collect(open_stream(REQ, transport=scripted(sse(429, headers={"Retry-After": ra})), max_reconnects=0, sleep=s, random=lambda: 0))
         assert w == [0.25], ra
@@ -371,3 +371,9 @@ async def test_client_stream() -> None:
     with pytest.raises(InvalidInputError):
         keyless.stream(["trades"])
 
+
+
+def test_open_stream_validates_eagerly_and_ignores_the_environment() -> None:
+    with pytest.raises(InvalidInputError):
+        open_stream(REQ, last_event_id="bad id!")  # raised at the call, not on first iteration
+    assert open_stream(REQ).__class__.__name__ == "async_generator"

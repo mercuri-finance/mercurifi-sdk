@@ -34,7 +34,7 @@ _HEX = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
 _SELECTOR = re.compile(r"0x[0-9a-fA-F]{8}")
 _KEY = re.compile(r"[A-Za-z0-9_-]{1,256}")
 _API_CODE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
-_RETRY = re.compile(r"[0-9]+(?:\.[0-9]+)?")
+_RETRY = re.compile(r"[0-9]{1,9}")  # delta-seconds: digits only
 
 
 class MercurifiApi(Protocol):
@@ -144,7 +144,7 @@ class HttpApi:
         self._timeout = float(timeout)
         self._warn = on_warning if callable(on_warning) else None
         install_log_redaction()
-        self._http = httpx.AsyncClient(transport=transport, timeout=self._timeout, follow_redirects=False)
+        self._http = httpx.AsyncClient(transport=transport, timeout=self._timeout, follow_redirects=False, trust_env=False)
 
     def __repr__(self) -> str:
         return f"HttpApi(base_url={self.base_url!r}, chain_id={self.chain_id}, api_key={'None' if self._key is None else '[redacted]'})"
