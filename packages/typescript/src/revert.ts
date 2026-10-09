@@ -4,7 +4,7 @@ import {
   agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi, feeManagerAbi, graduationManagerAbi,
   launchFactoryAbi, launchHookAbi, launchTokenAbi, universalRouterAbi, v4QuoterAbi,
 } from './abi/index.js';
-import { redactUrlsIn } from './redact.js';
+import { neutralizeUntrusted, truncateChars } from './redact.js';
 import { MercurifiError } from './errors.js';
 import { POLICY_FIELDS } from './policy.js';
 import { formatUsdc6 } from './units.js';
@@ -134,13 +134,7 @@ const MAX_REASON = 200;
  */
 const untrustedReason = (raw: unknown): string => {
   const text = typeof raw === 'string' ? raw : String(raw);
-  const plain = text
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
-    .replace(/\p{Cf}+/gu, '') // before URL redaction, so "ht\u200Btp://" cannot hide a URL
-    .replace(/"/g, "'");
-  const chars = Array.from(redactUrlsIn(plain).trim());
-  const clean = chars.length > MAX_REASON ? `${chars.slice(0, MAX_REASON).join('')}...` : chars.join('');
+  const clean = truncateChars(neutralizeUntrusted(text.replace(/"/g, "'")).trim(), MAX_REASON, '...');
   return `Reverted with a contract-supplied reason (untrusted text): "${clean}"`;
 };
 

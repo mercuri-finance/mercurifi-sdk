@@ -25,3 +25,4 @@ export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, mayGraduate
 export { HttpApi, type HttpApiOptions } from './api/http.js';
 export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/verifyBuild.js';
 export { openStream, validateTopics, type ReconnectInfo, type StreamEvent, type StreamOptions } from './stream.js';
+export { wrapUntrusted, readTokenSafeView, type UntrustedText, type TokenSafeView } from './safeView.js';

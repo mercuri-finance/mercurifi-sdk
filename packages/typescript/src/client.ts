@@ -1,6 +1,7 @@
 import { createPublicClient, defineChain, http, type Address, type Chain, type PublicClient, type Transport } from 'viem';
 
 import { AgentClient } from './agent.js';
+import { readTokenSafeView, type TokenSafeView } from './safeView.js';
 import { openStream, validateTopics, type StreamEvent, type StreamOptions } from './stream.js';
 import { HttpApi } from './api/http.js';
 import type { MercurifiApi } from './api/types.js';
@@ -102,6 +103,11 @@ export class MercurifiClient {
   stream(topics: readonly string[], o: StreamOptions = {}): AsyncGenerator<StreamEvent> {
     if (this.api === null) throw new InvalidInputError('api', 'Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.');
     return openStream(this.api.streamRequest(validateTopics(topics)), o);
+  }
+
+  /** Agent-safe token view: numbers from the chain, user text wrapped as untrusted. */
+  token(address: Address): Promise<TokenSafeView> {
+    return readTokenSafeView(this, address);
   }
 
   warn(message: string): void {
