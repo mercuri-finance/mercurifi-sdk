@@ -121,11 +121,12 @@ describe('HttpApi hardening', () => {
     expect(Object.values(mf.settings)).not.toContain('mfk_test_clientsecret');
   });
 
-  it.each(['mfk_test_k\n', ' mfk_test_k', 'mfk_test_\r\nX-Evil: 1', 'mfk_test_\0k', 'mfk_test_é', '', '  '])('refuses a malformed key without echoing it: %j', async (bad) => {
+  it.each(['mfk_test_k\n', ' mfk_test_k', 'mfk_test_\r\nX-Evil: 1', 'mfk_test_\0k', 'mfk_test_é', '', '  ', 'k'.repeat(257)])('refuses a malformed key without echoing it: %j', async (bad) => {
     expect(() => new HttpApi({ baseUrl: 'https://x.example', chainId: 1, apiKey: bad })).toThrow(InvalidInputError);
     const err = await createClient({ network: 'testnet', apiKey: bad, transport: new MockRpc(5042002).transport() }).catch((e: unknown) => e) as Error;
     expect(err).toBeInstanceOf(InvalidInputError);
     expect(err.message).not.toMatch(/X-Evil|é/);
+    expect(err.message).not.toContain('k'.repeat(200));
   });
 
   it('redacts the key from transport failures and asks for identity encoding', async () => {

@@ -19,7 +19,8 @@ EXPECTED = {
 }
 
 path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent / "pyproject.toml"
-project = tomllib.loads(path.read_text()).get("project", {})
+data = tomllib.loads(path.read_text())
+project = data.get("project", {})
 problems: list[str] = []
 
 deps = project.get("dependencies")
@@ -41,6 +42,24 @@ if "optional-dependencies" in project:
     problems.append("optional-dependencies are not allowed")
 if "dependencies" in project.get("dynamic", []):
     problems.append("dependencies must not be dynamic")
+build = data.get("build-system", {})
+requires = build.get("requires")
+if not (
+    isinstance(requires, list)
+    and len(requires) == 1
+    and re.fullmatch(r"hatchling==\d+(\.\d+)*", re.sub(r"\s+", "", str(requires[0])))
+):
+    problems.append("build-system.requires must be exactly one pinned hatchling==X.Y.Z")
+if build.get("build-backend") != "hatchling.build":
+    problems.append("build-system.build-backend must be hatchling.build")
+for key in ("scripts", "gui-scripts", "entry-points"):
+    if key in project:
+        problems.append(f"project.{key} is not allowed: the package installs no commands and no plugins")
+for key in ("optional-dependencies", "scripts", "gui-scripts", "entry-points"):
+    if key in project.get("dynamic", []):
+        problems.append(f"project.{key} must not be dynamic")
+if "allow-direct-references" in data.get("tool", {}).get("hatch", {}).get("metadata", {}):
+    problems.append("tool.hatch.metadata.allow-direct-references is not allowed: dependencies come from the index only")
 if problems:
     sys.exit("\n".join(problems))
 print("pyproject policy ok")
