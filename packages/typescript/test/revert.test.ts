@@ -125,6 +125,7 @@ describe('untrusted and malformed revert data', () => {
     expect(msg('open data:text/html,KEY4 now')).not.toContain('KEY4');
     expect(msg('run javascript:alert(KEY5)')).not.toContain('KEY5');
     expect(msg('ht\u200Btp://d.example/KEY6')).not.toContain('KEY6');
+    expect(msg('ipfs://cid/KEY7 file:///etc/KEY8 https:\\\\h.example\\KEY9 wss://w.example/KEY10')).not.toMatch(/KEY(7|8|9|10)/);
     expect(msg('metadata: fine')).toContain('metadata: fine');
   });
 

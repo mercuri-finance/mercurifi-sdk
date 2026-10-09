@@ -7,6 +7,8 @@ export const MIN_MAX_FEE_PER_GAS = 20_000_000_000n;
  * account the contracts measure ≥ ~1.3M call gas (contracts `AgentGas.t.sol`); the SDK keeps 1.8M as its floor for margin.
  */
 export const GRADUATION_GAS_LIMIT = 1_800_000n;
+/** Default ceiling on the priority fee the SDK will pay: a node quoting a runaway tip cannot drain the account's gas. */
+export const MAX_PRIORITY_FEE_PER_GAS = 100_000_000_000n;
 const MARGIN_PERCENT = 120n;
 
 export interface Fees { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }

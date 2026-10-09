@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { agentAccountAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
 import { NetworkMismatchError, TxDroppedError } from '../src/errors.js';
 import { createClient } from '../src/client.js';
+import { MercurifiError } from '../src/errors.js';
 import { localNetwork } from '../src/networks.js';
 import { localJson } from './helpers/local.js';
 import { ContractRevertError } from '../src/revert.js';
@@ -110,6 +111,82 @@ describe('TxSender', () => {
     rpc.receiptMode = 'none';
     const err = (await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, label: 'buy' }).catch((e: unknown) => e)) as Error;
     expect(`${err.message}${err.stack}${JSON.stringify(err)}`).not.toContain(KEY.slice(2, 20));
+  });
+});
+
+describe('TxSender hardening', () => {
+  const SECRET_URL = 'https://h.example/v2/SECRET';
+  const leaks = (e: unknown): string => { const x = e as Error; return `${x.message}${x.stack}${JSON.stringify(x)}${String(x.cause)}`; };
+
+  it.each(['eth_chainId', 'eth_call', 'eth_estimateGas', 'eth_getBlockByNumber', 'eth_sendRawTransaction', 'eth_getTransactionReceipt'])(
+    'turns a %s transport failure into a credential-free RPC_ERROR', async (method) => {
+      const rpc = localRpc();
+      const mf = await setup(rpc);
+      rpc.on(method, () => { throw new Error(`HTTP request failed. URL: ${SECRET_URL}\nRequest body: {}`); });
+      const err = await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, mayGraduate: true, label: 'buy' }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MercurifiError);
+      expect((err as MercurifiError).code).toBe('RPC_ERROR');
+      expect(leaks(err)).not.toContain('SECRET');
+      expect((err as Error).cause).toBeUndefined();
+    });
+
+  it('preflight() also redacts', async () => {
+    const rpc = localRpc();
+    const mf = await setup(rpc);
+    rpc.on('eth_call', () => { throw new Error(`failed at ${SECRET_URL}`); });
+    const err = await mf.sender.preflight(localKey(KEY).address, { to: ACCOUNT, data: buyData, label: 'buy' }).catch((e: unknown) => e);
+    expect(leaks(err)).not.toContain('SECRET');
+  });
+
+  it('preflights a queued send after its predecessor lands, and never signs it if it now reverts', async () => {
+    const rpc = localRpc();
+    const mf = await setup(rpc);
+    const revertData = encodeErrorResult({ abi: agentPolicyRegistryAbi, errorName: 'PeriodSpendExceeded', args: [0n] } as never);
+    rpc.read(ACCOUNT, agentAccountAbi, 'buy', () => {
+      if (rpc.sent.length > 0) throw Object.assign(new Error('execution reverted'), { code: 3, data: revertData });
+      return 5n;
+    });
+    const s = localKey(KEY);
+    const [first, second] = await Promise.allSettled([
+      mf.sender.send(s, { to: ACCOUNT, data: buyData, label: 'buy' }),
+      mf.sender.send(s, { to: ACCOUNT, data: buyData, label: 'buy' }),
+    ]);
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('rejected');
+    expect((second as PromiseRejectedResult).reason).toBeInstanceOf(ContractRevertError);
+    expect(rpc.sent).toHaveLength(1);
+  });
+
+  it('falls back to 1.8M only when the node failed to estimate, not on transport errors', async () => {
+    const rpc = localRpc();
+    const mf = await setup(rpc);
+    rpc.on('eth_estimateGas', () => { throw Object.assign(new Error('gas required exceeds allowance'), { code: -32000 }); });
+    await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, mayGraduate: true, label: 'buy' });
+    expect(parseTransaction(rpc.sent[0]!).gas).toBe(1_800_000n);
+    rpc.on('eth_estimateGas', () => { throw new Error('socket hang up'); });
+    const err = await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, mayGraduate: true, label: 'buy' }).catch((e: unknown) => e);
+    expect((err as MercurifiError).code).toBe('RPC_ERROR');
+    expect(rpc.sent).toHaveLength(1);
+  });
+
+  it('caps the priority fee at 100 gwei by default and at a configured ceiling', async () => {
+    const rpc = localRpc();
+    rpc.on('eth_maxPriorityFeePerGas', () => `0x${(500_000_000_000n).toString(16)}`);
+    const mf = await setup(rpc);
+    await mf.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, label: 'buy' });
+    expect(parseTransaction(rpc.sent[0]!).maxPriorityFeePerGas).toBe(100_000_000_000n);
+    const rpc2 = localRpc();
+    rpc2.on('eth_maxPriorityFeePerGas', () => `0x${(500_000_000_000n).toString(16)}`);
+    rpc2.read(ACCOUNT, agentAccountAbi, 'buy', 5n);
+    const mf2 = await localClient(rpc2, { maxPriorityFeePerGas: 2_000_000_000n });
+    await mf2.sender.send(localKey(KEY), { to: ACCOUNT, data: buyData, label: 'buy' });
+    expect(parseTransaction(rpc2.sent[0]!).maxPriorityFeePerGas).toBe(2_000_000_000n);
+  });
+
+  it('rejects non-positive-integer pollMs and receiptTimeoutMs', async () => {
+    for (const over of [{ pollMs: 0 }, { pollMs: 1.5 }, { pollMs: Number.NaN }, { receiptTimeoutMs: 0 }, { receiptTimeoutMs: -1 }, { receiptTimeoutMs: Infinity }]) {
+      await expect(localClient(localRpc(), over)).rejects.toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    }
   });
 });
 

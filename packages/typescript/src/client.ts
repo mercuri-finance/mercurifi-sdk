@@ -3,6 +3,7 @@ import { createPublicClient, defineChain, http, type Chain, type PublicClient, t
 import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
+import { MAX_PRIORITY_FEE_PER_GAS } from './gas.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
 import { NonceManager } from './nonce.js';
 import { redactUrl, redactUrlsIn } from './redact.js';
@@ -21,6 +22,8 @@ export interface CreateClientOptions {
   verify?: boolean;
   receiptTimeoutMs?: number;
   pollMs?: number;
+  /** Ceiling on maxPriorityFeePerGas in wei per gas. Default 100 gwei (MAX_PRIORITY_FEE_PER_GAS); a node quoting more is clamped. */
+  maxPriorityFeePerGas?: bigint;
   /** Refuse to send when the required maxFeePerGas would exceed this (wei per gas). */
   maxFeePerGasCap?: bigint;
   /** Deadline window in seconds; clamped to each account's maxDeadlineSeconds. Default 60. */
@@ -32,6 +35,7 @@ export interface ClientSettings {
   receiptTimeoutMs: number;
   pollMs: number;
   maxFeePerGasCap: bigint | undefined;
+  maxPriorityFeePerGas: bigint;
   deadlineSeconds: number;
   apiKey: string | undefined;
 }
@@ -59,6 +63,7 @@ export class MercurifiClient {
     this.sender = new TxSender({
       client: publicClient, chainId: network.chainId, nonces: this.nonces,
       receiptTimeoutMs: settings.receiptTimeoutMs, pollMs: settings.pollMs, maxFeePerGasCap: settings.maxFeePerGasCap,
+      maxPriorityFeePerGas: settings.maxPriorityFeePerGas,
     });
   }
 
@@ -113,6 +118,15 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   if (!Number.isInteger(deadlineSeconds) || deadlineSeconds < 1 || deadlineSeconds > MAX_DEADLINE_SECONDS) {
     throw new InvalidInputError('deadlineSeconds', `deadlineSeconds must be an integer in 1..${MAX_DEADLINE_SECONDS}`);
   }
+  const receiptTimeoutMs = options.receiptTimeoutMs ?? 60_000;
+  const pollMs = options.pollMs ?? 250;
+  for (const [field, value] of [['receiptTimeoutMs', receiptTimeoutMs], ['pollMs', pollMs]] as const) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
+  }
+  const maxPriorityFeePerGas = options.maxPriorityFeePerGas ?? MAX_PRIORITY_FEE_PER_GAS;
+  if (typeof maxPriorityFeePerGas !== 'bigint' || maxPriorityFeePerGas < 1n) {
+    throw new InvalidInputError('maxPriorityFeePerGas', 'maxPriorityFeePerGas must be a positive bigint (wei per gas)');
+  }
   const publicClient = createPublicClient({
     chain: arcChain(book, rpcUrl),
     transport: options.transport ?? http(rpcUrl, { retryCount: 2, timeout: 15_000 }),
@@ -133,9 +147,10 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     }
   }
   const settings: ClientSettings = {
-    receiptTimeoutMs: options.receiptTimeoutMs ?? 60_000,
-    pollMs: options.pollMs ?? 250,
+    receiptTimeoutMs,
+    pollMs,
     maxFeePerGasCap: options.maxFeePerGasCap,
+    maxPriorityFeePerGas,
     deadlineSeconds,
     apiKey: options.apiKey,
   };

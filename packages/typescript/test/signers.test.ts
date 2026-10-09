@@ -47,8 +47,8 @@ describe('signers', () => {
   it('generates a fresh key locally', () => {
     const a = generateAgentKey();
     const b = generateAgentKey();
-    expect(a.privateKey).not.toBe(b.privateKey);
-    expect(privateKeyToAccount(a.privateKey).address).toBe(a.address);
+    expect(a.exportPrivateKey()).not.toBe(b.exportPrivateKey());
+    expect(privateKeyToAccount(a.exportPrivateKey()).address).toBe(a.address);
   });
 
   it('wraps a KMS adapter and checks the recovered address', async () => {
@@ -66,17 +66,55 @@ describe('signers', () => {
     expect(JSON.stringify(kmsSigner(adapter))).not.toContain(SECRET);
   });
 
-  it('rejects a KMS signature with a high s', async () => {
+  const kms = (mutate: (r: `0x${string}`, s: bigint, parity: 0 | 1) => { r: `0x${string}`; s: bigint; yParity?: 0 | 1 }) => {
     const account = privateKeyToAccount(KEY);
-    const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
-    const adapter = {
+    return {
       address: account.address,
       signDigest: async (digest: `0x${string}`) => {
         const sig = await account.sign({ hash: digest });
-        const s = N - BigInt(`0x${sig.slice(66, 130)}`);
-        return { r: `0x${sig.slice(2, 66)}` as `0x${string}`, s: `0x${s.toString(16).padStart(64, '0')}` as `0x${string}`, yParity: 0 as const };
+        const out = mutate(`0x${sig.slice(2, 66)}`, BigInt(`0x${sig.slice(66, 130)}`), (parseInt(sig.slice(130, 132), 16) - 27) as 0 | 1);
+        return { r: out.r, s: `0x${out.s.toString(16).padStart(64, '0')}` as `0x${string}`, ...(out.yParity === undefined ? {} : { yParity: out.yParity }) };
       },
     };
-    await expect(kmsSigner(adapter).signTransaction(TX)).rejects.toThrow(/high s/);
+  };
+  const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+  it('normalises a high s and flips the parity instead of rejecting', async () => {
+    const raw = await kmsSigner(kms((r, s, p) => ({ r, s: N - s, yParity: (p === 0 ? 1 : 0) as 0 | 1 }))).signTransaction(TX);
+    expect(await recoverTransactionAddress({ serializedTransaction: raw as never })).toBe(privateKeyToAccount(KEY).address);
+    expect(BigInt(parseTransaction(raw).s!) <= N / 2n).toBe(true);
+  });
+
+  it('finds the recovery id itself when the adapter returns none', async () => {
+    for (const flip of [false, true]) {
+      const raw = await kmsSigner(kms((r, s) => ({ r, s: flip ? N - s : s }))).signTransaction(TX);
+      expect(await recoverTransactionAddress({ serializedTransaction: raw as never })).toBe(privateKeyToAccount(KEY).address);
+    }
+  });
+
+  it('rejects r or s equal to 0 or not below n', async () => {
+    const zero = `0x${'00'.repeat(32)}` as const;
+    const nHex = `0x${N.toString(16)}` as const;
+    await expect(kmsSigner(kms((_r, s) => ({ r: zero, s }))).signTransaction(TX)).rejects.toThrow(/outside 1\.\.n-1/);
+    await expect(kmsSigner(kms((r) => ({ r, s: 0n }))).signTransaction(TX)).rejects.toThrow(/outside 1\.\.n-1/);
+    await expect(kmsSigner(kms((r) => ({ r, s: N }))).signTransaction(TX)).rejects.toThrow(/outside 1\.\.n-1/);
+    await expect(kmsSigner(kms((_r, s) => ({ r: nHex, s }))).signTransaction(TX)).rejects.toThrow(/outside 1\.\.n-1/);
+  });
+
+  it('rejects non-string key input with InvalidInputError', () => {
+    for (const bad of [undefined, null, 5, {}, ['0x']] as unknown[]) {
+      expect(() => localKey(bad as string)).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    }
+  });
+
+  it('keeps a generated key out of JSON and inspect, with an explicit accessor', () => {
+    const k = generateAgentKey();
+    const secret = k.exportPrivateKey().slice(2, 20);
+    expect(k.privateKey).toBe(k.exportPrivateKey());
+    expect(Object.keys(k)).toEqual(['address']);
+    expect(JSON.stringify(k)).not.toContain(secret);
+    expect(inspect(k, { showHidden: true, depth: 5 })).not.toContain(secret);
+    expect(`${JSON.stringify({ k })}${inspect({ k }, { depth: 5 })}`).not.toContain(secret);
+    expect(privateKeyToAccount(k.exportPrivateKey()).address).toBe(k.address);
   });
 });
