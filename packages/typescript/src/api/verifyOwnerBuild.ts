@@ -4,6 +4,7 @@ import { agentAccountAbi, agentPolicyRegistryAbi } from '../abi/index.js';
 import { BuildMismatchError, InvalidInputError } from '../errors.js';
 import { encodePermissions, type Permission } from '../permissions.js';
 import type { BuiltTx, OwnerBuildFunction } from './types.js';
+import { isChainId } from './verifyBuild.js';
 
 /**
  * Owner, pending-owner and permissionless functions POST /v1/tx/build encodes. `withdraw` and `withdrawMany` go to the
@@ -133,6 +134,7 @@ export const verifyBuiltOwnerTx = (built: BuiltTx, expectation: OwnerBuildExpect
   const account = expectation.account;
   const registry = expectation.registry;
   const exact = snapshot(expectation.exact);
+  if (!isChainId(chainId)) throw new InvalidInputError('chainId', 'chainId must be a positive safe integer');
   if (typeof fn !== 'string' || !Object.hasOwn(OWNER_FUNCTIONS, fn)) throw new InvalidInputError('functionName', `${show(fn)} is not an owner function`);
   const spec = OWNER_FUNCTIONS[fn];
   if (typeof account !== 'string' || !isAddress(account, { strict: false })) throw new InvalidInputError('account', 'account is not an address');
@@ -144,7 +146,8 @@ export const verifyBuiltOwnerTx = (built: BuiltTx, expectation: OwnerBuildExpect
   if (typeof built !== 'object' || built === null) throw new BuildMismatchError('the built transaction is not an object');
   const { chainId: bChain, to, value, data, selector } = built;
   const bFunction: unknown = (built as { function?: unknown }).function;
-  if (bChain !== chainId) throw new BuildMismatchError(typeof bChain === 'number' ? `chain ${bChain} is not ${chainId}` : `chainId is a ${typeof bChain}, not a number`);
+  if (!isChainId(bChain)) throw new BuildMismatchError(`chainId ${String(bChain).slice(0, 40)} is not a positive safe integer`);
+  if (bChain !== chainId) throw new BuildMismatchError(`chain ${bChain} is not ${chainId}`);
   const target = spec.onRegistry ? (registry as Address) : account;
   if (typeof to !== 'string' || !isAddress(to, { strict: false }) || to.toLowerCase() !== target.toLowerCase()) {
     throw new BuildMismatchError(spec.onRegistry ? `target is not the agent policy registry ${target}` : `target is not your account ${account}`);

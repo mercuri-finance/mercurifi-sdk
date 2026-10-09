@@ -31,6 +31,14 @@ def _is_int(v: object) -> TypeGuard[int]:
     return type(v) is int  # exactly int: not bool, and not a subclass that overrides comparison
 
 
+_MAX_SAFE = 2**53 - 1
+
+
+def is_chain_id(v: object) -> TypeGuard[int]:
+    """A chain id: a positive int within JavaScript's safe range (as the TypeScript SDK requires)."""
+    return _is_int(v) and 0 < v <= _MAX_SAFE
+
+
 def _show(v: object) -> str:
     """A value for an error message: it may be attacker-chosen (a metadata URI), so sanitised and bounded."""
     text = v if isinstance(v, str) else repr(v)
@@ -93,17 +101,30 @@ def snapshot_expectation(
 
 
 def snapshot_built(built: Mapping[str, Any]) -> dict[str, Any]:
-    """The five fields verification and sending use, read once each, so the bytes verified are the bytes signed."""
+    """The fields verification and sending use, read once each, so the bytes verified are the bytes signed."""
     if not isinstance(built, Mapping):
         raise BuildMismatchError("the built transaction is not a mapping")
-    snap = {k: built[k] for k in ("chainId", "to", "data", "value", "selector") if k in built}
-    for k in ("to", "data", "value", "selector"):
+    snap = {k: built[k] for k in ("chainId", "to", "data", "value", "selector", "function") if k in built}
+    for k in ("to", "data", "value", "selector", "function"):
         # Exactly str: a subclass could answer differently each time it is read, compared or converted.
         if k in snap and type(snap[k]) is not str:
             raise BuildMismatchError(f"{k} is a {type(snap[k]).__name__}, not a string")
     if "chainId" in snap and type(snap["chainId"]) is not int:
         raise BuildMismatchError(f"chainId is a {type(snap['chainId']).__name__}, not an integer")
     return snap
+
+
+def _check_chain(b: Mapping[str, Any], chain_id: int) -> None:
+    got = b.get("chainId")
+    if not is_chain_id(got):
+        raise BuildMismatchError(f"chainId {_show(got)} is not a positive safe integer")
+    if got != chain_id:
+        raise BuildMismatchError(f"chain {got} is not {chain_id}")
+
+
+def _check_server_function(b: Mapping[str, Any], name: str) -> None:
+    if "function" in b and b["function"] != name:
+        raise BuildMismatchError(f"the server's function {_show(b['function'])} does not match the calldata")
 
 
 def verify_built_tx(
@@ -118,6 +139,8 @@ def verify_built_tx(
     decimal strings). at_least: minimum-output arguments (min...Out) that must be at least these ints. deadline: the
     (min, max) window for the `deadline` argument; claimFees and sweepToOwner take none.
     """
+    if not is_chain_id(chain_id):
+        raise InvalidInputError("chain_id", "chain_id must be a positive safe integer")
     if type(function_name) is not str or function_name not in AGENT_FUNCTIONS:
         raise InvalidInputError("function_name", f"{_show(function_name)} is not an agent trade function")
     if not isinstance(account, str) or _ADDRESS.fullmatch(account) is None:
@@ -126,8 +149,7 @@ def verify_built_tx(
     exact_d = exact_c if exact_c is not None else {}
     least_d = least_c if least_c is not None else {}
     b = snapshot_built(built)
-    if not _is_int(b.get("chainId")) or b["chainId"] != chain_id:
-        raise BuildMismatchError(f"chain {_show(b.get('chainId'))} is not {chain_id}")
+    _check_chain(b, chain_id)
     to = b.get("to")
     if not isinstance(to, str) or _ADDRESS.fullmatch(to) is None or to.lower() != account.lower():
         raise BuildMismatchError(f"target is not your account {account}")
@@ -150,6 +172,7 @@ def verify_built_tx(
         raise BuildMismatchError(f"{name} is not an agent trade function")
     if name != function_name:
         raise BuildMismatchError(f"built {name}, asked for {function_name}")
+    _check_server_function(b, name)
 
     named: dict[str, Any] = {}
     for key, val in args.items():
@@ -313,6 +336,8 @@ def verify_built_owner_tx(
     is a mapping with every Policy field; tokens is the exact ordered list. The expectation must come from your own
     request, never from the build response or from the args this returns.
     """
+    if not is_chain_id(chain_id):
+        raise InvalidInputError("chain_id", "chain_id must be a positive safe integer")
     if type(function_name) is not str or function_name not in OWNER_FUNCTIONS:
         raise InvalidInputError("function_name", f"{_show(function_name)} is not an owner function")
     on_registry, arg_names = OWNER_FUNCTIONS[function_name]
@@ -326,9 +351,7 @@ def verify_built_owner_tx(
     if not isinstance(exact_c, dict):
         raise InvalidInputError("exact", "exact must be a mapping with every argument")
     b = snapshot_built(built)
-    server_fn = built["function"] if "function" in built else None  # read once
-    if not _is_int(b.get("chainId")) or b["chainId"] != chain_id:
-        raise BuildMismatchError(f"chain {_show(b.get('chainId'))} is not {chain_id}")
+    _check_chain(b, chain_id)
     target = registry if on_registry and registry is not None else account
     to = b.get("to")
     if not isinstance(to, str) or _ADDRESS.fullmatch(to) is None or to.lower() != target.lower():
@@ -355,8 +378,7 @@ def verify_built_owner_tx(
         raise BuildMismatchError(f"{name} is not an owner function of {contract.name}")
     if name != function_name:
         raise BuildMismatchError(f"built {name}, asked for {function_name}")
-    if server_fn is not None and (type(server_fn) is not str or server_fn != name):
-        raise BuildMismatchError(f"the server's function {_show(server_fn)} does not match the calldata")
+    _check_server_function(b, name)
     inputs = contract.function(name).get("inputs", [])
     values = list(decoded.values())
     lead = 1 if on_registry else 0

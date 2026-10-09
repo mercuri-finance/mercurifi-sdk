@@ -53,6 +53,9 @@ export const snapshotExpectation = <T extends Pick<BuildExpectation, 'exact' | '
 
 const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : null);
 
+/** A chain id: a positive safe integer (never a string, a fraction or a bigint). */
+export const isChainId = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
+
 /**
  * Decodes calldata the API built and checks it against what was asked for, before anything is signed:
  * target = own account, chain, zero value, the server's selector (when sent) matching the calldata, an agent trade
@@ -67,7 +70,8 @@ const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : nul
  */
 export const verifyBuiltTx = (built: BuiltTx, expectation: BuildExpectation): { functionName: AgentFunction; args: Record<string, unknown> } => {
   const e = { chainId: expectation.chainId, account: expectation.account, functionName: expectation.functionName, ...snapshotExpectation(expectation) };
-  if (!AGENT_FUNCTIONS.includes(e.functionName)) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
+  if (!isChainId(e.chainId)) throw new InvalidInputError('chainId', 'chainId must be a positive safe integer');
+  if (typeof e.functionName !== 'string' || !AGENT_FUNCTIONS.includes(e.functionName)) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
   for (const [k, v] of Object.entries(e.atLeast ?? {})) {
     if (!MIN_OUT.test(k)) throw new InvalidInputError('atLeast', `atLeast applies to minimum-output arguments only, not ${k}`);
     if (typeof v !== 'bigint' || v < 0n) throw new InvalidInputError('atLeast', `atLeast.${k} must be a non-negative bigint`);
@@ -76,7 +80,8 @@ export const verifyBuiltTx = (built: BuiltTx, expectation: BuildExpectation): { 
     throw new InvalidInputError('deadline', 'the deadline window needs bigint min <= max');
   }
   if (typeof built !== 'object' || built === null) throw new BuildMismatchError('the built transaction is not an object');
-  if (built.chainId !== e.chainId) throw new BuildMismatchError(typeof built.chainId === 'number' ? `chain ${built.chainId} is not ${e.chainId}` : `chainId is a ${typeof built.chainId}, not a number`);
+  if (!isChainId(built.chainId)) throw new BuildMismatchError(`chainId ${String(built.chainId).slice(0, 40)} is not a positive safe integer`);
+  if (built.chainId !== e.chainId) throw new BuildMismatchError(`chain ${built.chainId} is not ${e.chainId}`);
   if (typeof built.to !== 'string' || !isAddress(built.to, { strict: false }) || built.to.toLowerCase() !== e.account.toLowerCase()) {
     throw new BuildMismatchError(`target is not your account ${e.account}`);
   }
@@ -93,6 +98,10 @@ export const verifyBuiltTx = (built: BuiltTx, expectation: BuildExpectation): { 
   }
   if (!AGENT_FUNCTIONS.includes(decoded.functionName)) throw new BuildMismatchError(`${decoded.functionName} is not an agent trade function`);
   if (decoded.functionName !== e.functionName) throw new BuildMismatchError(`built ${decoded.functionName}, asked for ${e.functionName}`);
+  const serverFunction: unknown = (built as { function?: unknown }).function;
+  if (serverFunction !== undefined && serverFunction !== decoded.functionName) {
+    throw new BuildMismatchError(`the server's function ${String(serverFunction).slice(0, 40)} does not match the calldata`);
+  }
   const reencoded = encodeFunctionData({ abi: agentAccountAbi, functionName: decoded.functionName, args: decoded.args } as never);
   if (reencoded.toLowerCase() !== built.data.toLowerCase()) throw new BuildMismatchError('calldata has trailing or non-canonical bytes');
 
