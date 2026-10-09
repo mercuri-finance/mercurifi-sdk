@@ -1,0 +1,1521 @@
+{
+ "errors": [
+  {
+   "data": "0x1e71aaf0",
+   "name": "AllowanceNotCleared",
+   "source": "AgentAccount",
+   "message": "Safety check: an allowance survived the trade, so the whole trade was reverted. Report this."
+  },
+  {
+   "data": "0x0dc149f0",
+   "name": "AlreadyInitialized",
+   "source": "AgentAccount",
+   "message": "This account is already initialised."
+  },
+  {
+   "data": "0x06250401",
+   "name": "AmountTooLarge",
+   "source": "AgentAccount",
+   "message": "The amount is too large to encode (above uint128 for pool swaps, or overflowing the native scale)."
+  },
+  {
+   "data": "0xf4b3b1bc",
+   "name": "NativeTransferFailed",
+   "source": "AgentAccount",
+   "message": "The native USDC transfer to the owner failed (for example a blocklisted owner, or an owner contract that refuses USDC)."
+  },
+  {
+   "data": "0x32cc7236",
+   "name": "NotFactory",
+   "source": "AgentAccount",
+   "message": "Only the agent account factory can do this."
+  },
+  {
+   "data": "0xd66173a5",
+   "name": "NotGraduated",
+   "source": "AgentAccount",
+   "message": "The token has not graduated; trade it on its curve with buy or sell."
+  },
+  {
+   "data": "0x30cd7471",
+   "name": "NotOwner",
+   "source": "AgentAccount",
+   "message": "Only the account owner can do this."
+  },
+  {
+   "data": "0x0bc3bfc6",
+   "name": "NotTrading",
+   "source": "AgentAccount",
+   "message": "The curve is not trading: it sold out, is graduating, or has graduated. Use swapExactIn once it has graduated."
+  },
+  {
+   "data": "0xa3522e970000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "PriceImpactTooHigh",
+   "source": "AgentAccount",
+   "message": "This trade would move the price by 12500000 bps, above maxPriceImpactBps. Trade a smaller size."
+  },
+  {
+   "data": "0x3ee5aeb5",
+   "name": "ReentrancyGuardReentrantCall",
+   "source": "AgentAccount",
+   "message": "Reentrant call refused."
+  },
+  {
+   "data": "0x6dfcc65000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "SafeCastOverflowedUintDowncast",
+   "source": "AgentAccount",
+   "message": "A value overflowed 3 bits."
+  },
+  {
+   "data": "0x24775e060000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "SafeCastOverflowedUintToInt",
+   "source": "AgentAccount",
+   "message": "A value overflowed int256."
+  },
+  {
+   "data": "0x5274afe700000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "SafeERC20FailedOperation",
+   "source": "AgentAccount",
+   "message": "A token transfer or approval of 0x00000000000000000000000000000000000000a0 failed."
+  },
+  {
+   "data": "0x601a7a3f",
+   "name": "SelfReferrer",
+   "source": "AgentAccount",
+   "message": "The referrer cannot be the account itself."
+  },
+  {
+   "data": "0x4cc775c80000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "SnipeTaxTooHigh",
+   "source": "AgentAccount",
+   "message": "The launch snipe tax is 12500000 bps, above this account limit (maxSnipeBps). Wait for it to decay."
+  },
+  {
+   "data": "0xa29c4986",
+   "name": "TokenNotAllowed",
+   "source": "AgentAccount",
+   "message": "The account is in allowlist mode and this token is not on the owner allowlist. Sells stay open."
+  },
+  {
+   "data": "0x259ba1ad",
+   "name": "TokenNotRegistered",
+   "source": "AgentAccount",
+   "message": "The token is not a Mercurifi Launch token on this network."
+  },
+  {
+   "data": "0x9af9df49",
+   "name": "TokenTooNew",
+   "source": "AgentAccount",
+   "message": "The token is younger than the account minimum token age (minTokenAgeBlocks)."
+  },
+  {
+   "data": "0x85b78ea00000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "TradeTooLarge",
+   "source": "AgentAccount",
+   "message": "Above the per-trade limit of 12.5 USDC (maxTradeUsdc). Sells count at cost basis, launches include the launch fee."
+  },
+  {
+   "data": "0x1fdcfec6",
+   "name": "UnexpectedPool",
+   "source": "AgentAccount",
+   "message": "The graduated pool is not the LaunchHook USDC pool for this token; the account refuses to trade it."
+  },
+  {
+   "data": "0x86d60ef4",
+   "name": "UnexpectedSwapDelta",
+   "source": "AgentAccount",
+   "message": "Safety check: the pool swap moved more or returned less than asked, so the whole swap was reverted. Report this."
+  },
+  {
+   "data": "0xd92e233d",
+   "name": "ZeroAddress",
+   "source": "AgentAccount",
+   "message": "An address argument is the zero address."
+  },
+  {
+   "data": "0x1f2a2005",
+   "name": "ZeroAmount",
+   "source": "AgentAccount",
+   "message": "The amount is zero or rounds to zero."
+  },
+  {
+   "data": "0x2870c094",
+   "name": "ZeroMinOut",
+   "source": "AgentAccount",
+   "message": "The minimum output must be above zero."
+  },
+  {
+   "data": "0xe618637e",
+   "name": "ZeroOutput",
+   "source": "AgentAccount",
+   "message": "The trade would return nothing at the current price."
+  },
+  {
+   "data": "0x8b320951",
+   "name": "AcceptRequired",
+   "source": "AgentPolicyRegistry",
+   "message": "An ownership transfer completes only when the new owner calls acceptOwnership."
+  },
+  {
+   "data": "0x4ce0183e",
+   "name": "ActionLimit",
+   "source": "AgentPolicyRegistry",
+   "message": "The account has used all its actions for this period (maxActionsPerPeriod)."
+  },
+  {
+   "data": "0x091b2930",
+   "name": "AgentAlreadyActive",
+   "source": "AgentPolicyRegistry",
+   "message": "That agent is already active; use setAgent to change its terms."
+  },
+  {
+   "data": "0x341ac0ac",
+   "name": "AgentExpired",
+   "source": "AgentPolicyRegistry",
+   "message": "This agent key has expired. The owner can extend it (a queued change) or add a new key."
+  },
+  {
+   "data": "0xc1b9d30a",
+   "name": "AgentExpiryOutOfRange",
+   "source": "AgentPolicyRegistry",
+   "message": "The agent expiry must be after now and at most 180 days away."
+  },
+  {
+   "data": "0x486fcee2",
+   "name": "AgentNotActive",
+   "source": "AgentPolicyRegistry",
+   "message": "That address is not an active agent; use addAgent."
+  },
+  {
+   "data": "0x17411e8a",
+   "name": "AgentRetired",
+   "source": "AgentPolicyRegistry",
+   "message": "That address was revoked before and can never be an agent of this account again."
+  },
+  {
+   "data": "0x53572ee80000000000000000000000000000000000000000000000000000000000000003",
+   "name": "BetaCeiling",
+   "source": "AgentPolicyRegistry",
+   "message": "The policy field periodSellCap is above the beta ceiling of this factory."
+  },
+  {
+   "data": "0x8550a24e",
+   "name": "DeadlineOutOfRange",
+   "source": "AgentPolicyRegistry",
+   "message": "The deadline is outside [now, now + maxDeadlineSeconds]. The SDK builds deadlines from chain time; a custom deadline must respect the account limit."
+  },
+  {
+   "data": "0x685b79ac",
+   "name": "DelayOutOfRange",
+   "source": "AgentPolicyRegistry",
+   "message": "The widening delay must be at most seven days."
+  },
+  {
+   "data": "0xbebdc757",
+   "name": "InvalidAgent",
+   "source": "AgentPolicyRegistry",
+   "message": "The agent key cannot be zero, the owner or the account itself."
+  },
+  {
+   "data": "0x49e27cff",
+   "name": "InvalidOwner",
+   "source": "AgentPolicyRegistry",
+   "message": "The new owner cannot be zero, the account itself or the current owner."
+  },
+  {
+   "data": "0x932d94f7",
+   "name": "InvalidPermissions",
+   "source": "AgentPolicyRegistry",
+   "message": "The permissions are empty or contain an unknown bit."
+  },
+  {
+   "data": "0x3016e0e00000000000000000000000000000000000000000000000000000000000000003",
+   "name": "InvalidPolicy",
+   "source": "AgentPolicyRegistry",
+   "message": "The policy field periodSellCap is out of range (a bps field above 10,000, or a deadline outside 1\u2013600 s)."
+  },
+  {
+   "data": "0x174221dc",
+   "name": "LaunchLimit",
+   "source": "AgentPolicyRegistry",
+   "message": "The account has used all its launches for this period (launchesPerPeriod)."
+  },
+  {
+   "data": "0x3f904dc0",
+   "name": "MissingPermission",
+   "source": "AgentPolicyRegistry",
+   "message": "This agent key does not have the permission this action needs."
+  },
+  {
+   "data": "0xb7150de5",
+   "name": "NotAccount",
+   "source": "AgentPolicyRegistry",
+   "message": "The caller is not a registered agent account of this factory."
+  },
+  {
+   "data": "0x0d9ab13f",
+   "name": "NotAgent",
+   "source": "AgentPolicyRegistry",
+   "message": "This key is not an active agent of the account: never added, revoked, or its addition is still queued."
+  },
+  {
+   "data": "0x1853971c",
+   "name": "NotPendingOwner",
+   "source": "AgentPolicyRegistry",
+   "message": "Only the proposed new owner of this queued transfer can accept it."
+  },
+  {
+   "data": "0x9e87fac8",
+   "name": "Paused",
+   "source": "AgentPolicyRegistry",
+   "message": "Agent actions are paused, by the account owner or by the platform guardian pause (at most 72 h)."
+  },
+  {
+   "data": "0x9cc9ba13",
+   "name": "PeriodOutOfRange",
+   "source": "AgentPolicyRegistry",
+   "message": "The usage period must be between one hour and seven days."
+  },
+  {
+   "data": "0xd621d6ab0000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "PeriodSellExceeded",
+   "source": "AgentPolicyRegistry",
+   "message": "Above the period sell cap. Sells are valued at the higher of the average and the high-water cost basis. Remaining this period: 12.5 USDC."
+  },
+  {
+   "data": "0x5f28e6450000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "PeriodSpendExceeded",
+   "source": "AgentPolicyRegistry",
+   "message": "Above the period spend cap. Remaining this period: 12.5 USDC."
+  },
+  {
+   "data": "0x1e6b8cd7",
+   "name": "QueuedExpired",
+   "source": "AgentPolicyRegistry",
+   "message": "This queued change expired 7 days after its ETA. Cancel it and queue it again."
+  },
+  {
+   "data": "0x90e5fb03",
+   "name": "StaleQueued",
+   "source": "AgentPolicyRegistry",
+   "message": "The subject of this queued change (the agent, the token's allowlist entry or the delay) was changed after it was queued, so it no longer applies. Queue it again."
+  },
+  {
+   "data": "0x52b5babd0000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "TokenCapExceeded",
+   "source": "AgentPolicyRegistry",
+   "message": "Above the per-token period cap. Remaining for this token: 12.5 USDC."
+  },
+  {
+   "data": "0xaa72ab2a000000000000000000000000000000000000000000000000000000006b49d200",
+   "name": "TooEarly",
+   "source": "AgentPolicyRegistry",
+   "message": "This queued change can run from 2027-01-15T08:00:00.000Z."
+  },
+  {
+   "data": "0x47d53436",
+   "name": "TooManyAgents",
+   "source": "AgentPolicyRegistry",
+   "message": "The account already has eight active agents. Revoke one first."
+  },
+  {
+   "data": "0xd0e715a90000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "UnknownQueued",
+   "source": "AgentPolicyRegistry",
+   "message": "No queued change has id 12500000 (never queued, already executed or cancelled)."
+  },
+  {
+   "data": "0x91a7990e00000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "AccountExists",
+   "source": "AgentAccountFactory",
+   "message": "An account already exists at 0x00000000000000000000000000000000000000a0 for this owner and salt; use another salt."
+  },
+  {
+   "data": "0xb06ebf3d",
+   "name": "FailedDeployment",
+   "source": "AgentAccountFactory",
+   "message": "The account clone could not be deployed."
+  },
+  {
+   "data": "0xf3e597be",
+   "name": "GuardianDisabled",
+   "source": "AgentAccountFactory",
+   "message": "This factory has no guardian; no pause can be started."
+  },
+  {
+   "data": "0x2ca8ba9e",
+   "name": "ImplementationMismatch",
+   "source": "AgentAccountFactory",
+   "message": "The implementation is not bound to this factory and its registry."
+  },
+  {
+   "data": "0xcf4791810000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "InsufficientBalance",
+   "source": "AgentAccountFactory",
+   "message": "Insufficient balance: 12500000 available, 12500001 needed."
+  },
+  {
+   "data": "0xb4eda4e50000000000000000000000000000000000000000000000000000000000000003",
+   "name": "InvalidCeiling",
+   "source": "AgentAccountFactory",
+   "message": "The beta ceiling for periodSellCap is out of range."
+  },
+  {
+   "data": "0x61e8a703",
+   "name": "NoActivePause",
+   "source": "AgentAccountFactory",
+   "message": "There is no active pause to extend."
+  },
+  {
+   "data": "0x7bfa4b9f",
+   "name": "NotAdmin",
+   "source": "AgentAccountFactory",
+   "message": "Only the factory admin (the Launch timelock) can do this."
+  },
+  {
+   "data": "0xef6d0f02",
+   "name": "NotGuardian",
+   "source": "AgentAccountFactory",
+   "message": "Only the guardian can do this."
+  },
+  {
+   "data": "0xf5406dc5000000000000000000000000000000000000000000000000000000006b49d200",
+   "name": "PauseCooldown",
+   "source": "AgentAccountFactory",
+   "message": "The guardian pause is cooling down until 2027-01-15T08:00:00.000Z."
+  },
+  {
+   "data": "0x6d07a27b000000000000000000000000000000000000000000000000000000006b49d200",
+   "name": "PauseTooLong",
+   "source": "AgentAccountFactory",
+   "message": "The pause may last at most until 2027-01-15T08:00:00.000Z."
+  },
+  {
+   "data": "0x203d82d8",
+   "name": "Expired",
+   "source": "BondingCurve",
+   "message": "The deadline passed before the transaction was included."
+  },
+  {
+   "data": "0x37c6d202",
+   "name": "InitialBuyTooLarge",
+   "source": "BondingCurve",
+   "message": "The initial buy is above the launch cap (maxInitialBuyTokens)."
+  },
+  {
+   "data": "0x9a697b0d",
+   "name": "InsufficientGasForGraduation",
+   "source": "BondingCurve",
+   "message": "This buy completes the curve and needs more gas for graduation. The SDK sends at least 1,800,000 gas for such buys."
+  },
+  {
+   "data": "0x7dc6505a",
+   "name": "NotPending",
+   "source": "BondingCurve",
+   "message": "Reverted with NotPending (BondingCurve)."
+  },
+  {
+   "data": "0x7dd37f70",
+   "name": "Slippage",
+   "source": "BondingCurve",
+   "message": "The price moved past your minimum output. Re-quote and retry, or allow more slippage."
+  },
+  {
+   "data": "0x90b8ec18",
+   "name": "TransferFailed",
+   "source": "BondingCurve",
+   "message": "Reverted with TransferFailed (BondingCurve)."
+  },
+  {
+   "data": "0x82b42900",
+   "name": "Unauthorized",
+   "source": "BondingCurve",
+   "message": "Reverted with Unauthorized (BondingCurve)."
+  },
+  {
+   "data": "0x9996b31500000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "AddressEmptyCode",
+   "source": "LaunchFactory",
+   "message": "Reverted with AddressEmptyCode (LaunchFactory)."
+  },
+  {
+   "data": "0xb9b69020",
+   "name": "ConfigChanged",
+   "source": "LaunchFactory",
+   "message": "The Launch config changed between the quote and inclusion. Re-read the config and retry."
+  },
+  {
+   "data": "0x4c9c8ce300000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "ERC1967InvalidImplementation",
+   "source": "LaunchFactory",
+   "message": "Reverted with ERC1967InvalidImplementation (LaunchFactory)."
+  },
+  {
+   "data": "0xb398979f",
+   "name": "ERC1967NonPayable",
+   "source": "LaunchFactory",
+   "message": "Reverted with ERC1967NonPayable (LaunchFactory)."
+  },
+  {
+   "data": "0xd93c0665",
+   "name": "EnforcedPause",
+   "source": "LaunchFactory",
+   "message": "Launch is paused by governance."
+  },
+  {
+   "data": "0x8dfc202b",
+   "name": "ExpectedPause",
+   "source": "LaunchFactory",
+   "message": "Reverted with ExpectedPause (LaunchFactory)."
+  },
+  {
+   "data": "0xd6bda275",
+   "name": "FailedCall",
+   "source": "LaunchFactory",
+   "message": "Reverted with FailedCall (LaunchFactory)."
+  },
+  {
+   "data": "0xceaba46f",
+   "name": "InsufficientLaunchFee",
+   "source": "LaunchFactory",
+   "message": "The value sent does not cover the launch fee."
+  },
+  {
+   "data": "0x35be3ac8",
+   "name": "InvalidConfig",
+   "source": "LaunchFactory",
+   "message": "Reverted with InvalidConfig (LaunchFactory)."
+  },
+  {
+   "data": "0xf92ee8a9",
+   "name": "InvalidInitialization",
+   "source": "LaunchFactory",
+   "message": "Reverted with InvalidInitialization (LaunchFactory)."
+  },
+  {
+   "data": "0xa86b6512",
+   "name": "InvalidParams",
+   "source": "LaunchFactory",
+   "message": "The name must be 1\u201332 bytes, the symbol 1\u201310 bytes and the metadata URI at most 256 bytes."
+  },
+  {
+   "data": "0xd7e6bcf8",
+   "name": "NotInitializing",
+   "source": "LaunchFactory",
+   "message": "Reverted with NotInitializing (LaunchFactory)."
+  },
+  {
+   "data": "0x2c49223e",
+   "name": "NotOwnerOrGuardian",
+   "source": "LaunchFactory",
+   "message": "Reverted with NotOwnerOrGuardian (LaunchFactory)."
+  },
+  {
+   "data": "0x1e4fbdf700000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "OwnableInvalidOwner",
+   "source": "LaunchFactory",
+   "message": "Reverted with OwnableInvalidOwner (LaunchFactory)."
+  },
+  {
+   "data": "0x118cdaa700000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "OwnableUnauthorizedAccount",
+   "source": "LaunchFactory",
+   "message": "Reverted with OwnableUnauthorizedAccount (LaunchFactory)."
+  },
+  {
+   "data": "0x89051165",
+   "name": "RenounceDisabled",
+   "source": "LaunchFactory",
+   "message": "Reverted with RenounceDisabled (LaunchFactory)."
+  },
+  {
+   "data": "0xe07c8dba",
+   "name": "UUPSUnauthorizedCallContext",
+   "source": "LaunchFactory",
+   "message": "Reverted with UUPSUnauthorizedCallContext (LaunchFactory)."
+  },
+  {
+   "data": "0xaa1d49a4abababababababababababababababababababababababababababababababab",
+   "name": "UUPSUnsupportedProxiableUUID",
+   "source": "LaunchFactory",
+   "message": "Reverted with UUPSUnsupportedProxiableUUID (LaunchFactory)."
+  },
+  {
+   "data": "0x3a81d6fc",
+   "name": "AlreadyRegistered",
+   "source": "FeeManager",
+   "message": "Reverted with AlreadyRegistered (FeeManager)."
+  },
+  {
+   "data": "0x61104228",
+   "name": "InvalidReferrer",
+   "source": "FeeManager",
+   "message": "Reverted with InvalidReferrer (FeeManager)."
+  },
+  {
+   "data": "0x6edcc523",
+   "name": "InvalidShares",
+   "source": "FeeManager",
+   "message": "Reverted with InvalidShares (FeeManager)."
+  },
+  {
+   "data": "0xbc505ec1",
+   "name": "InvalidTradeFee",
+   "source": "FeeManager",
+   "message": "Reverted with InvalidTradeFee (FeeManager)."
+  },
+  {
+   "data": "0x969bf728",
+   "name": "NothingToClaim",
+   "source": "FeeManager",
+   "message": "There are no fees to claim."
+  },
+  {
+   "data": "0xaae5c478",
+   "name": "ReferrerLocked",
+   "source": "FeeManager",
+   "message": "Reverted with ReferrerLocked (FeeManager)."
+  },
+  {
+   "data": "0xd372ba42",
+   "name": "Unbacked",
+   "source": "FeeManager",
+   "message": "Reverted with Unbacked (FeeManager)."
+  },
+  {
+   "data": "0xe4455cae",
+   "name": "InsufficientTokenBalance",
+   "source": "GraduationManager",
+   "message": "Reverted with InsufficientTokenBalance (GraduationManager)."
+  },
+  {
+   "data": "0x1f5d41480000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "InvalidSqrtPrice",
+   "source": "GraduationManager",
+   "message": "Reverted with InvalidSqrtPrice (GraduationManager)."
+  },
+  {
+   "data": "0x5bce1036",
+   "name": "NothingToSeed",
+   "source": "GraduationManager",
+   "message": "Reverted with NothingToSeed (GraduationManager)."
+  },
+  {
+   "data": "0x0a85dc29",
+   "name": "HookNotImplemented",
+   "source": "LaunchHook",
+   "message": "Reverted with HookNotImplemented (LaunchHook)."
+  },
+  {
+   "data": "0xcb644850",
+   "name": "NotGraduationManager",
+   "source": "LaunchHook",
+   "message": "Reverted with NotGraduationManager (LaunchHook)."
+  },
+  {
+   "data": "0xae18210a",
+   "name": "NotPoolManager",
+   "source": "LaunchHook",
+   "message": "Reverted with NotPoolManager (LaunchHook)."
+  },
+  {
+   "data": "0xd964f528",
+   "name": "PartialFill",
+   "source": "LaunchHook",
+   "message": "The pool cannot fill this whole amount within its price bounds. Trade a smaller size."
+  },
+  {
+   "data": "0x327269a700000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "SafeCastOverflowedIntDowncast",
+   "source": "LaunchHook",
+   "message": "Reverted with SafeCastOverflowedIntDowncast (LaunchHook)."
+  },
+  {
+   "data": "0xfb8f41b200000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "ERC20InsufficientAllowance",
+   "source": "LaunchToken",
+   "message": "Reverted with ERC20InsufficientAllowance (LaunchToken)."
+  },
+  {
+   "data": "0xe450d38c00000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "ERC20InsufficientBalance",
+   "source": "LaunchToken",
+   "message": "The account does not hold enough of this token."
+  },
+  {
+   "data": "0xe602df0500000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "ERC20InvalidApprover",
+   "source": "LaunchToken",
+   "message": "Reverted with ERC20InvalidApprover (LaunchToken)."
+  },
+  {
+   "data": "0xec442f0500000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "ERC20InvalidReceiver",
+   "source": "LaunchToken",
+   "message": "Reverted with ERC20InvalidReceiver (LaunchToken)."
+  },
+  {
+   "data": "0x96c6fd1e00000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "ERC20InvalidSender",
+   "source": "LaunchToken",
+   "message": "Reverted with ERC20InvalidSender (LaunchToken)."
+  },
+  {
+   "data": "0x94280d6200000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "ERC20InvalidSpender",
+   "source": "LaunchToken",
+   "message": "Reverted with ERC20InvalidSpender (LaunchToken)."
+  },
+  {
+   "data": "0xcd78605900000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "AddressInsufficientBalance",
+   "source": "UniversalRouter",
+   "message": "Reverted with AddressInsufficientBalance (UniversalRouter)."
+  },
+  {
+   "data": "0xa3281672",
+   "name": "BalanceTooLow",
+   "source": "UniversalRouter",
+   "message": "Reverted with BalanceTooLow (UniversalRouter)."
+  },
+  {
+   "data": "0x6f5ffb7e",
+   "name": "ContractLocked",
+   "source": "UniversalRouter",
+   "message": "Reverted with ContractLocked (UniversalRouter)."
+  },
+  {
+   "data": "0x3351b26000000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "DeltaNotNegative",
+   "source": "UniversalRouter",
+   "message": "Reverted with DeltaNotNegative (UniversalRouter)."
+  },
+  {
+   "data": "0x4c085bf100000000000000000000000000000000000000000000000000000000000000a0",
+   "name": "DeltaNotPositive",
+   "source": "UniversalRouter",
+   "message": "Reverted with DeltaNotPositive (UniversalRouter)."
+  },
+  {
+   "data": "0xf645eedf",
+   "name": "ECDSAInvalidSignature",
+   "source": "UniversalRouter",
+   "message": "Reverted with ECDSAInvalidSignature (UniversalRouter)."
+  },
+  {
+   "data": "0xfce698f70000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "ECDSAInvalidSignatureLength",
+   "source": "UniversalRouter",
+   "message": "Reverted with ECDSAInvalidSignatureLength (UniversalRouter)."
+  },
+  {
+   "data": "0xd78bce0cabababababababababababababababababababababababababababababababab",
+   "name": "ECDSAInvalidSignatureS",
+   "source": "UniversalRouter",
+   "message": "Reverted with ECDSAInvalidSignatureS (UniversalRouter)."
+  },
+  {
+   "data": "0x1231ae40",
+   "name": "ETHNotAccepted",
+   "source": "UniversalRouter",
+   "message": "Reverted with ETHNotAccepted (UniversalRouter)."
+  },
+  {
+   "data": "0x2c4029e90000000000000000000000000000000000000000000000000000000000bebc20000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000021234000000000000000000000000000000000000000000000000000000000000",
+   "name": "ExecutionFailed",
+   "source": "UniversalRouter",
+   "message": "Reverted with ExecutionFailed (UniversalRouter)."
+  },
+  {
+   "data": "0x1425ea42",
+   "name": "FailedInnerCall",
+   "source": "UniversalRouter",
+   "message": "Reverted with FailedInnerCall (UniversalRouter)."
+  },
+  {
+   "data": "0xe7002877",
+   "name": "FromAddressIsNotOwner",
+   "source": "UniversalRouter",
+   "message": "Reverted with FromAddressIsNotOwner (UniversalRouter)."
+  },
+  {
+   "data": "0xaaad13f7",
+   "name": "InputLengthMismatch",
+   "source": "UniversalRouter",
+   "message": "Reverted with InputLengthMismatch (UniversalRouter)."
+  },
+  {
+   "data": "0xf4d678b8",
+   "name": "InsufficientBalance",
+   "source": "UniversalRouter",
+   "message": "Insufficient balance."
+  },
+  {
+   "data": "0x6a12f104",
+   "name": "InsufficientETH",
+   "source": "UniversalRouter",
+   "message": "Reverted with InsufficientETH (UniversalRouter)."
+  },
+  {
+   "data": "0x675cae38",
+   "name": "InsufficientToken",
+   "source": "UniversalRouter",
+   "message": "Reverted with InsufficientToken (UniversalRouter)."
+  },
+  {
+   "data": "0xf801e525deadbeef00000000000000000000000000000000000000000000000000000000",
+   "name": "InvalidAction",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidAction (UniversalRouter)."
+  },
+  {
+   "data": "0xdeaa01e6",
+   "name": "InvalidBips",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidBips (UniversalRouter)."
+  },
+  {
+   "data": "0xd76a1e9e0000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "InvalidCommandType",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidCommandType (UniversalRouter)."
+  },
+  {
+   "data": "0x38bbd576",
+   "name": "InvalidEthSender",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidEthSender (UniversalRouter)."
+  },
+  {
+   "data": "0x8af5ad98",
+   "name": "InvalidHopPriceLength",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidHopPriceLength (UniversalRouter)."
+  },
+  {
+   "data": "0x20db8267",
+   "name": "InvalidPath",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidPath (UniversalRouter)."
+  },
+  {
+   "data": "0x90f5ebeb",
+   "name": "InvalidPortion",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidPortion (UniversalRouter)."
+  },
+  {
+   "data": "0x7b9c8916",
+   "name": "InvalidReserves",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidReserves (UniversalRouter)."
+  },
+  {
+   "data": "0xb3512b0c",
+   "name": "InvalidShortString",
+   "source": "UniversalRouter",
+   "message": "Reverted with InvalidShortString (UniversalRouter)."
+  },
+  {
+   "data": "0xff633a38",
+   "name": "LengthMismatch",
+   "source": "UniversalRouter",
+   "message": "Reverted with LengthMismatch (UniversalRouter)."
+  },
+  {
+   "data": "0x1fb09b80",
+   "name": "NonceAlreadyUsed",
+   "source": "UniversalRouter",
+   "message": "Reverted with NonceAlreadyUsed (UniversalRouter)."
+  },
+  {
+   "data": "0xbb25d4c50000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "NotAuthorizedForToken",
+   "source": "UniversalRouter",
+   "message": "Reverted with NotAuthorizedForToken (UniversalRouter)."
+  },
+  {
+   "data": "0x5d1d0f9f",
+   "name": "OnlyMintAllowed",
+   "source": "UniversalRouter",
+   "message": "Reverted with OnlyMintAllowed (UniversalRouter)."
+  },
+  {
+   "data": "0x3b99b53d",
+   "name": "SliceOutOfBounds",
+   "source": "UniversalRouter",
+   "message": "Reverted with SliceOutOfBounds (UniversalRouter)."
+  },
+  {
+   "data": "0x305a27a90000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000568656c6c6f000000000000000000000000000000000000000000000000000000",
+   "name": "StringTooLong",
+   "source": "UniversalRouter",
+   "message": "Reverted with StringTooLong (UniversalRouter)."
+  },
+  {
+   "data": "0x5bf6f916",
+   "name": "TransactionDeadlinePassed",
+   "source": "UniversalRouter",
+   "message": "Reverted with TransactionDeadlinePassed (UniversalRouter)."
+  },
+  {
+   "data": "0xc4bd89a9",
+   "name": "UnsafeCast",
+   "source": "UniversalRouter",
+   "message": "Reverted with UnsafeCast (UniversalRouter)."
+  },
+  {
+   "data": "0x5cda29d70000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "UnsupportedAction",
+   "source": "UniversalRouter",
+   "message": "Reverted with UnsupportedAction (UniversalRouter)."
+  },
+  {
+   "data": "0x609328e8",
+   "name": "V2InvalidHopPriceLength",
+   "source": "UniversalRouter",
+   "message": "Reverted with V2InvalidHopPriceLength (UniversalRouter)."
+  },
+  {
+   "data": "0xae52ad0c",
+   "name": "V2InvalidPath",
+   "source": "UniversalRouter",
+   "message": "Reverted with V2InvalidPath (UniversalRouter)."
+  },
+  {
+   "data": "0x849eaf98",
+   "name": "V2TooLittleReceived",
+   "source": "UniversalRouter",
+   "message": "Reverted with V2TooLittleReceived (UniversalRouter)."
+  },
+  {
+   "data": "0x65d564a50000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "V2TooLittleReceivedPerHop",
+   "source": "UniversalRouter",
+   "message": "Reverted with V2TooLittleReceivedPerHop (UniversalRouter)."
+  },
+  {
+   "data": "0x8ab0bc16",
+   "name": "V2TooMuchRequested",
+   "source": "UniversalRouter",
+   "message": "Reverted with V2TooMuchRequested (UniversalRouter)."
+  },
+  {
+   "data": "0x383ef61c",
+   "name": "V3HopPriceAndPathLengthMismatch",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3HopPriceAndPathLengthMismatch (UniversalRouter)."
+  },
+  {
+   "data": "0xd4e0248e",
+   "name": "V3InvalidAmountOut",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3InvalidAmountOut (UniversalRouter)."
+  },
+  {
+   "data": "0x32b13d91",
+   "name": "V3InvalidCaller",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3InvalidCaller (UniversalRouter)."
+  },
+  {
+   "data": "0x316cf0eb",
+   "name": "V3InvalidSwap",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3InvalidSwap (UniversalRouter)."
+  },
+  {
+   "data": "0x39d35496",
+   "name": "V3TooLittleReceived",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3TooLittleReceived (UniversalRouter)."
+  },
+  {
+   "data": "0xb429f3740000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "V3TooLittleReceivedPerHop",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3TooLittleReceivedPerHop (UniversalRouter)."
+  },
+  {
+   "data": "0x739dbe52",
+   "name": "V3TooMuchRequested",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3TooMuchRequested (UniversalRouter)."
+  },
+  {
+   "data": "0x382ec7a20000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "V3TooMuchRequestedPerHop",
+   "source": "UniversalRouter",
+   "message": "Reverted with V3TooMuchRequestedPerHop (UniversalRouter)."
+  },
+  {
+   "data": "0x8b063d730000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "V4TooLittleReceived",
+   "source": "UniversalRouter",
+   "message": "The pool output was below the minimum (slippage). Re-quote and retry."
+  },
+  {
+   "data": "0xa9b7edf70000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "V4TooLittleReceivedPerHop",
+   "source": "UniversalRouter",
+   "message": "Reverted with V4TooLittleReceivedPerHop (UniversalRouter)."
+  },
+  {
+   "data": "0x4713c18b0000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "V4TooLittleReceivedPerHopSingle",
+   "source": "UniversalRouter",
+   "message": "Reverted with V4TooLittleReceivedPerHopSingle (UniversalRouter)."
+  },
+  {
+   "data": "0x12bacdd30000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "V4TooMuchRequested",
+   "source": "UniversalRouter",
+   "message": "Reverted with V4TooMuchRequested (UniversalRouter)."
+  },
+  {
+   "data": "0xe65180430000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc210000000000000000000000000000000000000000000000000000000000bebc22",
+   "name": "V4TooMuchRequestedPerHop",
+   "source": "UniversalRouter",
+   "message": "Reverted with V4TooMuchRequestedPerHop (UniversalRouter)."
+  },
+  {
+   "data": "0xefc8d8eb0000000000000000000000000000000000000000000000000000000000bebc200000000000000000000000000000000000000000000000000000000000bebc21",
+   "name": "V4TooMuchRequestedPerHopSingle",
+   "source": "UniversalRouter",
+   "message": "Reverted with V4TooMuchRequestedPerHopSingle (UniversalRouter)."
+  },
+  {
+   "data": "0x7a5ed734abababababababababababababababababababababababababababababababab",
+   "name": "NotEnoughLiquidity",
+   "source": "V4Quoter",
+   "message": "Reverted with NotEnoughLiquidity (V4Quoter)."
+  },
+  {
+   "data": "0x29c3b7ee",
+   "name": "NotSelf",
+   "source": "V4Quoter",
+   "message": "Reverted with NotSelf (V4Quoter)."
+  },
+  {
+   "data": "0xecbd98040000000000000000000000000000000000000000000000000000000000bebc20",
+   "name": "QuoteSwap",
+   "source": "V4Quoter",
+   "message": "Reverted with QuoteSwap (V4Quoter)."
+  },
+  {
+   "data": "0xe0752a5a",
+   "name": "UnexpectedCallSuccess",
+   "source": "V4Quoter",
+   "message": "Reverted with UnexpectedCallSuccess (V4Quoter)."
+  },
+  {
+   "data": "0x6190b2b0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000021234000000000000000000000000000000000000000000000000000000000000",
+   "name": "UnexpectedRevertBytes",
+   "source": "V4Quoter",
+   "message": "Reverted with UnexpectedRevertBytes (V4Quoter)."
+  }
+ ],
+ "probes": [
+  {
+   "data": "0x",
+   "name": "EmptyRevert",
+   "source": "EVM",
+   "message": "The call reverted without a reason (often out of gas, or a call to an address without code).",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0xzz",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0xabc",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0x12",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is shorter than a 4-byte selector, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x12",
+   "args": []
+  },
+  {
+   "data": "0x0",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "nothex",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0X08c379a0",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is not valid hex, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0x",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0",
+   "args": []
+  },
+  {
+   "data": "0x08c379a000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": [
+    "abc"
+   ]
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "args": [
+    "abc"
+   ]
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003616263ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003616263ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "args": [
+    "abc"
+   ]
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003616263",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000003616263",
+   "args": [
+    "abc"
+   ]
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000100000000006162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000100000000006162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000004ff61626300000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\ufffdabc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000004ff61626300000000000000000000000000000000000000000000000000000000",
+   "args": [
+    "\ufffdabc"
+   ]
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+   "args": [
+    ""
+   ]
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002e298000000000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\ufffd\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002e298000000000000000000000000000000000000000000000000000000000000",
+   "args": [
+    "\ufffd"
+   ]
+  },
+  {
+   "data": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011",
+   "name": "Panic",
+   "source": "Solidity",
+   "message": "Panic 0x11 (arithmetic or assertion failure).",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011",
+   "args": [
+    "17"
+   ]
+  },
+  {
+   "data": "0x4e487b71",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0x4e487b71.",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b71",
+   "args": []
+  },
+  {
+   "data": "0x4e487b7100000000000000000000",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0x4e487b71.",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b7100000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011ffffffffff",
+   "name": "Panic",
+   "source": "Solidity",
+   "message": "Panic 0x11 (arithmetic or assertion failure).",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011ffffffffff",
+   "args": [
+    "17"
+   ]
+  },
+  {
+   "data": "0x4e487b7100000000000000000000000000000000000000000000000000000000000000110000000000000000000000000000000000000000000000000000000000000005",
+   "name": "Panic",
+   "source": "Solidity",
+   "message": "Panic 0x11 (arithmetic or assertion failure).",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b7100000000000000000000000000000000000000000000000000000000000000110000000000000000000000000000000000000000000000000000000000000005",
+   "args": [
+    "17"
+   ]
+  },
+  {
+   "data": "0xdeadbeef",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0xdeadbeef.",
+   "selector": "0xdeadbeef",
+   "out": "0xdeadbeef",
+   "args": []
+  },
+  {
+   "data": "0xdeadbe",
+   "name": "MalformedRevert",
+   "source": "unknown",
+   "message": "The revert data is shorter than a 4-byte selector, so it could not be decoded.",
+   "selector": "0x",
+   "out": "0xdeadbe",
+   "args": []
+  },
+  {
+   "data": "0x5f28e6450000000000",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0x5f28e645.",
+   "selector": "0x5f28e645",
+   "out": "0x5f28e6450000000000",
+   "args": []
+  },
+  {
+   "data": "0x5f28e6450000000000000000000000000000000000000000000000000000000000000005ffffffffffffffff",
+   "name": "PeriodSpendExceeded",
+   "source": "AgentPolicyRegistry",
+   "message": "Above the period spend cap. Remaining this period: 0.000005 USDC.",
+   "selector": "0x5f28e645",
+   "out": "0x5f28e6450000000000000000000000000000000000000000000000000000000000000005ffffffffffffffff",
+   "args": [
+    "5"
+   ]
+  },
+  {
+   "data": "0x30cd7471ffffffffffffffff",
+   "name": "NotOwner",
+   "source": "AgentAccount",
+   "message": "Only the account owner can do this.",
+   "selector": "0x30cd7471",
+   "out": "0x30cd7471ffffffffffffffff",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000001f00000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000001f00000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002100000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002100000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000000000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000100000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000100000000000000036162630000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  },
+  {
+   "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "name": "MalformedRevert",
+   "source": "Solidity",
+   "message": "The revert carried a malformed Error(string).",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "args": []
+  },
+  {
+   "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000361626300000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000361626300000000000000000000000000000000000000000000000000000000",
+   "args": [
+    "abc"
+   ]
+  },
+  {
+   "data": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000028abababababababababababababababababababababababababababababababababababababababab",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000028abababababababababababababababababababababababababababababababababababababababab",
+   "args": [
+    "\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd"
+   ]
+  },
+  {
+   "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014100000000000000000000000000000000000000000000000000000000000000",
+   "name": "Error",
+   "source": "Solidity",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\"",
+   "selector": "0x08c379a0",
+   "out": "0x08c379a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000014100000000000000000000000000000000000000000000000000000000000000",
+   "args": [
+    ""
+   ]
+  },
+  {
+   "data": "0x4e487b71ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "name": "Panic",
+   "source": "Solidity",
+   "message": "Panic 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff (arithmetic or assertion failure).",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b71ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+   "args": [
+    "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+   ]
+  },
+  {
+   "data": "0x4e487b7100000000000000000000000000000000000000000000000000000000000000",
+   "name": "UnknownError",
+   "source": "unknown",
+   "message": "Reverted with an unknown error 0x4e487b71.",
+   "selector": "0x4e487b71",
+   "out": "0x4e487b7100000000000000000000000000000000000000000000000000000000000000",
+   "args": []
+  }
+ ],
+ "reasons": [
+  {
+   "raw": "say \"hi\" https://k@h/KEY",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"say 'hi' h\""
+  },
+  {
+   "raw": "\uff21\uff22\uff23",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"ABC\""
+  },
+  {
+   "raw": "a\u202eb\u001b[31mc",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\""
+  },
+  {
+   "raw": "\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa\ufdfa",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644\u0649 \u0627\u0644\u0644\u0647 \u0639\u0644\u064a\u0647 \u0648\u0633\u0644\u0645\u0635\u0644...\""
+  },
+  {
+   "raw": "x\u3164\u2800\u034f\u115f\u1160\uffa0y",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"xy\""
+  },
+  {
+   "raw": "a\ufe0fb",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"ab\""
+  },
+  {
+   "raw": "\ud83d\ude00\ufe0f",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\ud83d\ude00\ufe0f\""
+  },
+  {
+   "raw": "e\u0301\u0302\u0303\u0304\u0305\u0306\u0307",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\u00e9\u0302\u0303\u0304\u0305\""
+  },
+  {
+   "raw": "line1\nline2\tx\u0000",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"line1 line2 x\""
+  },
+  {
+   "raw": "a\udb40\udc41b",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"ab\""
+  },
+  {
+   "raw": "a\ud800b\udc00c",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\""
+  },
+  {
+   "raw": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d\ude00tail",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ud83d\ude00...\""
+  },
+  {
+   "raw": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\""
+  },
+  {
+   "raw": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy...\""
+  },
+  {
+   "raw": "   padded   ",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"padded\""
+  },
+  {
+   "raw": "ht\u200btp://d.example/KEY6 ok",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"d.example ok\""
+  },
+  {
+   "raw": "seehttps://u:p@a.example/KEY1 end",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"a.example end\""
+  },
+  {
+   "raw": "open data:text/html,KEY4 now",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"open invalid URL now\""
+  },
+  {
+   "raw": "metadata: fine",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"metadata: fine\""
+  },
+  {
+   "raw": "ipfs://cid/KEY7 file:///etc/KEY8 https:\\\\h.example\\KEY9",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"cid invalid URL h.example\""
+  },
+  {
+   "raw": "\u2028\u2029x",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"x\""
+  },
+  {
+   "raw": "1\ufe0f\u20e3",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"1\ufe0f\u20e3\""
+  },
+  {
+   "raw": "\u0000",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\""
+  },
+  {
+   "raw": "",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"\""
+  },
+  {
+   "raw": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+   "message": "Reverted with a contract-supplied reason (untrusted text): \"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!...\""
+  }
+ ]
+}

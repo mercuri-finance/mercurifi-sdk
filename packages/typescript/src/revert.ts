@@ -99,7 +99,8 @@ export const ERROR_MESSAGES: Readonly<Record<string, (args: readonly unknown[]) 
   // Factory
   AccountExists: (a) => `An account already exists at ${String(a[0])} for this owner and salt; use another salt.`,
   FailedDeployment: () => 'The account clone could not be deployed.',
-  InsufficientBalance: (a) => `Insufficient balance: ${String(a[0])} available, ${String(a[1])} needed.`,
+  // The factory's error carries two amounts; the Universal Router declares one of the same name with none.
+  InsufficientBalance: (a) => (a.length >= 2 ? `Insufficient balance: ${String(a[0])} available, ${String(a[1])} needed.` : 'Insufficient balance.'),
   ImplementationMismatch: () => 'The implementation is not bound to this factory and its registry.',
   InvalidCeiling: (a) => `The beta ceiling for ${field(a[0])} is out of range.`,
   NoActivePause: () => 'There is no active pause to extend.',

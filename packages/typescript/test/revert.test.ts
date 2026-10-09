@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { encodeErrorResult, type Abi, type Hex } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi, launchFactoryAbi } from '../src/abi/index.js';
-import { ContractRevertError, decodeRevert, ERROR_MESSAGES, extractRevertData, localRevert, TxRevertedError } from '../src/revert.js';
+import { ContractRevertError, decodeRevert, ERROR_MESSAGES, extractRevertData, localRevert, TxRevertedError, untrustedReason } from '../src/revert.js';
 
 const enc = (abi: Abi, errorName: string, args?: readonly unknown[]) => encodeErrorResult({ abi, errorName, args } as never);
 
@@ -154,3 +156,25 @@ describe('untrusted and malformed revert data', () => {
   });
 });
 
+
+describe('shared revert vectors (same texts as the Python decoder)', () => {
+  const vec = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/revert.json', import.meta.url), 'utf8')) as {
+    errors: { data: Hex; name: string; source: string; message: string }[];
+    probes: { data: Hex; name: string; source: string; message: string; selector: Hex; out: Hex; args: string[] }[];
+    reasons: { raw: string; message: string }[];
+  };
+
+  it.each(vec.errors)('decodes $name from $source', (c) => {
+    const d = decodeRevert(c.data);
+    expect([d.name, d.source, d.message]).toEqual([c.name, c.source, c.message]);
+  });
+
+  it.each(vec.probes.map((p) => [p.data.slice(0, 24), p] as const))('probe %s', (_label, c) => {
+    const d = decodeRevert(c.data);
+    expect([d.name, d.source, d.message, d.selector, d.data, d.args.map(String)]).toEqual([c.name, c.source, c.message, c.selector, c.out, c.args]);
+  });
+
+  it.each(vec.reasons.map((r) => [r.raw.slice(0, 24), r] as const))('reason %j', (_label, c) => {
+    expect(untrustedReason(c.raw)).toBe(c.message);
+  });
+});
