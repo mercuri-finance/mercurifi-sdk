@@ -64,7 +64,13 @@ export interface CurveSellQuote { token: Address; tokensIn: string }
 export interface PoolSwapQuote { token: Address; buyToken: boolean; amountIn: string; account?: Address }
 export type QuoteRequest = CurveBuyQuote | CurveSellQuote | PoolSwapQuote;
 export interface ApiQuote { advisory: true; asOfBlock: number; [key: string]: unknown }
-export interface BuildRequest { account: Address; function: BuildFunction; args: Record<string, string | boolean> }
+/** Owner, pending-owner and permissionless functions the API also builds (verify them with verifyBuiltOwnerTx). */
+export type OwnerBuildFunction =
+  | 'withdraw' | 'withdrawMany' | 'addAgent' | 'setAgent' | 'revokeAgent' | 'rotateAgent' | 'setPolicy' | 'setTokenAllowed'
+  | 'setIncreaseDelay' | 'transferOwnership' | 'acceptOwnership' | 'executeQueued' | 'cancelQueued' | 'pauseAgents';
+/** Strings for numbers and addresses; lists for `permissions` and `tokens`; an object of strings and booleans for `policy`. */
+export type BuildArg = string | boolean | readonly string[] | Readonly<Record<string, string | boolean>>;
+export interface BuildRequest { account: Address; function: BuildFunction | OwnerBuildFunction; args: Record<string, BuildArg> }
 export interface BuiltTx { chainId: number; to: Address; data: Hex; value: string; function?: string; selector?: Hex }
 export interface LaunchMetadata { description?: string; links?: Record<string, string> }
 export interface ImageUpload { bytes: Uint8Array; contentType: 'image/png' | 'image/jpeg'; filename?: string }

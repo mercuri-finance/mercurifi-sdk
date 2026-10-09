@@ -11,9 +11,10 @@ import re
 from collections.abc import Mapping
 from typing import Any, TypeGuard
 
-from .abi import AGENT_ACCOUNT
+from .abi import AGENT_ACCOUNT, AGENT_POLICY_REGISTRY
 from .codec import AbiUnknownSelectorError
 from .errors import BuildMismatchError, InvalidInputError, MercurifiError
+from .permissions import encode_permissions
 from .redact import neutralize_untrusted, pre_bound, truncate_chars
 
 AGENT_FUNCTIONS = ("buy", "sell", "launch", "swapExactIn", "claimFees", "sweepToOwner")
@@ -179,3 +180,203 @@ def verify_built_tx(
         if got < window[0] or got > window[1]:
             raise BuildMismatchError(f"deadline {got} is outside [{window[0]}, {window[1]}]")
     return name, named
+
+
+# Owner, pending-owner and permissionless functions POST /v1/tx/build encodes (TS api/verifyOwnerBuild.ts). withdraw and
+# withdrawMany go to the account; every other one goes to the AgentPolicyRegistry paired with the account's factory,
+# with the account first. Argument names are the API's (server) names, in contract order after the leading account;
+# the contract's own names differ for a few (a, oldA, newA, d, p) and are mapped by position, never by name.
+OWNER_FUNCTIONS: dict[str, tuple[bool, tuple[str, ...]]] = {
+    "withdraw": (False, ("token", "amount")),
+    "withdrawMany": (False, ("tokens",)),
+    "addAgent": (True, ("agent", "expiresAt", "permissions")),
+    "setAgent": (True, ("agent", "expiresAt", "permissions")),
+    "revokeAgent": (True, ("agent",)),
+    "rotateAgent": (True, ("oldAgent", "newAgent", "expiresAt", "permissions")),
+    "setPolicy": (True, ("policy",)),
+    "setTokenAllowed": (True, ("token", "allowed")),
+    "setIncreaseDelay": (True, ("delay",)),
+    "transferOwnership": (True, ("newOwner",)),
+    "acceptOwnership": (True, ("id",)),
+    "executeQueued": (True, ("id",)),
+    "cancelQueued": (True, ("id",)),
+    "pauseAgents": (True, ("paused",)),
+}
+_UINT = re.compile(r"uint[0-9]+")
+
+
+def _snapshot_deep(v: object, depth: int = 0) -> object:
+    """Copies exact (and nested lists and mappings) once, so a lying mapping cannot show validation one value and
+    comparison another."""
+    if depth > 2:
+        raise InvalidInputError("exact", "exact is nested too deeply")
+    if isinstance(v, Mapping):
+        out: dict[str, object] = {}
+        for k, x in v.items():
+            if type(k) is not str:
+                raise InvalidInputError("exact", "exact keys must be strings")
+            out[k] = _snapshot_deep(x, depth + 1)
+        return out
+    if isinstance(v, (list, tuple)):
+        return [_snapshot_deep(x, depth + 1) for x in v]
+    return v
+
+
+def _want_int(path: str, want: object) -> int:
+    if _is_int(want) and want >= 0:
+        return want
+    if type(want) is str and _DECIMAL.fullmatch(want):
+        return int(want)
+    raise InvalidInputError("exact", f"{path} must be a non-negative int or decimal string")
+
+
+def _want_addr(path: str, want: object) -> str:
+    if type(want) is not str or _ADDRESS.fullmatch(want) is None:
+        raise InvalidInputError("exact", f"{path} must be an address")
+    return want.lower()
+
+
+def _show_owner(v: object) -> str:
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_show_owner(x) for x in v) + "]"
+    if isinstance(v, Mapping):
+        return "an object"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return _show(v)
+
+
+def _owner_mismatch(fn: str, path: str, got: object, want: object) -> BuildMismatchError:
+    return BuildMismatchError(f"{path} of {fn} is {_show_owner(got)}, asked for {_show_owner(want)}")
+
+
+def _compare(fn: str, path: str, param: Mapping[str, Any], got: object, want: object) -> None:
+    """Compares one decoded argument with its expectation by the ABI type; any type it does not know is refused."""
+    t = param.get("type")
+    if t == "address":
+        if type(got) is not str or got.lower() != _want_addr(path, want):
+            raise _owner_mismatch(fn, path, got, want)
+        return
+    if t == "address[]":
+        if not isinstance(want, list):
+            raise InvalidInputError("exact", f"{path} must be a list of addresses")
+        w = [_want_addr(f"{path}[{i}]", x) for i, x in enumerate(want)]
+        if not isinstance(got, (list, tuple)) or len(got) != len(w) or any(
+            type(g) is not str or g.lower() != x for g, x in zip(got, w, strict=True)
+        ):
+            raise _owner_mismatch(fn, path, got, want)
+        return
+    if t == "bool":
+        if type(want) is not bool:
+            raise InvalidInputError("exact", f"{path} must be a bool")
+        if type(got) is not bool or got is not want:
+            raise _owner_mismatch(fn, path, got, want)
+        return
+    if isinstance(t, str) and _UINT.fullmatch(t):
+        num = encode_permissions(want) if path == "permissions" and isinstance(want, list) else _want_int(path, want)
+        if not _is_int(got) or got != num:
+            raise _owner_mismatch(fn, path, got, want)
+        return
+    if t == "tuple":
+        if not isinstance(want, dict):
+            raise InvalidInputError("exact", f"{path} must be a mapping with every field")
+        if not isinstance(got, dict):
+            raise BuildMismatchError(f"{path} of {fn} did not decode as a struct")
+        components = param.get("components", [])
+        names = [c.get("name", "") for c in components]
+        for n in names:
+            if n not in want:
+                raise BuildMismatchError(f"{path}.{n} of {fn} is not covered by your expectation")
+        for k in want:
+            if k not in names:
+                raise BuildMismatchError(f"{fn} has no argument {path}.{_show(k)}")
+        for c in components:
+            n = c.get("name", "")
+            _compare(fn, f"{path}.{n}", c, got.get(n), want[n])
+        return
+    raise BuildMismatchError(f"{path} of {fn} has type {_show(t)}, which this verifier does not check")
+
+
+def verify_built_owner_tx(
+    built: Mapping[str, Any], *, chain_id: int, account: str, function_name: str, exact: Mapping[str, Any],
+    registry: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Decodes owner or registry calldata the API built (POST /v1/tx/build) and checks it against what you asked for,
+    before anything is signed. It mirrors verify_built_tx for agent calls and fails closed: the function
+    must be one of OWNER_FUNCTIONS; the target must be your account (withdraw, withdrawMany) or `registry` (every other
+    function: the network book's agentRegistry, also factory.registry()), whose first argument must be your account;
+    value 0; your chain; the server's selector (when sent) matching the calldata; strict encoding with no trailing bytes;
+    and every argument covered by `exact`, with no argument left over on either side.
+
+    exact uses the API's argument names (agent, oldAgent, newAgent, delay, policy, ...). Addresses compare
+    case-insensitively; numbers are int or decimal strings; permissions may also be a list of permission names; policy
+    is a mapping with every Policy field; tokens is the exact ordered list. The expectation must come from your own
+    request, never from the build response or from the args this returns.
+    """
+    if type(function_name) is not str or function_name not in OWNER_FUNCTIONS:
+        raise InvalidInputError("function_name", f"{_show(function_name)} is not an owner function")
+    on_registry, arg_names = OWNER_FUNCTIONS[function_name]
+    if not isinstance(account, str) or _ADDRESS.fullmatch(account) is None:
+        raise InvalidInputError("account", "account is not an address")
+    if on_registry and (not isinstance(registry, str) or _ADDRESS.fullmatch(registry) is None):
+        raise InvalidInputError(
+            "registry", f"{function_name} goes to the AgentPolicyRegistry: pass its address (the network book's agentRegistry)",
+        )
+    exact_c = _snapshot_deep(exact)
+    if not isinstance(exact_c, dict):
+        raise InvalidInputError("exact", "exact must be a mapping with every argument")
+    b = snapshot_built(built)
+    server_fn = built["function"] if "function" in built else None  # read once
+    if not _is_int(b.get("chainId")) or b["chainId"] != chain_id:
+        raise BuildMismatchError(f"chain {_show(b.get('chainId'))} is not {chain_id}")
+    target = registry if on_registry and registry is not None else account
+    to = b.get("to")
+    if not isinstance(to, str) or _ADDRESS.fullmatch(to) is None or to.lower() != target.lower():
+        raise BuildMismatchError(
+            f"target is not the agent policy registry {target}" if on_registry else f"target is not your account {account}",
+        )
+    value = b.get("value")
+    if not isinstance(value, str) or _DECIMAL.fullmatch(value) is None or int(value) != 0:
+        raise BuildMismatchError("owner calls never carry value")
+    data = b.get("data")
+    if not isinstance(data, str) or _CALLDATA.fullmatch(data) is None:
+        raise BuildMismatchError("calldata is not hex")
+    selector = b.get("selector")
+    if "selector" in b and (not isinstance(selector, str) or selector.lower() != data[:_SELECTOR_LEN].lower()):
+        raise BuildMismatchError(f"the server's selector {_show(selector)} does not match the calldata")
+    contract = AGENT_POLICY_REGISTRY if on_registry else AGENT_ACCOUNT
+    try:
+        name, decoded = contract.decode_input(data)  # strict: re-encodes and compares, so trailing or non-canonical bytes fail
+    except AbiUnknownSelectorError:
+        raise BuildMismatchError(f"calldata does not decode against {contract.name} (unknown selector)") from None
+    except MercurifiError:
+        raise BuildMismatchError("calldata has trailing or non-canonical bytes, or is malformed") from None
+    if name not in OWNER_FUNCTIONS or OWNER_FUNCTIONS[name][0] is not on_registry:
+        raise BuildMismatchError(f"{name} is not an owner function of {contract.name}")
+    if name != function_name:
+        raise BuildMismatchError(f"built {name}, asked for {function_name}")
+    if server_fn is not None and (type(server_fn) is not str or server_fn != name):
+        raise BuildMismatchError(f"the server's function {_show(server_fn)} does not match the calldata")
+    inputs = contract.function(name).get("inputs", [])
+    values = list(decoded.values())
+    lead = 1 if on_registry else 0
+    # A changed ABI (an argument added, removed or retyped at the front) is refused, never guessed.
+    if len(inputs) != lead + len(arg_names) or len(values) != len(inputs) or (
+        on_registry and (inputs[0].get("type") != "address" or inputs[0].get("name") != "account")
+    ):
+        raise BuildMismatchError(f"the {name} ABI does not have the arguments this verifier checks")
+    if on_registry:
+        first = values[0]
+        if type(first) is not str or first.lower() != account.lower():
+            raise BuildMismatchError(f"the registry call is not for your account {account} (it names {_show(first)})")
+    for k in arg_names:
+        if k not in exact_c:
+            raise BuildMismatchError(f"{k} of {name} is not covered by your expectation")
+    for k in exact_c:
+        if k not in arg_names:
+            raise BuildMismatchError(f"{name} has no argument {_show(k)}")
+    args: dict[str, Any] = {}
+    for i, k in enumerate(arg_names):
+        _compare(name, k, inputs[lead + i], values[lead + i], exact_c[k])
+        args[k] = values[lead + i]
+    return name, args
