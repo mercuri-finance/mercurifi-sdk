@@ -172,6 +172,61 @@
       "raw": "https://x.com/a\uff40b",
       "text": "invalid link",
       "unsafe": true
+    },
+    {
+      "raw": "https://x.com\\@evil.example/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:\\\\x.com/a",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:x.com",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:/x.com",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs:",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs://",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs:/bafybeigdyrzt/x",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x.com:99999999/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "HTTPS://x.com/a",
+      "text": "HTTPS://x.com/a",
+      "unsafe": false
+    },
+    {
+      "raw": "https://x.com:8443/a",
+      "text": "https://x.com:8443/a",
+      "unsafe": false
     }
   ],
   "linkKeys": [
@@ -216,48 +271,5 @@
       "raw": "a\u202eb\u001b[31mc",
       "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\""
     }
-  ],
-  "pythonLinks": [
-    {
-      "raw": "https://x.com\\@evil.example/",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "https:\\\\x.com/a",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "https:x.com",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "https:/x.com",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "ipfs:",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "ipfs://",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "ipfs:/bafybeigdyrzt/x",
-      "text": "invalid link",
-      "unsafe": true
-    },
-    {
-      "raw": "https://",
-      "text": "invalid link",
-      "unsafe": true
-    }
-  ],
-  "pythonLinksNote": "Python is stricter than TypeScript here (new URL accepts these). Mirroring into TypeScript is deferred to the final wave; TypeScript tests do not read pythonLinks."
+  ]
 }
