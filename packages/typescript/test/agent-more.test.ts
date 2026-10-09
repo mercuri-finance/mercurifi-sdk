@@ -85,6 +85,15 @@ describe('AgentClient.launch', () => {
     expect(rpc.sent.length + roomy.rpc.sent.length + spent.rpc.sent.length + none.rpc.sent.length).toBe(0);
   });
 
+  it('reports LaunchLimit first when a launch is also over maxTradeUsdc and the spend cap (registry preamble order)', async () => {
+    const both = await setup({}, null, 3, { headroom: [5_000_000n, 500_000_000n, 499, 0] });
+    await refused(both.agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', initialBuyUsdc: '10000' }), 'LaunchLimit');
+    // ActionLimit still comes before it.
+    const neither = await setup({}, null, 3, { headroom: [5_000_000n, 500_000_000n, 0, 0] });
+    await refused(neither.agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', initialBuyUsdc: '10000' }), 'ActionLimit');
+    expect(both.rpc.sent.length + neither.rpc.sent.length).toBe(0);
+  });
+
   it('refuses a launch the agent may not do, while paused, or while Launch is paused', async () => {
     await refused((await setup({}, null, 3, { agentPermissions: 1 })).agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '' }), 'MissingPermission');
     const paused = await setup();

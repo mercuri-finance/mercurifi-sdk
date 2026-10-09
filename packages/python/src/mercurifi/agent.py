@@ -300,8 +300,6 @@ class AgentClient:
             raise local_revert("PeriodSpendExceeded", [g.room[0]])
         if spend6 > policy.per_token_period_cap:
             raise local_revert("TokenCapExceeded", [policy.per_token_period_cap])
-        if g.room[3] == 0:
-            raise local_revert("LaunchLimit")
 
         uri = metadata_uri if metadata_uri is not None else ""
         if metadata_uri is None and has_metadata:
@@ -485,7 +483,7 @@ class AgentClient:
         if paused:
             raise local_revert("Paused")
         spend, sell, actions, launches = (int(x) for x in room)
-        _check_agent(agent, permission, actions, now)
+        _check_agent(agent, permission, actions, now, launches)
         return Gate(at, now, policy, (spend, sell, actions, launches))
 
     async def _send(self, data: str, may_graduate: bool, label: str) -> Fill:
@@ -512,8 +510,9 @@ class AgentClient:
         return int(await self._mf.rpc.read(LAUNCH_TOKEN, token, "balanceOf", self.account, at=at))
 
 
-def _check_agent(agent: AgentInfo, permission: str, actions_left: int, now: int) -> None:
-    """The registry's authorize() preamble: active, unexpired, permitted, and an action left in the period."""
+def _check_agent(agent: AgentInfo, permission: str, actions_left: int, now: int, launches_left: int) -> None:
+    """The registry's authorize() preamble: active, unexpired, permitted, an action left in the period and, for a
+    launch, a launch left."""
     if not agent.active:
         raise local_revert("NotAgent")
     # The transaction lands at least one block-time after `latest`, so a key expiring that soon cannot succeed.
@@ -523,4 +522,7 @@ def _check_agent(agent: AgentInfo, permission: str, actions_left: int, now: int)
         raise local_revert("MissingPermission")
     if actions_left == 0:
         raise local_revert("ActionLimit")
+    # Right after the action check, as the registry's preamble does: before any cap or trade-size test.
+    if permission == "launch" and launches_left == 0:
+        raise local_revert("LaunchLimit")
 

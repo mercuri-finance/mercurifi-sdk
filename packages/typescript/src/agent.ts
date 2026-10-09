@@ -264,7 +264,6 @@ export class AgentClient {
     const spend6 = weiToUsdc6Ceil(config.launchFee + (quote?.usdcUsed ?? 0n));
     if (spend6 > BigInt(room[0])) throw localRevert('PeriodSpendExceeded', [BigInt(room[0])]);
     if (spend6 > policy.perTokenPeriodCap) throw localRevert('TokenCapExceeded', [policy.perTokenPeriodCap]);
-    if (Number(room[3]) === 0) throw localRevert('LaunchLimit');
 
     let metadataURI = p.metadataURI ?? '';
     if (p.metadataURI === undefined && hasMetadata) {
@@ -403,13 +402,15 @@ export class AgentClient {
     return { at, block, policy, room };
   }
 
-  /** The registry's authorize() preamble: active, unexpired, permitted, and an action left in the period. */
+  /** The registry's authorize() preamble: active, unexpired, permitted, an action left in the period and, for a launch, a launch left. */
   protected checkAgent(agent: AgentInfo, permission: Permission, room: readonly [bigint, bigint, number, number], now: bigint): void {
     if (!agent.active) throw localRevert('NotAgent');
     // The transaction lands at least one block-time after `latest`, so a key expiring that soon cannot succeed.
     if (now + 1n >= BigInt(agent.expiresAt)) throw localRevert('AgentExpired');
     if ((agent.permissionBits & PERMISSIONS[permission]) === 0) throw localRevert('MissingPermission');
     if (Number(room[2]) === 0) throw localRevert('ActionLimit');
+    // Right after the action check, as the registry's preamble does: before any cap or trade-size test.
+    if (permission === 'launch' && Number(room[3]) === 0) throw localRevert('LaunchLimit');
   }
 
   protected encode(functionName: string, args: readonly unknown[]): Hex {

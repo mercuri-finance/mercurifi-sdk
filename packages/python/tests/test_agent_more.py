@@ -146,6 +146,15 @@ async def test_launch_checks_before_signing_in_the_accounts_order() -> None:
     assert rpc.sent == roomy_rpc.sent == spent_rpc.sent == none_rpc.sent == []
 
 
+async def test_launch_limit_wins_over_the_trade_and_spend_caps() -> None:
+    # Registry preamble order: ActionLimit, then LaunchLimit, before any cap or trade-size test.
+    both_rpc, both = await setup(account={"headroom": (5_000_000, 500_000_000, 499, 0)})
+    await refused(both.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "LaunchLimit")
+    neither_rpc, neither = await setup(account={"headroom": (5_000_000, 500_000_000, 0, 0)})
+    await refused(neither.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "ActionLimit")
+    assert both_rpc.sent == neither_rpc.sent == []
+
+
 async def test_launch_trade_limit_is_checked_before_the_amount_ceiling() -> None:
     _, agent = await setup()
     await refused(agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc6=1 << 250), "TradeTooLarge")
