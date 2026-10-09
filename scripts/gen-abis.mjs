@@ -2,8 +2,8 @@
 // Generates the SDK ABIs from the Foundry artifacts of an agent contracts checkout (MERCURIFI_CONTRACTS_DIR).
 //   node scripts/gen-abis.mjs [--contracts DIR] [--allow-dirty]   generate
 //   node scripts/gen-abis.mjs --check [--contracts DIR]           committed output must equal a regeneration
-// The contracts checkout comes from --contracts or MERCURIFI_CONTRACTS_DIR; there is no default path.
 //   node scripts/gen-abis.mjs --verify-digest                      TS and Python copies agree with the digest (no contracts needed)
+// The contracts checkout comes from --contracts or MERCURIFI_CONTRACTS_DIR; there is no default path.
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';

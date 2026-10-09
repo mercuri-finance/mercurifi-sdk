@@ -11,6 +11,8 @@ const DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/;
 /** ASCII whitespace only, the set Python's units.py strips; Unicode spaces and U+FEFF are refused, not trimmed. */
 const ASCII_EDGE_WHITESPACE = /^[ \t\n\r]+|[ \t\n\r]+$/g;
 
+const MAX_DECIMAL_TEXT = 80;
+
 /**
  * Parses a human decimal string into base units.
  *
@@ -21,8 +23,6 @@ const ASCII_EDGE_WHITESPACE = /^[ \t\n\r]+|[ \t\n\r]+$/g;
  * @returns the amount in base units
  * @throws {InvalidInputError} for anything that is not a plain non-negative decimal string with at most `decimals` places
  */
-const MAX_DECIMAL_TEXT = 80;
-
 export const parseDecimal = (value: unknown, decimals: number, field: string, baseUnitHint = `${field}6`): bigint => {
   if (typeof value !== 'string') {
     throw new InvalidInputError(
