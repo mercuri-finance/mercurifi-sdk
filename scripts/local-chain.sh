@@ -30,26 +30,49 @@ if [ -e "$CONTRACTS/$EXPORT" ]; then
 fi
 
 # Gitignored paths the forge run may create in the contracts checkout; only the entries that did not exist before are
-# removed afterwards, so the checkout is left exactly as found.
-snapshot() { (cd "$CONTRACTS" && find broadcast cache/DeployAgentLocal.s.sol "$EXPORT" 2>/dev/null | LC_ALL=C sort) || true; }
+# removed afterwards, so the checkout is left exactly as found. The snapshot covers this script's own outputs only: the
+# bare broadcast/ directory entry (never its other children) and broadcast/DeployAgentLocal.s.sol. Any other broadcast,
+# such as a real deployment's record read by write-agent-accounts-record.py, is never listed and so never removed,
+# even when it appears while this script runs.
+snapshot() {
+  (
+    cd "$CONTRACTS" || exit 0
+    { find broadcast -maxdepth 0; find broadcast/DeployAgentLocal.s.sol cache/DeployAgentLocal.s.sol "$EXPORT"; } \
+      2>/dev/null | LC_ALL=C sort
+  ) || true
+}
 BEFORE="$(snapshot)"
 started=0
 ok=0
+ANVIL_PID=""
 cleanup() {
   local created
   created="$(LC_ALL=C comm -13 <(printf '%s\n' "$BEFORE") <(snapshot) | LC_ALL=C sort -r)"
   while IFS= read -r path; do
     [ -z "$path" ] && continue
-    if [ -d "$CONTRACTS/$path" ]; then rmdir "$CONTRACTS/$path" 2>/dev/null || true; else rm -f "$CONTRACTS/$path"; fi
+    if [ -d "$CONTRACTS/$path" ]; then
+      # rmdir only: a created directory goes once empty, so broadcast/ survives if anything else now lives in it.
+      rmdir "$CONTRACTS/$path" 2>/dev/null || true
+    else
+      rm -f "$CONTRACTS/$path"
+    fi
   done <<<"$created"
-  if [ "$started" = 1 ] && [ "$ok" != 1 ]; then "$ROOT/scripts/stop-local-chain.sh" "$PORT"; fi
+  if [ "$started" = 1 ] && [ "$ok" != 1 ]; then
+    if [ -f "$PIDFILE" ]; then
+      "$ROOT/scripts/stop-local-chain.sh" "$PORT"
+    elif [ -n "$ANVIL_PID" ]; then
+      # Interrupted between the launch and the pid file write: stop the child directly.
+      kill "$ANVIL_PID" 2>/dev/null || true
+    fi
+  fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 anvil --host 127.0.0.1 --port "$PORT" --chain-id 31337 --silent >/dev/null 2>&1 &
-echo $! > "$PIDFILE"
+ANVIL_PID=$!
 started=1
+echo "$ANVIL_PID" > "$PIDFILE"
 ready() {
   curl -s --max-time 1 -X POST -H 'content-type: application/json' \
     --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' "$RPC" | grep -q '"0x7a69"'
@@ -60,6 +83,13 @@ for _ in $(seq 1 50); do
 done
 if ! ready; then
   echo "Anvil did not answer as chain 31337 on $RPC within 10 s" >&2
+  exit 1
+fi
+# Deploy only to an Anvil: the node must name itself anvil (web3_clientVersion "anvil/v…"), not merely answer 31337.
+client="$(curl -s --max-time 2 -X POST -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":2,"method":"web3_clientVersion","params":[]}' "$RPC" || true)"
+if ! printf '%s' "$client" | grep -Eq '"result"[[:space:]]*:[[:space:]]*"anvil/'; then
+  echo "the node on $RPC is not Anvil (web3_clientVersion did not start with anvil/); refusing to deploy" >&2
   exit 1
 fi
 (
