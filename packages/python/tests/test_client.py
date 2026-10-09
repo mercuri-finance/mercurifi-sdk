@@ -1,0 +1,239 @@
+import pickle
+import traceback
+from typing import Any
+
+import httpx
+import pytest
+from eth_utils.crypto import keccak
+
+from mercurifi.abi import AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY
+from mercurifi.client import create_client
+from mercurifi.errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
+from mercurifi.networks import MAINNET, NETWORKS, TESTNET, is_loopback_url, local_network
+from mercurifi.redact import redact_url, redact_urls_in
+from mercurifi.rpc import Rpc, RpcError
+
+from .helpers import REGISTRY, A, MockRpc, local_client, local_json, local_rpc
+
+LOCAL = "http://127.0.0.1:8545"
+BAD_HASH = "0x" + keccak(b"\x00").hex()
+
+
+async def test_testnet_without_agents() -> None:
+    mf = await create_client("testnet", rpc_transport=MockRpc(5042002).transport(), api=None)
+    assert mf.network.chain_id == 5042002
+    with pytest.raises(NotDeployedError):
+        mf.require_agents()
+
+
+async def test_refuses_other_network() -> None:
+    with pytest.raises(NetworkMismatchError, match=r"chain 5042\b.*5042002"):
+        await create_client("testnet", rpc_transport=MockRpc(5042).transport(), api=None)
+
+
+async def test_mainnet_needs_rpc_url() -> None:
+    with pytest.raises(InvalidInputError):
+        await create_client("mainnet", api=None)
+
+
+async def test_verifies_factory_implementation_and_registry_code_hashes() -> None:
+    mf = await local_client(local_rpc())
+    assert mf.require_agents().factory == A(9)
+    assert mf.require_agents().registry == REGISTRY
+    bad = local_network(local_json(agentFactoryCodeHash=BAD_HASH))
+    with pytest.raises(NetworkMismatchError, match="code hash"):
+        await create_client(bad, rpc_url=LOCAL, rpc_transport=local_rpc().transport(), api=None)
+    bad_registry = local_network(local_json(agentRegistryCodeHash=BAD_HASH))
+    with pytest.raises(NetworkMismatchError, match=r"policy registry .* code hash"):
+        await create_client(bad_registry, rpc_url=LOCAL, rpc_transport=local_rpc().transport(), api=None)
+
+
+async def test_refuses_a_factory_whose_implementation_is_not_pinned() -> None:
+    rpc = local_rpc().read(A(9), AGENT_ACCOUNT_FACTORY, "implementation", A(11))
+    with pytest.raises(NetworkMismatchError, match="implementation"):
+        await local_client(rpc)
+
+
+async def test_refuses_another_registry_and_a_registry_of_another_factory() -> None:
+    other = local_rpc().read(A(9), AGENT_ACCOUNT_FACTORY, "registry", A(13))
+    with pytest.raises(NetworkMismatchError, match="reports registry"):
+        await local_client(other)
+    foreign = local_rpc().read(REGISTRY, AGENT_POLICY_REGISTRY, "FACTORY", A(14))
+    with pytest.raises(NetworkMismatchError, match="belongs to factory"):
+        await local_client(foreign)
+
+
+async def test_custom_books_only_local_loopback() -> None:
+    with pytest.raises(NetworkMismatchError):
+        local_network(local_json(chainId=5042))
+    with pytest.raises(NetworkMismatchError, match="loopback"):
+        await create_client(local_network(local_json()), rpc_url="https://rpc.example.org", rpc_transport=local_rpc().transport(), api=None)
+
+
+async def test_api_key_network() -> None:
+    with pytest.raises(NetworkMismatchError, match="other network"):
+        await create_client("testnet", api_key="mfk_live_x", rpc_transport=MockRpc(TESTNET.chain_id).transport(), api=None)
+
+
+async def test_mock_filters_logs_by_address_and_positional_topics() -> None:
+    rpc = MockRpc(31337)
+
+    def t(n: int) -> str:
+        return "0x" + format(n, "064x")
+
+    rpc.logs = [
+        {"address": REGISTRY, "topics": [t(1), t(0xAA)], "data": "0x"},
+        {"address": REGISTRY, "topics": [t(2), t(0xBB)], "data": "0x"},
+        {"address": A(9), "topics": [t(1), t(0xAA)], "data": "0x"},
+    ]
+    client = Rpc(LOCAL, transport=rpc.transport())
+    assert len(await client.get_logs(REGISTRY, 0, 10, topics=[None, t(0xAA)])) == 1
+    assert len(await client.get_logs(REGISTRY, 0, 10)) == 2
+    assert rpc.methods("eth_getLogs")[0][0]["topics"] == [None, t(0xAA)]
+    assert "topics" not in rpc.methods("eth_getLogs")[1][0]
+    await client.aclose()
+
+
+async def test_does_not_resolve_inherited_names_as_networks() -> None:
+    for name in ("constructor", "__class__", "__getitem__", "get", "keys", "items", ""):
+        with pytest.raises(InvalidInputError):
+            await create_client(name, api=None)
+    with pytest.raises(InvalidInputError):
+        await create_client(5042, api=None)  # type: ignore[arg-type]
+
+
+async def test_pinned_books_have_no_invented_agent_addresses() -> None:
+    assert MAINNET.agents is None and TESTNET.agents is None
+    assert MAINNET.default_rpc_url is None  # no default third-party RPC on mainnet
+    assert "alchemy" not in repr(TESTNET).lower()
+    with pytest.raises(TypeError):
+        NETWORKS["x"] = TESTNET  # type: ignore[index]
+
+
+async def test_rejects_malformed_rpc_url() -> None:
+    transport = MockRpc(TESTNET.chain_id).transport()
+    for url in ("not a url", "", "ftp://host", "http://", "http://host:99999", "://x"):
+        with pytest.raises(InvalidInputError) as info:
+            await create_client("testnet", rpc_url=url, rpc_transport=transport, api=None)
+        assert info.value.field == "rpc_url"
+
+
+async def test_blank_api_key_has_its_own_message() -> None:
+    transport = MockRpc(TESTNET.chain_id).transport()
+    for key in ("", "  ", "\t\r\n"):
+        with pytest.raises(InvalidInputError, match="api_key is empty"):
+            await create_client("testnet", api_key=key, rpc_transport=transport, api=None)
+    with pytest.raises(NetworkMismatchError, match="other network"):
+        await create_client("mainnet", api_key="mfk_test_x", rpc_url="https://rpc.example.org", rpc_transport=MockRpc(5042).transport(), api=None)
+
+
+async def test_api_key_is_redacted_in_repr_and_not_picklable() -> None:
+    mf = await create_client("testnet", api_key="mfk_test_SECRETKEY", rpc_transport=MockRpc(TESTNET.chain_id).transport(), api=None)
+    assert mf.settings.api_key == "mfk_test_SECRETKEY"
+    for text in (repr(mf.settings), str(mf.settings), repr(mf)):
+        assert "SECRETKEY" not in text and "mfk_test_" not in text
+    assert "[redacted]" in repr(mf.settings)
+    with pytest.raises(TypeError):
+        pickle.dumps(mf.settings)
+    await mf.aclose()
+
+
+async def test_rpc_errors_show_only_the_host() -> None:
+    secret = "https://user:pw@rpc.example.org/v2/SECRETKEY123?k=SECRETKEY123"
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"all connection attempts failed for {secret}", request=request)
+
+    err: BaseException | None = None
+    try:
+        await create_client("mainnet", rpc_url=secret, rpc_transport=httpx.MockTransport(boom), api=None)
+    except BaseException as exc:
+        err = exc
+    assert isinstance(err, MercurifiError) and err.code == "RPC_ERROR"
+    text = "".join(traceback.format_exception(err)) + repr(err) + repr(err.__cause__) + repr(err.__context__)
+    assert "SECRETKEY123" not in text and "pw@" not in text
+    assert "rpc.example.org" in str(err)
+
+
+async def test_http_status_and_non_json_and_node_errors_are_redacted() -> None:
+    url = "https://rpc.example.org/KEYKEY"
+    for handler in (
+        lambda r: httpx.Response(502, text="bad gateway https://rpc.example.org/KEYKEY"),
+        lambda r: httpx.Response(200, text="<html>https://rpc.example.org/KEYKEY</html>"),
+        lambda r: httpx.Response(200, json=[1]),
+        lambda r: httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "error": {"code": -32005, "message": "limit on https://rpc.example.org/KEYKEY\nmore"}}),
+        lambda r: httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": "nonsense"}),
+    ):
+        with pytest.raises(MercurifiError) as info:
+            await create_client("mainnet", rpc_url=url, rpc_transport=httpx.MockTransport(handler), api=None)
+        assert "KEYKEY" not in str(info.value) and "KEYKEY" not in repr(info.value)
+        assert "rpc.example.org" in str(info.value)
+
+
+async def test_rpc_error_carries_code_and_revert_data() -> None:
+    rpc = local_rpc().revert(A(9), AGENT_ACCOUNT_FACTORY, "implementation", "0xdeadbeef")
+    client = Rpc(LOCAL, transport=rpc.transport())
+    with pytest.raises(RpcError) as info:
+        await client.call(A(9), AGENT_ACCOUNT_FACTORY.encode("implementation"))
+    assert info.value.code == 3 and info.value.data == "0xdeadbeef"
+    await client.aclose()
+
+
+async def test_verify_false_only_for_the_local_book_with_a_loopback_rpc() -> None:
+    warnings: list[str] = []
+    # Local: skipped (the wrong-chain RPC is not noticed), no warning.
+    wrong = MockRpc(1)
+    mf = await create_client(local_network(local_json()), rpc_url=LOCAL, rpc_transport=wrong.transport(), verify=False, on_warning=warnings.append, api=None)
+    assert wrong.calls == [] and warnings == []
+    await mf.aclose()
+    # Arc: ignored with a warning, the chain check still runs.
+    with pytest.raises(NetworkMismatchError):
+        await create_client("testnet", rpc_transport=MockRpc(1).transport(), verify=False, on_warning=warnings.append, api=None)
+    assert len(warnings) == 1 and "ignored" in warnings[0]
+    # Local book with a non-loopback RPC is refused whatever verify says.
+    with pytest.raises(NetworkMismatchError, match="loopback"):
+        await create_client(local_network(local_json()), rpc_url="https://rpc.example.org", rpc_transport=wrong.transport(), verify=False, api=None)
+    # A spoofed local name on another chain is refused.
+    with pytest.raises(NetworkMismatchError, match="31337"):
+        from dataclasses import replace
+
+        await create_client(replace(TESTNET, name="local"), rpc_url=LOCAL, rpc_transport=local_rpc().transport(), api=None)
+
+
+async def test_option_validation() -> None:
+    transport = MockRpc(TESTNET.chain_id).transport()
+    bad: list[dict[str, Any]] = [
+        {"deadline_seconds": 0}, {"deadline_seconds": 601}, {"deadline_seconds": True}, {"deadline_seconds": 1.5},
+        {"receipt_timeout": 0}, {"receipt_timeout": True}, {"poll_interval": -1}, {"poll_interval": float("nan")},
+        {"max_fee_per_gas_cap": 0}, {"max_fee_per_gas_cap": 1.5}, {"api_base_url": "http://api.example.org"},
+        {"api_base_url": "nonsense"},
+    ]
+    for opts in bad:
+        with pytest.raises(InvalidInputError):
+            await create_client("testnet", rpc_transport=transport, api=None, **opts)
+    mf = await create_client("testnet", rpc_transport=transport, api=None, api_base_url="https://api.example.org")
+    assert mf.api_base_url == "https://api.example.org"
+    mf2 = await create_client("testnet", rpc_transport=transport, api=None)
+    assert mf2.api_base_url == TESTNET.api_base_url
+
+
+async def test_local_book_requires_every_key() -> None:
+    book = local_json()
+    del book["agentRegistry"]
+    with pytest.raises(InvalidInputError, match="agentRegistry"):
+        local_network(book)
+    with pytest.raises(NetworkMismatchError):
+        local_network(local_json(chainId=True))
+
+
+async def test_loopback_urls_and_redaction_helpers() -> None:
+    assert is_loopback_url("http://127.0.0.1:8545") and is_loopback_url("http://[::1]:8545") and is_loopback_url("http://localhost")
+    assert not is_loopback_url("http://127.0.0.1.evil.org") and not is_loopback_url("not a url")
+    assert redact_urls_in("GET https://a.b/c/KEY failed, see http://x.y:8080/z?q=1") == "GET a.b failed, see x.y:8080"
+    assert redact_url("nonsense") == "invalid URL"
+    assert redact_urls_in("a ftp://f.g/KEY b javascript:x") == "a f.g b invalid URL"
+
+
+async def test_async_context_manager_closes() -> None:
+    async with await local_client(local_rpc()) as mf:
+        assert mf.network.name == "local"
