@@ -144,4 +144,17 @@ describe('verifyBuiltTx', () => {
     expect(verifyBuiltTx(built(), { ...expectation, exact: { token: TOKEN, usdcIn: '25000000' } }).functionName).toBe('buy');
     expect(() => verifyBuiltTx(built(), { ...expectation, exact: { token: TOKEN, usdcIn: '25000001' } })).toThrow(BuildMismatchError);
   });
+
+  it('reads each expectation field once: a getter that changes between reads cannot split validation from comparison', () => {
+    const reads = { exact: 0, atLeast: 0, deadline: 0, usdcIn: 0 };
+    const exact = { token: TOKEN, get usdcIn() { return reads.usdcIn++ === 0 ? 25_000_000n : 1n; } };
+    const e = {
+      chainId: 5042002, account: ACCOUNT, functionName: 'buy' as const,
+      get exact() { reads.exact++; return exact; },
+      get atLeast() { reads.atLeast++; return { minTokensOut: 980n * WAD }; },
+      get deadline() { reads.deadline++; return { min: 900n, max: 1_100n }; },
+    } as BuildExpectation;
+    expect(verifyBuiltTx(built(), e).functionName).toBe('buy');
+    expect(reads).toEqual({ exact: 1, atLeast: 1, deadline: 1, usdcIn: 1 });
+  });
 });

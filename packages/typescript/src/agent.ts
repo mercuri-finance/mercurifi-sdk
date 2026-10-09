@@ -2,7 +2,7 @@ import { bytesToHex, encodeFunctionData, isAddressEqual, zeroAddress, type Addre
 
 import type { BuiltTx } from './api/types.js';
 import { BuildMismatchError } from './errors.js';
-import { verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
+import { snapshotExpectation, verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
 import type { ImageUpload } from './api/types.js';
 import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
 import { curveSellValue6, poolSellValue6, readBasis, recordedSellValue6 } from './basis.js';
@@ -426,7 +426,8 @@ export class AgentClient {
    * Your own `deadline` window is intersected with that window, never widened. The local permission, pause and cap
    * checks run first, and a buy always gets the graduation gas floor.
    */
-  async sendBuilt(built: BuiltTx, e: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
+  async sendBuilt(built: BuiltTx, expectation: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
+    const e = { functionName: expectation.functionName, ...snapshotExpectation(expectation) };
     const permission = Object.hasOwn(BUILT_PERMISSION, e.functionName) ? BUILT_PERMISSION[e.functionName] : undefined;
     if (permission === undefined) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
     const { at, block, policy } = await this.gate(permission);

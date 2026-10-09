@@ -33,6 +33,24 @@ const same = (a: unknown, b: unknown): boolean => {
   return a === b;
 };
 
+const snapshotEntries = (name: string, v: unknown): Record<string, unknown> | undefined => {
+  if (v === undefined) return undefined;
+  if (typeof v !== 'object' || v === null) throw new InvalidInputError(name, `${name} must be an object`);
+  return Object.fromEntries(Object.entries(v)); // own enumerable entries, each value read once
+};
+
+/**
+ * Reads exact, atLeast and deadline from a caller's expectation exactly once each (and each value once) into plain
+ * copies, so a getter or proxy cannot show one value to validation and another to comparison.
+ */
+export const snapshotExpectation = <T extends Pick<BuildExpectation, 'exact' | 'atLeast' | 'deadline'>>(e: T): { exact?: Record<string, unknown>; atLeast?: Record<string, bigint>; deadline?: { min: bigint; max: bigint } } => {
+  const exact = snapshotEntries('exact', e.exact);
+  const atLeast = snapshotEntries('atLeast', e.atLeast) as Record<string, bigint> | undefined;
+  const d = snapshotEntries('deadline', e.deadline);
+  const deadline = d === undefined ? undefined : ({ min: d.min, max: d.max } as { min: bigint; max: bigint });
+  return { ...(exact === undefined ? {} : { exact }), ...(atLeast === undefined ? {} : { atLeast }), ...(deadline === undefined ? {} : { deadline }) };
+};
+
 const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : null);
 
 /**
@@ -47,7 +65,8 @@ const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : nul
  * `args` this function returns (that would only compare the answer with itself). For a launch that means all eight request fields (creator and referrer are not arguments: the
  * account sets them).
  */
-export const verifyBuiltTx = (built: BuiltTx, e: BuildExpectation): { functionName: AgentFunction; args: Record<string, unknown> } => {
+export const verifyBuiltTx = (built: BuiltTx, expectation: BuildExpectation): { functionName: AgentFunction; args: Record<string, unknown> } => {
+  const e = { chainId: expectation.chainId, account: expectation.account, functionName: expectation.functionName, ...snapshotExpectation(expectation) };
   if (!AGENT_FUNCTIONS.includes(e.functionName)) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
   for (const [k, v] of Object.entries(e.atLeast ?? {})) {
     if (!MIN_OUT.test(k)) throw new InvalidInputError('atLeast', `atLeast applies to minimum-output arguments only, not ${k}`);
