@@ -11,6 +11,7 @@ interface Vec { name: string; function: AgentFunction; exact: Record<string, unk
 interface Refuse { name: string; base: string; built?: Record<string, unknown>; exactDrop?: string[]; exactSet?: Record<string, unknown>; error: string }
 const v = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/agentbuild.json', import.meta.url), 'utf8')) as {
   chainId: number; account: Address; registry: Address; accept: Vec[]; refuse: Refuse[];
+  deadlineCases: { name: string; base: string; built: Record<string, unknown>; accepted: boolean }[];
 };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const expectationOf = (vec: Vec, exact = clone(vec.exact)): BuildExpectation => ({
@@ -57,6 +58,14 @@ describe('verifyBuiltTx: shared agent-build vectors', () => {
       for (const k of r.exactDrop ?? []) delete exact[k];
       Object.assign(exact, r.exactSet ?? {});
       refused(built, expectationOf(vec, exact), new RegExp(r.error, 'i'));
+    });
+  }
+  for (const c of v.deadlineCases) {
+    it(`deadline window, contract semantics: ${c.name} ${c.accepted ? 'accepted' : 'refused'}`, () => {
+      const vec = clone(v.accept.find((a) => a.name === c.base)!);
+      const built = { ...vec.built, ...c.built } as BuiltTx;
+      if (c.accepted) expect(verifyBuiltTx(built, expectationOf(vec)).functionName).toBe(vec.function);
+      else refused(built, expectationOf(vec), /deadline/);
     });
   }
   it('refuses an expectation chainId that is not a positive safe integer', () => {

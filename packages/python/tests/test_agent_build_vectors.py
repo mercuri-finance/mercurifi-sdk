@@ -67,6 +67,16 @@ def test_refuses_vector(r: dict[str, Any]) -> None:
     _refused(built, vec, r["error"], exact)
 
 
+@pytest.mark.parametrize("c", V["deadlineCases"], ids=[c["name"] for c in V["deadlineCases"]])
+def test_deadline_window_follows_the_contract(c: dict[str, Any]) -> None:
+    vec = copy.deepcopy(next(a for a in V["accept"] if a["name"] == c["base"]))
+    built = {**vec["built"], **c["built"]}
+    if c["accepted"]:
+        assert _verify(built, vec)[0] == vec["function"]
+    else:
+        _refused(built, vec, "deadline")
+
+
 @pytest.mark.parametrize("chain_id", [0, -1, 1.5, 2**53, "5042002", True])
 def test_refuses_an_expectation_chain_id_that_is_not_a_positive_safe_integer(chain_id: Any) -> None:
     vec = V["accept"][0]
