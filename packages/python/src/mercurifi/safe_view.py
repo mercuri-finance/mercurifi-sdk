@@ -70,7 +70,10 @@ def _is_plain_link(text: str) -> bool:
         if parts.scheme.lower() not in _LINK_SCHEMES or "@" in parts.netloc:
             return False
         _ = parts.port  # raises ValueError for a malformed port
-        if parts.scheme.lower() != "ipfs" and not parts.hostname:
+        if parts.scheme.lower() == "ipfs":
+            if not parts.netloc:  # ipfs://<cid>/...: a bare "ipfs:" or "ipfs:/x" names nothing
+                return False
+        elif not parts.hostname:  # "https:x.com" and "https:/x.com" have no authority
             return False
     except ValueError:
         return False

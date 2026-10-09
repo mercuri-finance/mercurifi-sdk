@@ -216,5 +216,48 @@
       "raw": "a\u202eb\u001b[31mc",
       "message": "Reverted with a contract-supplied reason (untrusted text): \"abc\""
     }
-  ]
+  ],
+  "pythonLinks": [
+    {
+      "raw": "https://x.com\\@evil.example/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:\\\\x.com/a",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:x.com",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https:/x.com",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs:",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs://",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs:/bafybeigdyrzt/x",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://",
+      "text": "invalid link",
+      "unsafe": true
+    }
+  ],
+  "pythonLinksNote": "Python is stricter than TypeScript here (new URL accepts these). Mirroring into TypeScript is deferred to the final wave; TypeScript tests do not read pythonLinks."
 }

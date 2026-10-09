@@ -9,7 +9,7 @@ import os
 import sys
 from typing import Any
 
-from mercurifi import ContractRevertError, create_client, local_key
+from mercurifi import ContractRevertError, create_client, errors, local_key
 
 ADDRESS = {"type": "string", "pattern": "^0x[0-9a-fA-F]{40}$"}
 TOOLS = [
@@ -33,9 +33,11 @@ async def handle(mf: Any, agent: Any, name: str, args: dict[str, Any]) -> dict[s
         if name == "buy":
             f = await agent.buy(args["token"], usdc=str(args["usdc"]), slippage=0.02)
             return {"tokens_out": f.tokens, "usdc_spent": f.usdc_spent, "tx_hash": f.tx_hash}
-        return {"error": f"unknown tool {name}"}
+        return {"code": "UNKNOWN_TOOL"}
     except ContractRevertError as e:
-        return {"error": e.revert.name, "explanation": str(e)}
+        return {"code": e.code, "revert_name": e.revert.name}  # fixed labels only: never str(e), which can quote contract text
+    except errors.MercurifiError as e:
+        return {"code": e.code}  # the loop keeps serving; the model sees a stable code, not an exception message
 
 
 async def main() -> None:

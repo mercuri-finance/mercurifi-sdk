@@ -1,10 +1,13 @@
+import asyncio
 import threading
+import time
 from typing import Any
 
+import httpx
 import pytest
 
 from mercurifi import Client
-from mercurifi.errors import InvalidInputError
+from mercurifi.errors import ClientClosedError, InvalidInputError, MercurifiError
 from mercurifi.networks import local_network
 from mercurifi.signers import local_key
 
@@ -80,7 +83,7 @@ def test_close_is_idempotent_and_stops_the_thread() -> None:
     client.close()
     client.close()
     assert not thread.is_alive()
-    with pytest.raises(RuntimeError, match="closed"):
+    with pytest.raises(ClientClosedError, match="closed"):
         client.agent(ACCOUNT, local_key(AGENT_KEY))
 
 
@@ -112,3 +115,129 @@ def test_a_streams_becomes_a_plain_iterator() -> None:
         first = next(it)
         assert (first.id, first.type, first.data) == ("1-0", "launch", {"a": 1})
         it.close()
+
+
+class Hanging(httpx.AsyncBaseTransport):
+    """Delegates to the mock node until `hang` is set; then every request waits (a node that stopped answering)."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self.inner = inner
+        self.hang = False
+        self.waiting = threading.Event()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self.hang:
+            self.waiting.set()
+            await asyncio.sleep(60)
+        return await self.inner.handle_async_request(request)
+
+
+def test_close_releases_a_thread_that_is_mid_call() -> None:
+    signer = local_key(AGENT_KEY)
+    rpc = local_rpc()
+    mock_account(rpc, owner=A(0x99), agent=signer.address)
+    mock_curve(rpc)
+    transport = Hanging(rpc.transport())
+    client = Client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=transport, api=None, on_warning=lambda m: None)
+    agent = client.agent(ACCOUNT, signer)
+    outcome: list[BaseException | None] = []
+
+    def work() -> None:
+        try:
+            agent.headroom()
+            outcome.append(None)
+        except BaseException as exc:
+            outcome.append(exc)
+
+    transport.hang = True
+    worker = threading.Thread(target=work)
+    worker.start()
+    assert transport.waiting.wait(2)
+    started = time.monotonic()
+    client.close()
+    worker.join(1)
+    assert not worker.is_alive() and time.monotonic() - started < 1.5
+    assert len(outcome) == 1 and isinstance(outcome[0], ClientClosedError) and isinstance(outcome[0], MercurifiError)
+    assert outcome[0].code == "CLIENT_CLOSED"
+    assert client._runner.thread.daemon is True and not client._runner.thread.is_alive()
+
+
+class Heartbeats(httpx.AsyncByteStream):
+    """An SSE body that sends only heartbeats, forever; `state` records that the connection was closed."""
+
+    def __init__(self, state: dict[str, bool]) -> None:
+        self.state = state
+
+    async def __aiter__(self) -> Any:
+        while True:
+            await asyncio.sleep(0.01)
+            yield b": hb\n\n"
+
+    async def aclose(self) -> None:
+        self.state["closed"] = True
+
+
+class StreamApi:
+    def stream_request(self, topics: list[str]) -> tuple[str, dict[str, str]]:
+        return "https://stream.example/v1/stream", {}
+
+
+def heartbeat_stream(client: Client, state: dict[str, bool]) -> Any:
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Heartbeats(state)))
+    return client.stream(["launches"], transport=transport, idle_timeout=0)
+
+
+def test_closing_a_stream_from_another_thread_disconnects_and_ends_the_consumer() -> None:
+    state = {"closed": False}
+    done = threading.Event()
+    with make(api=StreamApi()) as client:
+        events = heartbeat_stream(client, state)
+
+        def consume() -> None:
+            for _ in events:
+                pass
+            done.set()
+
+        consumer = threading.Thread(target=consume)
+        consumer.start()
+        time.sleep(0.2)  # the consumer is blocked in next()
+        assert not done.is_set()
+        events.close()
+        assert done.wait(1)
+        consumer.join(1)
+        assert state["closed"] is True
+        assert list(events) == []  # a closed stream stays closed
+
+
+def test_with_block_over_a_stream_and_client_close_with_an_open_stream() -> None:
+    state = {"closed": False}
+    with make(api=StreamApi()) as client:
+        with heartbeat_stream(client, state) as events:
+            consumer = threading.Thread(target=lambda: list(events))
+            consumer.start()
+            time.sleep(0.1)
+        consumer.join(1)
+        assert not consumer.is_alive() and state["closed"] is True
+        state2 = {"closed": False}
+        again = heartbeat_stream(client, state2)
+        threading.Thread(target=lambda: list(again), daemon=True).start()
+        time.sleep(0.1)
+    assert state2["closed"] is True  # Client.close() disconnected it
+
+
+def test_close_from_the_loop_thread_raises_and_changes_nothing() -> None:
+    client = make()
+
+    async def inside() -> None:
+        client.close()
+
+    with pytest.raises(RuntimeError, match="event-loop thread"):
+        client._runner.submit(inside()).result(2)
+    assert client._runner.closed is False
+    client.close()
+    assert client._runner.closed is True
+
+
+def test_the_api_key_is_not_left_in_the_options_and_is_validated() -> None:
+    with pytest.raises(InvalidInputError):
+        Client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=local_rpc().transport(), api_key="bad key!", on_warning=lambda m: None)

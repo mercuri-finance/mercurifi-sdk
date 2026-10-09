@@ -54,11 +54,18 @@ with Client("testnet") as mf:
     agent = mf.agent(account, local_key(agent_key))
     print(agent.headroom().spend, agent.position(token).high_water)
     print(mf.token(token).numeric())
-    for event in mf.stream(["launches"]):  # a plain iterator; leave the loop or call .close() to disconnect
-        ...
+    with mf.stream(["launches"]) as events:  # a plain iterator; leaving the block (or .close(), from any thread) disconnects
+        for event in events:
+            ...
 ```
 
-`Client` runs the async client on one private event-loop thread. Every method of the async client and of the objects it returns (owner, `manage(account)`, agent) is reachable with the same arguments, and `mf.api` blocks too. One `Client` may be shared by several threads: calls are queued onto the loop thread, so the per-key nonce lock still serialises sends from one agent key. Do not call it from inside a running event loop (use `create_client` there) or from a callback such as `on_warning`, which runs on the SDK's thread (that raises rather than deadlocking). `close()` (or leaving the `with` block) closes streams, HTTP clients and the thread.
+`Client` runs the async client on one private event-loop thread. Every method of the async client and of the objects it returns (owner, `manage(account)`, agent) is reachable with the same arguments, and `mf.api` blocks too. One `Client` may be shared by several threads: calls are queued onto the loop thread, so the per-key nonce lock still serialises sends from one agent key. Do not call it from inside a running event loop (use `create_client` there) or from a callback such as `on_warning`, which runs on the SDK's thread (that raises rather than deadlocking). `close()` (or leaving the `with` block) closes streams, HTTP clients and the thread; a call that is still running in another thread is cancelled and raises `ClientClosedError` (code `CLIENT_CLOSED`) instead of hanging.
+
+Which methods run where: coroutine methods run on the SDK's loop thread and block the caller; plain methods (`mf.owner(signer)`, argument checks) run on the caller's thread; an owner, manager or agent object they return is wrapped again. Among attributes only `mf.api` is wrapped; `mf.network`, `mf.rpc` and `mf.settings` are returned as they are (`mf.rpc` stays async). Names starting with an underscore are not reachable.
+
+Ctrl-C stops waiting and cancels the call, but a transaction may already have been broadcast: re-read `agent.position(token)` or `agent.headroom()` before you retry. The same goes for `ClientClosedError` on a trade.
+
+`Client("testnet", api_key=...)` moves the key out of its keyword arguments at once and holds it privately until the client is built, but it is still a string in your process: read it from the environment at the call site, as for agent keys.
 
 ## Units
 

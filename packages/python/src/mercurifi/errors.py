@@ -119,3 +119,10 @@ class UnexpectedChainStateError(MercurifiError):
     """The chain returned a value this SDK version does not understand (for example a new curve phase). Upgrade the SDK."""
 
     code = "UNEXPECTED_CHAIN_STATE"
+
+
+class ClientClosedError(MercurifiError):
+    """The blocking Client was closed (by another thread, or earlier); the call did not complete. A transaction may
+    already have been broadcast: re-read the position or headroom before retrying."""
+
+    code = "CLIENT_CLOSED"
