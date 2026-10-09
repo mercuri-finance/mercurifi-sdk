@@ -1,0 +1,18 @@
+{
+  "fees": [
+    { "baseFee": "0", "priority": "1000000000", "out": { "maxFeePerGas": "20000000000", "maxPriorityFeePerGas": "1000000000" } },
+    { "baseFee": "30000000000", "priority": "1000000000", "out": { "maxFeePerGas": "61000000000", "maxPriorityFeePerGas": "1000000000" } },
+    { "baseFee": "1000000000", "priority": "50000000000", "out": { "maxFeePerGas": "52000000000", "maxPriorityFeePerGas": "50000000000" } },
+    { "baseFee": "0", "priority": "30000000000", "out": { "maxFeePerGas": "30000000000", "maxPriorityFeePerGas": "30000000000" } }
+  ],
+  "cappedFees": [
+    { "baseFee": "30000000000", "priority": "1000000000", "cap": "40000000000", "out": { "maxFeePerGas": "40000000000", "maxPriorityFeePerGas": "1000000000" } },
+    { "baseFee": "45000000000", "priority": "1000000000", "cap": "40000000000", "error": "GAS_PRICE_TOO_HIGH" },
+    { "baseFee": "0", "priority": "1", "cap": "10000000000", "error": "INVALID_INPUT" }
+  ],
+  "gasLimit": [
+    { "estimate": "100000", "mayGraduate": false, "out": "120000" },
+    { "estimate": "100000", "mayGraduate": true, "out": "1800000" },
+    { "estimate": "2000000", "mayGraduate": true, "out": "2400000" }
+  ]
+}

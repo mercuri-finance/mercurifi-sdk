@@ -9,3 +9,8 @@ export * from './api/types.js';
 export { redactUrl, redactUrlsIn } from './redact.js';
 export { createClient, MercurifiClient, type CreateClientOptions, type ClientSettings } from './client.js';
 export { decodeRevert, extractRevertData, ERROR_MESSAGES, ContractRevertError, TxRevertedError, localRevert, type DecodedRevert } from './revert.js';
+export { localKey, generateAgentKey, kmsSigner, type Signer, type KmsAdapter } from './signers.js';
+export { feesWithFloor, gasLimitFor, MIN_MAX_FEE_PER_GAS, GRADUATION_GAS_LIMIT } from './gas.js';
+export { NonceManager } from './nonce.js';
+export { chainDeadline } from './time.js';
+export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';

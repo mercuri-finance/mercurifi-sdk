@@ -4,7 +4,9 @@ import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
+import { NonceManager } from './nonce.js';
 import { redactUrl, redactUrlsIn } from './redact.js';
+import { TxSender } from './tx.js';
 import { verifyNetwork } from './verify.js';
 
 export interface CreateClientOptions {
@@ -43,13 +45,22 @@ export const arcChain = (book: NetworkBook, rpcUrl: string): Chain =>
   });
 
 export class MercurifiClient {
+  readonly nonces: NonceManager;
+  readonly sender: TxSender;
+
   constructor(
     readonly network: NetworkBook,
     readonly publicClient: PublicClient,
     readonly api: MercurifiApi | null,
     readonly settings: ClientSettings,
     private readonly onWarning: (message: string) => void,
-  ) {}
+  ) {
+    this.nonces = new NonceManager((address) => publicClient.getTransactionCount({ address, blockTag: 'pending' }));
+    this.sender = new TxSender({
+      client: publicClient, chainId: network.chainId, nonces: this.nonces,
+      receiptTimeoutMs: settings.receiptTimeoutMs, pollMs: settings.pollMs, maxFeePerGasCap: settings.maxFeePerGasCap,
+    });
+  }
 
   /** The agent deployment book (factory, implementation, policy registry), or NotDeployedError on a network without one. */
   requireAgents(): AgentBook {
@@ -106,7 +117,12 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     chain: arcChain(book, rpcUrl),
     transport: options.transport ?? http(rpcUrl, { retryCount: 2, timeout: 15_000 }),
   }) as PublicClient;
-  if (options.verify !== false) {
+  const onWarning = options.onWarning ?? ((m) => console.warn(`[mercurifi] ${m}`));
+  // Skipping start-up verification is for the loopback book only; on Arc the chain check is unconditional.
+  if (options.verify === false && book.name !== 'local') {
+    onWarning(`verify: false is ignored on ${book.name}; start-up verification always runs outside the local book.`);
+  }
+  if (options.verify !== false || book.name !== 'local') {
     try {
       await verifyNetwork(publicClient, book);
     } catch (error) {
@@ -124,5 +140,5 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     apiKey: options.apiKey,
   };
   const api = options.api === undefined ? null : options.api;
-  return new MercurifiClient(book, publicClient, api, settings, options.onWarning ?? ((m) => console.warn(`[mercurifi] ${m}`)));
+  return new MercurifiClient(book, publicClient, api, settings, onWarning);
 };
