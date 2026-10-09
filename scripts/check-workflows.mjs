@@ -26,6 +26,18 @@ const PUBLISH_ACTIONS = new Set(['pypa/gh-action-pypi-publish']);
 // npm publish of the downloaded tarball, in one fixed form: a relative .tgz path (globs allowed, no ..), provenance,
 // public access (the package is scoped, so npm would otherwise refuse the first publish) and no lifecycle scripts.
 const PUBLISH_RUN = /^npm publish (?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --ignore-scripts$/;
+const TOP_KEYS = new Set(['name', 'run-name', 'on', 'permissions', 'concurrency', 'jobs']);
+// Workflow syntax keys and permission scopes; a key that differs from one of these only by case is refused, so a
+// case-insensitive reader (GitHub's or a later one) cannot see a key this gate skipped.
+const KNOWN_KEYS = new Set([
+  ...TOP_KEYS, 'env', 'defaults', 'run', 'shell', 'working-directory', 'needs', 'if', 'runs-on', 'timeout-minutes', 'environment',
+  'steps', 'uses', 'with', 'id', 'continue-on-error', 'strategy', 'matrix', 'fail-fast', 'max-parallel', 'container', 'services',
+  'outputs', 'secrets', 'inputs', 'cancel-in-progress', 'group', 'url', 'workflow_dispatch', 'workflow_call', 'push',
+  'pull_request', 'pull_request_target', 'schedule', 'branches', 'tags', 'paths', 'actions', 'attestations', 'checks',
+  'contents', 'deployments', 'discussions', 'id-token', 'issues', 'models', 'packages', 'pages', 'pull-requests',
+  'repository-projects', 'security-events', 'statuses',
+]);
+const GUARD = ["github.repository_owner == 'mercuri-finance'", "github.actor == 'mercurifinance'", "github.triggering_actor == 'mercurifinance'"];
 const PUBLISH_JOB_KEYS = new Set(['name', 'needs', 'if', 'runs-on', 'timeout-minutes', 'environment', 'permissions', 'steps', 'concurrency']);
 const PUBLISH_STEP_KEYS = new Set(['name', 'id', 'uses', 'with', 'run', 'timeout-minutes']);
 // Untrusted text in an expression. Not exhaustive (zizmor's template-injection audit is): event payload fields an outside
@@ -80,7 +92,11 @@ function structureProblems(file, lines) {
       problems.push(`${file}:${i + 1}: tab in indentation`);
       continue;
     }
-    const m = /^(\s*)((?:-(?:\s+|$))*)(.*)$/.exec(line);
+    const m = /^( *)((?:-(?: +|$))*)(.*)$/.exec(line);
+    if (m === null) {
+      problems.push(`${file}:${i + 1}: unreadable line`);
+      continue;
+    }
     const col = m[1].length + m[2].length;
     const rest = m[3].trim();
     if (rest === '') continue;
@@ -88,6 +104,9 @@ function structureProblems(file, lines) {
     const k = CONTENT_KEY.exec(rest);
     if (k !== null) {
       if (/^<<\s*:/.test(rest)) problems.push(`${file}:${i + 1}: merge keys are not allowed`);
+      const key = /^(?:'([^']*)'|"([^"]*)"|([^:]*?))\s*:/.exec(rest);
+      const name = key?.[1] ?? key?.[2] ?? key?.[3] ?? '';
+      if (name !== name.toLowerCase() && KNOWN_KEYS.has(name.toLowerCase())) problems.push(`${file}:${i + 1}: ${name} differs from the key ${name.toLowerCase()} only by case`);
       value = (k[1] ?? '').trim();
     } else if (m[2] !== '') value = rest;
     else {
@@ -193,6 +212,18 @@ function permissionProblems(where, entry, idTokenAllowed) {
 
 export function checkWorkflow(file, text) {
   const problems = [];
+  // Byte rule, before any parsing: printable ASCII, space and \n only. A lone \r, NEL, U+2028/9 or any other line break
+  // the YAML reader honours but this gate's \n split does not could hide a job; NBSP, zero-width characters, a BOM and
+  // tabs could make a key or a command read differently. Nothing else is examined until the file is clean.
+  if (text.includes('\r\n')) return [`${file}: CRLF line endings are not allowed (use LF)`];
+  const bad = /[^\x20-\x7e\n]/.exec(text);
+  if (bad !== null) {
+    const before = text.slice(0, bad.index);
+    const line = before.split('\n').length;
+    const col = bad.index - before.lastIndexOf('\n');
+    const cp = bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+    return [`${file}:${line}:${col}: only printable ASCII, spaces and \\n are allowed (found U+${cp})`];
+  }
   // Full-line comments are blanked (line numbers kept); comments may mention forbidden names.
   const lines = text.split('\n').map((l) => (/^\s*#/.test(l) ? '' : l));
   const code = lines.join('\n');
@@ -215,6 +246,9 @@ export function checkWorkflow(file, text) {
   problems.push(...structureProblems(file, lines));
 
   const top = mapping(lines, 0, lines.length);
+  for (const k of top.keys()) {
+    if (typeof k !== 'string' || !TOP_KEYS.has(k)) problems.push(`${file}: top-level ${String(k)} is not allowed (only ${[...TOP_KEYS].join(', ')})`);
+  }
   const perms = top.get('permissions');
   if (perms === undefined) problems.push(`${file}: missing top-level permissions`);
   else {
@@ -280,6 +314,12 @@ export function checkWorkflow(file, text) {
       }
     }
     if (/\|\|/.test(guard)) problems.push(`${where}: the publish job's if: must be a plain conjunction`);
+    // Exactly the three clauses, nothing else: no always(), success(), failure(), cancelled() or other condition.
+    const clauses = guard.split('&&').map((c) => c.trim().replace(/\s+/g, ' '));
+    if (clauses.length !== GUARD.length || GUARD.some((c) => !clauses.includes(c))) {
+      problems.push(`${where}: the publish job's if: must be exactly ${GUARD.join(' && ')}`);
+    }
+    if (keys.get('runs-on')?.value !== 'ubuntu-latest') problems.push(`${where}: the publish job runs on ubuntu-latest (a GitHub-hosted runner)`);
     const steps = keys.get('steps');
     if (steps !== undefined && steps.value !== '') problems.push(`${where}: write the publish job's steps as a block sequence`);
     let publishSteps = 0;
@@ -299,6 +339,9 @@ export function checkWorkflow(file, text) {
           else if (k === 'repository-url') problems.push(`${where}: repository-url is not allowed: publish only to the default index`);
           else if (typeof k !== 'string' || allowed === undefined || !allowed.has(k)) problems.push(`${where}: with: ${String(k)} is not allowed for ${action} in a publish job`);
           else if (allowed.get(k) !== null && v.value !== allowed.get(k)) problems.push(`${where}: ${action} ${k} must be ${allowed.get(k)} (found: ${v.value})`);
+          else if (action === 'actions/download-artifact' && k === 'path' && !/^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[\w.-]+(?:\/[\w.-]+)*\/?$/.test(v.value)) {
+            problems.push(`${where}: the download path must be relative to the workspace, without .. (found: ${v.value})`);
+          }
         }
       }
       const run = map.get('run');
