@@ -167,6 +167,10 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   const publicClient = createPublicClient({
     chain: arcChain(book, rpcUrl),
     transport: options.transport ?? http(rpcUrl, { retryCount: 2, timeout: 15_000 }),
+    // viem caches eth_blockNumber for its polling interval (4 s) by default. Reads pinned to that number would run
+    // against a block from before the caller's own last transaction (a just-launched token "not registered", a
+    // just-queued item missing), so the head is always read fresh.
+    cacheTime: 0,
   }) as PublicClient;
   const onWarning = options.onWarning ?? ((m) => console.warn(`[mercurifi] ${m}`));
   // Skipping start-up verification is for the loopback book only; on Arc the chain check is unconditional.

@@ -1,0 +1,8 @@
+{
+  "kind": "revert",
+  "data": "0x3f904dc0",
+  "expected": {
+    "name": "MissingPermission",
+    "message": "This agent key does not have the permission this action needs."
+  }
+}

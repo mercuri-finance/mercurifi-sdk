@@ -1,0 +1,8 @@
+{
+  "kind": "revert",
+  "data": "0x174221dc",
+  "expected": {
+    "name": "LaunchLimit",
+    "message": "The account has used all its launches for this period (launchesPerPeriod)."
+  }
+}

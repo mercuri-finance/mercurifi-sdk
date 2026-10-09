@@ -1,0 +1,8 @@
+{
+  "kind": "revert",
+  "data": "0x90e5fb03",
+  "expected": {
+    "name": "StaleQueued",
+    "message": "The subject of this queued change (the agent, the token's allowlist entry or the delay) was changed after it was queued, so it no longer applies. Queue it again."
+  }
+}

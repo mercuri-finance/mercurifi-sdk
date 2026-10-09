@@ -1,0 +1,8 @@
+{
+  "kind": "revert",
+  "data": "0x85b78ea00000000000000000000000000000000000000000000000000000000005f5e100",
+  "expected": {
+    "name": "TradeTooLarge",
+    "message": "Above the per-trade limit of 100 USDC (maxTradeUsdc). Sells count at cost basis, launches include the launch fee."
+  }
+}

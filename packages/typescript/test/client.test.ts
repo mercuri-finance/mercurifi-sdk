@@ -19,6 +19,14 @@ describe('createClient', () => {
     expect(() => mf.requireAgents()).toThrow(NotDeployedError);
   });
 
+  it('reads the head block fresh every time (no viem block-number cache)', async () => {
+    const rpc = new MockRpc(TESTNET.chainId);
+    const mf = await createClient({ network: 'testnet', transport: rpc.transport() });
+    const first = await mf.publicClient.getBlockNumber();
+    rpc.block.number += 5n;
+    expect(await mf.publicClient.getBlockNumber()).toBe(first + 5n);
+  });
+
   it('refuses an RPC on the other network', async () => {
     const rpc = new MockRpc(5042);
     await expect(createClient({ network: 'testnet', transport: rpc.transport() })).rejects.toThrow(NetworkMismatchError);
