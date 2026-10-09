@@ -361,3 +361,28 @@ def test_nonce_locks_are_per_event_loop() -> None:
     for _ in range(2):  # a fresh loop per call, as a sync wrapper using asyncio.run would
         assert asyncio.run(two()) == [3, 4]
         manager.reset("0xab")
+
+
+def test_nonce_lock_entries_do_not_accumulate_across_loops() -> None:
+    import asyncio
+    import gc
+
+    async def fetch(address: str) -> int:
+        return 0
+
+    manager = NonceManager(fetch)
+
+    async def contended() -> None:
+        async def fn(n: int) -> int:
+            await asyncio.sleep(0.001)
+            return n
+
+        await asyncio.gather(*(manager.with_nonce("0xab", fn) for _ in range(3)))
+
+    for _ in range(50):
+        asyncio.run(contended())
+    gc.collect()
+    assert len(manager._locks) <= 1
+    asyncio.run(contended())  # one more access prunes everything closed
+    gc.collect()
+    assert len(manager._locks) <= 1

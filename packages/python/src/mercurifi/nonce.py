@@ -25,11 +25,25 @@ class NonceManager:
     def __init__(self, fetch_pending: Callable[[str], Awaitable[int]]) -> None:
         self._fetch = fetch_pending
         self._next: dict[str, int] = {}
-        self._locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = weakref.WeakKeyDictionary()
+        # id(loop) -> (weak reference to the loop, locks by address). A contended lock holds its loop strongly, so a
+        # weak-keyed map would never release it; entries of closed (or collected) loops are pruned on each access.
+        self._locks: dict[int, tuple[weakref.ReferenceType[asyncio.AbstractEventLoop], dict[str, asyncio.Lock]]] = {}
+
+    def _locks_for_running_loop(self) -> dict[str, asyncio.Lock]:
+        loop = asyncio.get_running_loop()
+        for ident, (ref, _) in list(self._locks.items()):
+            other = ref()
+            if other is None or other.is_closed() or (ident == id(loop) and other is not loop):
+                del self._locks[ident]
+        entry = self._locks.get(id(loop))
+        if entry is None:
+            entry = (weakref.ref(loop), {})
+            self._locks[id(loop)] = entry
+        return entry[1]
 
     async def with_nonce(self, address: str, fn: Callable[[int], Awaitable[T]]) -> T:
         key = address.lower()
-        lock = self._locks.setdefault(asyncio.get_running_loop(), {}).setdefault(key, asyncio.Lock())
+        lock = self._locks_for_running_loop().setdefault(key, asyncio.Lock())
         async with lock:
             nonce = self._next.get(key)
             if nonce is None:
