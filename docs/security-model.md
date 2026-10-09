@@ -71,6 +71,10 @@ The API is optional: every on-chain action works with a chain-only client. With 
 
 Arc caps a single transaction at 16,777,216 gas (below the 30,000,000 block limit). `createAccount` with a referrer and a first agent costs about 353,719 gas, which is a fraction of a cent. A graduating buy needs at least 1.8M gas allowed, and the SDK sets the limit and the 20 gwei fee floor for you. `withdrawMany` of 500 cold tokens does not fit in one transaction; the SDK sends tokens in chunks of 100, well inside one Arc transaction (200 tokens cost about 7.2M gas).
 
+## Nonces after a dropped transaction
+
+Each agent or owner key has one local nonce, used under a per-key lock. When a transaction gets no receipt within 60 s the SDK raises `TxDroppedError` and forgets the local nonce, so the next send re-reads the node's `pending` transaction count. A residual risk remains with a load-balanced RPC whose nodes lag each other: the re-read can land on a node that has not yet seen the transaction (or has already dropped it), and the next send can then reuse a nonce that is still pending elsewhere. The usual result is a "nonce too low" or "replacement transaction underpriced" error, or the new transaction replacing the old one, never a double spend, because a nonce executes at most once. After a `TxDroppedError`, check the account (or the explorer) before resending, prefer an RPC endpoint that pins you to one node, and keep one process per key.
+
 ## The SDK supply chain
 
 - Install only `@mercurifi/sdk` (npm) or `mercurifi` (PyPI); see `docs/reserved-names.md`.
