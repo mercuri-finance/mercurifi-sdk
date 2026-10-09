@@ -72,7 +72,7 @@ def _to_abi(param: Mapping[str, Any], value: Any) -> Any:
             if missing:
                 raise AbiEncodeError(f"missing struct field(s): {', '.join(missing)}")
             return tuple(_to_abi(c, value[c["name"]]) for c in comps)
-        return tuple(_to_abi(c, v) for c, v in zip(comps, value, strict=False))
+        return tuple(_to_abi(c, v) for c, v in zip(comps, value, strict=True))
     if t.startswith("bytes") and isinstance(value, str):
         return from_hex(value)
     return value
@@ -84,7 +84,7 @@ def _from_abi(param: Mapping[str, Any], value: Any) -> Any:
         inner = {**param, "type": t[: t.rindex("[")]}
         return [_from_abi(inner, v) for v in value]
     if t == "tuple":
-        return {c["name"]: _from_abi(c, v) for c, v in zip(param["components"], value, strict=False)}
+        return {c["name"]: _from_abi(c, v) for c, v in zip(param["components"], value, strict=True)}
     if t == "address":
         return to_checksum_address(value)
     if t.startswith("bytes"):
@@ -96,7 +96,7 @@ def _encode_params(params: Sequence[Mapping[str, Any]], values: Sequence[Any]) -
     if len(params) != len(values):
         raise AbiEncodeError(f"expected {len(params)} argument(s), got {len(values)}")
     try:
-        return encode([canonical_type(p) for p in params], [_to_abi(p, v) for p, v in zip(params, values, strict=False)])
+        return encode([canonical_type(p) for p in params], [_to_abi(p, v) for p, v in zip(params, values, strict=True)])
     except AbiEncodeError:
         raise
     except (EncodingError, ValueError, TypeError, KeyError) as exc:
@@ -114,7 +114,7 @@ def _decode_params(params: Sequence[Mapping[str, Any]], data: bytes, strict: boo
         raise
     except (DecodingError, EncodingError, ValueError, TypeError, OverflowError) as exc:
         raise AbiDecodeError(f"malformed ABI data: {type(exc).__name__}") from exc
-    return [_from_abi(p, v) for p, v in zip(params, raw, strict=False)]
+    return [_from_abi(p, v) for p, v in zip(params, raw, strict=True)]
 
 
 class Contract:
@@ -178,7 +178,7 @@ class Contract:
             raise AbiUnknownSelectorError(f"unknown selector {to_hex(raw[:4])} for {self.name}")
         inputs = item.get("inputs", [])
         values = _decode_params(inputs, raw[4:], strict)
-        return item["name"], {p.get("name") or f"arg{i}": v for i, (p, v) in enumerate(zip(inputs, values, strict=False))}
+        return item["name"], {p.get("name") or f"arg{i}": v for i, (p, v) in enumerate(zip(inputs, values, strict=True))}
 
     def decode_output(self, fn: str, data: str, strict: bool = True) -> Any:
         outputs = self.function(fn).get("outputs", [])
@@ -224,13 +224,13 @@ class Contract:
         if len(topics) != 1 + len(indexed):
             raise AbiDecodeError(f"{item['name']} expects {1 + len(indexed)} topics, got {len(topics)}")
         out: dict[str, Any] = {}
-        for p, topic in zip(indexed, topics[1:], strict=False):
+        for p, topic in zip(indexed, topics[1:], strict=True):
             dynamic = p["type"] in ("string", "bytes") or p["type"].startswith("tuple") or p["type"].endswith("]")
             raw_topic = from_hex(topic)
             if len(raw_topic) != 32:
                 raise AbiDecodeError("topic is not 32 bytes")
             out[p["name"]] = to_hex(raw_topic) if dynamic else _decode_params([p], raw_topic)[0]
-        for p, v in zip(plain, _decode_params(plain, from_hex(data)), strict=False):
+        for p, v in zip(plain, _decode_params(plain, from_hex(data)), strict=True):
             out[p["name"]] = v
         return item["name"], out
 

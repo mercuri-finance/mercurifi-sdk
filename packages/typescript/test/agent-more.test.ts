@@ -49,6 +49,12 @@ const sentCall = (rpc: { sent: Hex[] }) => decodeFunctionData({ abi: agentAccoun
 const big = { ...DEFAULT_POLICY, maxTradeUsdc: 1_000_000_000n, periodSpendCap: 5_000_000_000n, perTokenPeriodCap: 2_000_000_000n };
 
 describe('AgentClient.launch', () => {
+  it.each(['0x12', `0x${'zz'.repeat(32)}`, '11'.repeat(32), `0x${'11'.repeat(33)}`, '', 5])('refuses a malformed salt: %j', async (bad) => {
+    const { rpc, agent } = await setup();
+    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '', salt: bad as never })).rejects.toThrow(InvalidInputError);
+    expect(rpc.sent).toEqual([]);
+  });
+
   it('pins the config hash, quotes the initial buy exactly, sets a chain-time deadline and returns the new token', async () => {
     const { rpc, agent } = await setup();
     const fill = await agent.launch({ name: 'Example', symbol: 'EX', metadataURI: 'ipfs://m', initialBuyUsdc: '10', salt: SALT });

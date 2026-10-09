@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 ZERO = "0x" + "00" * 20
 MAX_UINT256 = 2**256 - 1
+_SALT = re.compile(r"0x[0-9a-fA-F]{64}")
 
 
 @dataclass(frozen=True)
@@ -268,6 +269,8 @@ class AgentClient:
                 raise InvalidInputError("metadata_uri", f"metadata_uri is not usable: {problem}")
         if metadata_uri is None and has_metadata and self._mf.api is None:
             raise InvalidInputError("metadata_uri", "Uploading a description, links or an image needs the Mercurifi API; pass metadata_uri to launch chain-only.")
+        if salt is not None and not (isinstance(salt, str) and _SALT.fullmatch(salt)):
+            raise InvalidInputError("salt", "salt must be 32 bytes of hex (0x plus 64 hex digits)")
         first6 = 0 if initial_buy_usdc is None and initial_buy_usdc6 is None else resolve_usdc6(initial_buy_usdc, initial_buy_usdc6, "initial_buy_usdc")
         rpc, factory = self._mf.rpc, self._mf.network.launch.factory
         g = await self._gate("launch")
@@ -401,9 +404,10 @@ class AgentClient:
                              amount: str | Decimal | None = None, amount_wei: int | None = None) -> Fill:
         """Moves native USDC (wei; `usdc`/`usdc6`, or everything with `all`) or a registered Launch token (`amount`/`amount_wei`,
         or everything with `all` or amount 'all') to the owner. No deadline."""
+        sweep_all = all  # the public keyword shadows the builtin; keep it out of the body
         native = token is None or token.lower() == ZERO
         given = sum(v is not None for v in (usdc, usdc6, amount, amount_wei))
-        if all and given > 0:
+        if sweep_all and given > 0:
             raise InvalidInputError("all", "all cannot be combined with an amount")
         if native and (amount is not None or amount_wei is not None) and amount != "all":
             raise InvalidInputError("amount", "a native sweep is in USDC: pass usdc or usdc6 (or all)")
@@ -412,7 +416,7 @@ class AgentClient:
         g = await self._gate("sweep")
         target = ZERO
         if native:
-            everything = all or amount == "all"
+            everything = sweep_all or amount == "all"
             balance = await self._mf.rpc.get_balance(self.account, at=g.at)
             value = balance if everything else usdc6_to_wei(resolve_usdc6(usdc, usdc6))
             if value > balance:
@@ -421,7 +425,7 @@ class AgentClient:
             assert token is not None
             target = token
             await self._curve_of(token, g.at)  # TokenNotRegistered: only Launch tokens can be swept
-            wanted = "all" if all else resolve_token_amount(amount, amount_wei)
+            wanted = "all" if sweep_all else resolve_token_amount(amount, amount_wei)
             held = await self._balance_of(token, g.at)
             value = held if wanted == "all" else wanted
             if value > held:

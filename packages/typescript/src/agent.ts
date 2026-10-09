@@ -235,6 +235,7 @@ export class AgentClient {
     if (p.metadataURI === undefined && hasMetadata && this.mf.api === null) {
       throw new InvalidInputError('metadataURI', 'Uploading a description, links or an image needs the Mercurifi API; pass metadataURI to launch chain-only.');
     }
+    if (p.salt !== undefined && !(typeof p.salt === 'string' && /^0x[0-9a-fA-F]{64}$/.test(p.salt))) throw new InvalidInputError('salt', 'salt must be 32 bytes of hex (0x plus 64 hex digits)');
     const firstBuy6 = p.initialBuyUsdc === undefined && p.initialBuyUsdc6 === undefined ? 0n : resolveUsdc6({ usdc: p.initialBuyUsdc, usdc6: p.initialBuyUsdc6 }, 'initialBuyUsdc');
     const client = this.mf.publicClient;
     const factory = this.mf.network.launch.factory;

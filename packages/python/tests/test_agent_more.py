@@ -117,6 +117,14 @@ async def test_launch_without_salt_draws_a_random_one() -> None:
     assert len(salt) == 66 and salt != "0x" + "00" * 32
 
 
+@pytest.mark.parametrize("bad", ["0x12", "0x" + "zz" * 32, "11" * 32, "0x" + "11" * 33, "", 5])
+async def test_launch_refuses_a_malformed_salt(bad: object) -> None:
+    rpc, agent = await setup()
+    with pytest.raises(InvalidInputError, match="salt"):
+        await agent.launch("Ok", "OK", metadata_uri="", salt=bad)  # type: ignore[arg-type]
+    assert rpc.sent == []
+
+
 async def test_launch_checks_before_signing_in_the_accounts_order() -> None:
     rpc, agent = await setup()
     with pytest.raises(InvalidInputError, match="1–32 bytes"):
