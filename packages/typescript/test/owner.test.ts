@@ -1,13 +1,13 @@
 import { decodeFunctionData, encodeAbiParameters, parseTransaction, zeroAddress, type Abi, type Hex } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
-import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
+import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launchTokenAbi } from '../src/abi/index.js';
 import { InvalidInputError, NotOwnerError } from '../src/errors.js';
 import { SELL_RISK_WARNING } from '../src/permissions.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 import { POLICY_TUPLE } from '../src/queue.js';
 import { localKey } from '../src/signers.js';
-import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, queueLog, REGISTRY } from './helpers/account.js';
+import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, queueLog, registryLog, REGISTRY } from './helpers/account.js';
 import { A, ACCOUNT, AGENT_KEY, localClient, localRpc, OWNER_KEY, TOKEN } from './helpers/local.js';
 
 const owner = localKey(OWNER_KEY);
@@ -23,7 +23,7 @@ const norm = (v: unknown): unknown =>
       : v !== null && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, norm(x)]))
         : v;
 
-const setup = async (ownerAddress = owner.address) => {
+const setup = async (ownerAddress = owner.address, over: Record<string, unknown> = {}) => {
   const rpc = localRpc();
   mockAccount(rpc, { owner: ownerAddress, agent: agent.address });
   mockCurve(rpc, { balance: 5n * 10n ** 18n });
@@ -31,7 +31,7 @@ const setup = async (ownerAddress = owner.address) => {
   rpc.read(FACTORY, agentAccountFactoryAbi, 'createAccount', ACCOUNT);
   rpc.receiptLogs = [eventLog(agentAccountFactoryAbi, FACTORY, 'AccountCreated', { owner: owner.address, account: ACCOUNT, salt: SALT })];
   const onWarning = vi.fn();
-  const mf = await localClient(rpc, { onWarning });
+  const mf = await localClient(rpc, { onWarning, ...over });
   return { rpc, mf, owner: mf.owner(owner), onWarning };
 };
 /** The i-th sent transaction: its target and decoded call, addresses lowercased. */
@@ -82,7 +82,7 @@ describe('AccountManager', () => {
   it('applies tighter fields now and queues wider ones', async () => {
     const { rpc, owner: o } = await setup();
     rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setPolicy', 4n);
-    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', [3, 1_700_003_600, 1n, 1n, '0x']);
+    rpc.receiptLogs = [registryLog('PolicyQueued', { id: 4n, eta: 1_700_003_600 })];
     const m = await o.manage(ACCOUNT);
     const res = await m.setPolicy({ maxTradeUsdc: '50', periodSpendCap: '900' });
     expect(res.outcome).toBe('mixed');
@@ -147,6 +147,7 @@ describe('AccountManager', () => {
   it('accepts a queued ownership transfer on the registry', async () => {
     const { rpc, owner: o } = await setup();
     rpc.read(REGISTRY, agentPolicyRegistryAbi, 'acceptOwnership', undefined);
+    rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n })];
     const r = await o.acceptOwnership(ACCOUNT, 3n);
     expect(r.outcome).toBe('immediate');
     expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'acceptOwnership', args: [ACCOUNT, 3n] });
@@ -161,12 +162,14 @@ describe('AccountManager', () => {
     await expect(m.withdraw({ token: USDC, amount: '1' })).rejects.toThrow(/as native/);
   });
 
-  it('withdraws every held token and native last, from the account', async () => {
+  it('withdraws native in its own call (first) and the held tokens in another, from the account', async () => {
     const { rpc, owner: o } = await setup();
     rpc.read(ACCOUNT, agentAccountAbi, 'withdrawMany', undefined);
     const res = await (await o.manage(ACCOUNT)).withdrawMany([TOKEN, TOKEN, USDC]);
     expect(res.tokens).toEqual([TOKEN]);
-    expect(sent(rpc)).toEqual({ to: ACCOUNT, functionName: 'withdrawMany', args: [[TOKEN, zeroAddress]] });
+    expect(res.txHashes).toHaveLength(2);
+    expect(sent(rpc, 0)).toEqual({ to: ACCOUNT, functionName: 'withdrawMany', args: [[zeroAddress]] });
+    expect(sent(rpc, 1)).toEqual({ to: ACCOUNT, functionName: 'withdrawMany', args: [[TOKEN]] });
   });
 });
 
@@ -224,6 +227,280 @@ describe('owner UX', () => {
     rpc.read(ACCOUNT, agentAccountAbi, 'withdrawMany', undefined);
     const res = await (await o.manage(ACCOUNT)).withdrawMany();
     expect(res.tokens.map((t) => t.toLowerCase())).toEqual([TOKEN]);
-    expect(sent(rpc).args).toEqual([[TOKEN, zeroAddress]]);
+    expect(sent(rpc, 1).args).toEqual([[TOKEN]]);
+  });
+});
+
+const AGENT2 = A(0x66);
+const NEW_OWNER = A(0x55);
+const asAddr = (a: string) => a as `0x${string}`;
+const mgr = async (over: Record<string, unknown> = {}, ownerAddress = owner.address) => {
+  const t = await setup(ownerAddress, over);
+  t.rpc.receiptLogs = [];
+  return { ...t, m: await t.owner.manage(ACCOUNT) };
+};
+const AG = agent.address.toLowerCase();
+
+describe('owner functions: target, arguments and outcome', () => {
+  it('addAgent queues on the registry; id and ETA come from the mined event', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'addAgent', 6n);
+    rpc.receiptLogs = [registryLog('AgentQueued', { id: 6n, eta: 1_700_003_600 })];
+    const r = await m.addAgent(AGENT2, { expiresInDays: 30, permissions: ['buy'] });
+    const s = sent(rpc);
+    expect([s.to, s.functionName, s.args[0], s.args[1], s.args[3]]).toEqual([REGISTRY, 'addAgent', ACCOUNT, AGENT2, 1]);
+    expect(s.args[2]).toBe(Number(rpc.block.timestamp) + 30 * 86_400);
+    expect([r.outcome, r.queuedId, r.eta]).toEqual(['queued', 6n, 1_700_003_600]);
+    expect(r.summary).toMatch(/queued as item 6/);
+  });
+
+  it('addAgent refuses an expiry the queue delay would outlive, sending nothing', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'increaseDelay', 2 * 86_400);
+    await expect(m.addAgent(AGENT2, { expiresInDays: 2 })).rejects.toThrow(/could never be executed/);
+    await expect(m.rotateAgent(agent.address, AGENT2, { expiresInDays: 1 })).rejects.toThrow(/could never be executed/);
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('addAgent warns when the account already has 8 active agents', async () => {
+    const { rpc, m, onWarning } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'activeAgentCount', 8);
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'addAgent', 6n);
+    rpc.receiptLogs = [registryLog('AgentQueued', { id: 6n, eta: 1_700_003_600 })];
+    const r = await m.addAgent(AGENT2);
+    expect(r.warnings.join(' ')).toMatch(/TooManyAgents/);
+    expect(onWarning).toHaveBeenCalledWith(expect.stringMatching(/TooManyAgents/));
+  });
+
+  it('setAgent applies narrower terms now (queued id 0 maps to immediate)', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setAgent', 0n);
+    const r = await m.setAgent(agent.address, { permissions: ['buy'] });
+    const s = sent(rpc);
+    expect([s.to, s.functionName, s.args]).toEqual([REGISTRY, 'setAgent', [ACCOUNT, AG, 1_800_000_000, 1]]);
+    expect([r.outcome, r.queuedId, r.eta]).toEqual(['immediate', null, null]);
+  });
+
+  it('setAgent queues wider terms and warns that the old terms stay', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'agent', { active: true, expiresAt: 1_800_000_000, permissions: 1 });
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setAgent', 9n);
+    rpc.receiptLogs = [registryLog('AgentQueued', { id: 9n, eta: 1_700_003_600 })];
+    const r = await m.setAgent(agent.address, { permissions: ['buy', 'swap'] });
+    expect(sent(rpc).args).toEqual([ACCOUNT, AG, 1_800_000_000, 9]);
+    expect([r.outcome, r.queuedId]).toEqual(['queued', 9n]);
+    expect(r.warnings.join(' ')).toMatch(/old terms stay/);
+  });
+
+  it('rotateAgent revokes the old key now and queues the new one', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'rotateAgent', 11n);
+    rpc.receiptLogs = [registryLog('AgentQueued', { id: 11n, eta: 1_700_003_600 })];
+    const r = await m.rotateAgent(agent.address, AGENT2, { expiresInDays: 30 });
+    const s = sent(rpc);
+    expect([s.to, s.functionName, s.args[0], s.args[1], s.args[2], s.args[4]]).toEqual([REGISTRY, 'rotateAgent', ACCOUNT, AG, AGENT2, 1 | 4 | 8 | 16]);
+    expect([r.outcome, r.queuedId]).toEqual(['mixed', 11n]);
+  });
+
+  it('a queue-only call without a *Queued event is an error, not a silent success', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'addAgent', 6n);
+    await expect(m.addAgent(AGENT2)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+
+  it('revokeAgent is immediate', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'revokeAgent', undefined);
+    const r = await m.revokeAgent(agent.address);
+    expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'revokeAgent', args: [ACCOUNT, AG] });
+    expect(r.outcome).toBe('immediate');
+  });
+
+  it('setIncreaseDelay: raise is immediate, lower is queued, equal sends nothing', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setIncreaseDelay', 0n);
+    const up = await m.setIncreaseDelay(7_200);
+    expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'setIncreaseDelay', args: [ACCOUNT, 7_200] });
+    expect(up.outcome).toBe('immediate');
+    expect(up.warnings.join(' ')).toMatch(/postpones every item already queued/);
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setIncreaseDelay', 12n);
+    rpc.receiptLogs = [registryLog('IncreaseDelayQueued', { id: 12n, delay: 60, eta: 1_700_003_600 })];
+    const down = await m.setIncreaseDelay(60);
+    expect(sent(rpc, 1).args).toEqual([ACCOUNT, 60]);
+    expect([down.outcome, down.queuedId, down.eta]).toEqual(['queued', 12n, 1_700_003_600]);
+    expect(down.warnings.join(' ')).toMatch(/Lowering the delay/);
+    const same = await m.setIncreaseDelay(3_600);
+    expect(same.outcome).toBe('none');
+    expect(rpc.sent).toHaveLength(2);
+  });
+
+  it('transferOwnership queues, warns and names the accept step', async () => {
+    const { rpc, m, onWarning } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'transferOwnership', 8n);
+    rpc.receiptLogs = [registryLog('OwnershipQueued', { id: 8n, newOwner: NEW_OWNER, eta: 1_700_003_600 })];
+    const r = await m.transferOwnership(NEW_OWNER);
+    expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'transferOwnership', args: [ACCOUNT, NEW_OWNER] });
+    expect([r.outcome, r.queuedId]).toEqual(['queued', 8n]);
+    expect(r.warnings.join(' ')).toMatch(/acceptOwnership/);
+    expect(r.warnings.join(' ')).toMatch(/retires the new owner as an agent/);
+    expect(onWarning).toHaveBeenCalled();
+  });
+
+  it('setTokenAllowed(true) warns; an id-0 race maps to immediate; false is immediate', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setTokenAllowed', 0n);
+    const r = await m.setTokenAllowed(TOKEN, true);
+    expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'setTokenAllowed', args: [ACCOUNT, TOKEN, true] });
+    expect([r.outcome, r.queuedId]).toEqual(['immediate', null]);
+    expect(r.warnings.length).toBeGreaterThan(0);
+    const off = await m.setTokenAllowed(TOKEN, false);
+    expect(off.outcome).toBe('immediate');
+  });
+
+  it('executeQueued reports executed vs cancelled from the receipt', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', [1, 1_700_000_000, 1n, 1n, '0x']);
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'executeQueued', undefined);
+    rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n })];
+    const ok = await m.executeQueued(3n);
+    expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'executeQueued', args: [ACCOUNT, 3n] });
+    expect(ok.outcome).toBe('immediate');
+    rpc.receiptLogs = [registryLog('QueuedCancelled', { id: 3n })];
+    const voided = await m.executeQueued(3n);
+    expect(voided.outcome).toBe('cancelled');
+    expect(voided.summary).toMatch(/nothing was applied/);
+    rpc.receiptLogs = [];
+    await expect(m.executeQueued(3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+
+  it('executeQueued refuses ownership items and unknown ids locally', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', (args) =>
+      (args[1] as bigint) === 8n ? [6, 1_700_000_000, 1n, 1n, encodeAbiParameters([{ type: 'address' }], [NEW_OWNER])] : [0, 0, 0n, 0n, '0x']);
+    await expect(m.executeQueued(8n)).rejects.toThrow(/acceptOwnership/);
+    await expect(m.executeQueued(99n)).rejects.toThrow(/no queued item 99/);
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('cancelQueued and pauseAgents go to the registry', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'cancelQueued', undefined);
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'pauseAgents', undefined);
+    expect((await m.cancelQueued(4n)).outcome).toBe('immediate');
+    const p = await m.pauseAgents(true);
+    expect(sent(rpc, 0)).toEqual({ to: REGISTRY, functionName: 'cancelQueued', args: [ACCOUNT, 4n] });
+    expect(sent(rpc, 1)).toEqual({ to: REGISTRY, functionName: 'pauseAgents', args: [ACCOUNT, true] });
+    expect(p.warnings.join(' ')).toMatch(/voids every queued item/);
+  });
+
+  it('acceptOwnership requires the QueuedExecuted event', async () => {
+    const { rpc, owner: o } = await setup();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'acceptOwnership', undefined);
+    rpc.receiptLogs = [];
+    await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+
+  it('createAccount throws when the factory event is missing', async () => {
+    const { rpc, owner: o } = await setup();
+    rpc.receiptLogs = [];
+    await expect(o.createAccount({ salt: SALT })).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+});
+
+describe('queue view: owner items, unexecutable agents, incoming owner, API', () => {
+  const ownerPayload = (a: string) => encodeAbiParameters([{ type: 'address' }], [asAddr(a)]);
+  const agentPayload = (expiresAt: number) => encodeAbiParameters([{ type: 'address' }, { type: 'uint40' }, { type: 'uint16' }], [agent.address, expiresAt, 1]);
+
+  it('flags agent items that expire before they can run, and explains owner items', async () => {
+    const { rpc, m } = await mgr();
+    const now = Number(rpc.block.timestamp);
+    rpc.logs = [queueLog(1n), queueLog(2n, 'OwnershipQueued'), queueLog(3n, 'OwnershipQueued')];
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', (args) => {
+      const id = args[1] as bigint;
+      if (id === 1n) return [1, now + 3_600, 1n, 1n, agentPayload(now + 1_800)];
+      if (id === 2n) return [6, now + 100, 1n, 1n, ownerPayload(NEW_OWNER)];
+      return [6, now - 10, 0n, 1n, ownerPayload(NEW_OWNER)];
+    });
+    const list = await m.listQueued();
+    expect(list.map((q) => [q.id, q.kind, q.status])).toEqual([[1n, 'addAgent', 'unexecutable'], [2n, 'owner', 'pending'], [3n, 'owner', 'cancelled']]);
+    expect(list[0]!.warning).toMatch(/AgentExpiryOutOfRange/);
+    expect(list[1]!.warning).toMatch(/new owner calling acceptOwnership/);
+    expect(list[2]!.warning).toMatch(/Only cancelQueued clears it/);
+    expect(list[1]!.detail).toEqual({ newOwner: NEW_OWNER });
+  });
+
+  it('pendingOwnership lists transfers addressed to the signer, usable by a non-owner', async () => {
+    const { rpc, owner: o } = await setup(NEW_OWNER);
+    const now = Number(rpc.block.timestamp);
+    rpc.logs = [queueLog(1n, 'OwnershipQueued'), queueLog(2n, 'OwnershipQueued')];
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', (args) =>
+      [6, now - 10, 1n, 1n, ownerPayload((args[1] as bigint) === 1n ? owner.address : A(0x77))]);
+    const mine = await o.pendingOwnership(ACCOUNT);
+    expect(mine.map((q) => [q.id, q.status])).toEqual([[1n, 'ready']]);
+  });
+
+  it('uses the API for candidate ids when a key is configured, verifying each on chain, and never scans logs', async () => {
+    const now = 1_700_000_000;
+    const api = { getAccount: vi.fn(async () => ({ pending: [{ id: '1', kind: 'x', eta: 0, expiresAt: 0, payload: null }, { id: 'zz', kind: 'x', eta: 0, expiresAt: 0, payload: null }] })) };
+    const { rpc, owner: o } = await setup(owner.address, { api, apiKey: 'k' });
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', [1, now - 10, 1n, 1n, agentPayload(now + 86_400)]);
+    const list = await (await o.manage(ACCOUNT)).listQueued();
+    expect(list.map((q) => q.id)).toEqual([1n]);
+    expect(rpc.methods('eth_getLogs')).toHaveLength(0);
+  });
+
+  it('falls back to bounded log scans when the API fails, and ignores the API without a key', async () => {
+    const api = { getAccount: vi.fn(async () => { throw new Error('down'); }) };
+    const a = await setup(owner.address, { api, apiKey: 'k' });
+    a.rpc.logs = [];
+    expect(await (await a.owner.manage(ACCOUNT)).listQueued()).toEqual([]);
+    expect(api.getAccount).toHaveBeenCalledTimes(1);
+    expect(a.rpc.methods('eth_getLogs').length).toBeGreaterThan(0);
+    const api2 = { getAccount: vi.fn() };
+    const b = await setup(owner.address, { api: api2 });
+    await (await b.owner.manage(ACCOUNT)).listQueued();
+    expect(api2.getAccount).not.toHaveBeenCalled();
+  });
+});
+
+describe('withdraw rules', () => {
+  const DD = A(0xdd);
+  it('rejects mixed or missing amount fields', async () => {
+    const { rpc, m } = await mgr();
+    for (const bad of [{ usdc: '1', all: true }, { usdc: '1', usdc6: 1n }, { usdc: '1', amount: '1' }, { amount: '1' }, { token: TOKEN, usdc: '1' }, {}, { token: TOKEN, amount: '1', amountWei: 1n }]) {
+      await expect(m.withdraw(bad as never)).rejects.toThrow(InvalidInputError);
+    }
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('does not guess decimals for a non-Launch token: amountWei or all only', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(DD, launchTokenAbi, 'balanceOf', 7n);
+    rpc.read(ACCOUNT, agentAccountAbi, 'withdraw', undefined);
+    await expect(m.withdraw({ token: DD, amount: '1' })).rejects.toThrow(/amountWei/);
+    await m.withdraw({ token: DD, amountWei: 5n });
+    await m.withdraw({ token: DD, all: true });
+    expect(sent(rpc, 0)).toEqual({ to: ACCOUNT, functionName: 'withdraw', args: [DD, 5n] });
+    expect(sent(rpc, 1)).toEqual({ to: ACCOUNT, functionName: 'withdraw', args: [DD, 7n] });
+  });
+
+  it('withdrawMany sends nothing when there is nothing to move', async () => {
+    const { rpc, m } = await mgr();
+    rpc.balances.set(ACCOUNT, 0n);
+    rpc.read(TOKEN, launchTokenAbi, 'balanceOf', 0n);
+    const r = await m.withdrawMany([TOKEN]);
+    expect(r.txHashes).toEqual([]);
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('caps API pagination at 50 pages, then reads the chain', async () => {
+    const listActions = vi.fn(async () => ({ items: [], nextCursor: 'more' }));
+    const { rpc, m } = await mgr({ api: { listActions } });
+    rpc.balances.set(ACCOUNT, 0n);
+    rpc.logs = [agentActionLog({ token: TOKEN })];
+    rpc.read(ACCOUNT, agentAccountAbi, 'withdrawMany', undefined);
+    const r = await m.withdrawMany();
+    expect(listActions).toHaveBeenCalledTimes(50);
+    expect(r.tokens.map((t) => t.toLowerCase())).toEqual([TOKEN]);
   });
 });

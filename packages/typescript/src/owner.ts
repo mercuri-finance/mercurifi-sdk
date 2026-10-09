@@ -1,26 +1,29 @@
 import {
-  bytesToHex, decodeFunctionResult, encodeFunctionData, getAbiItem, isAddressEqual, parseEventLogs, toEventSelector, zeroAddress,
+  bytesToHex, encodeFunctionData, getAbiItem, isAddressEqual, parseEventLogs, toEventSelector, zeroAddress,
   type Abi, type AbiEvent, type Address, type Hex,
 } from 'viem';
 
 import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
 import type { MercurifiClient } from './client.js';
-import { InvalidInputError, NetworkMismatchError, NotOwnerError } from './errors.js';
+import { InvalidInputError, MercurifiError, NetworkMismatchError, NotOwnerError } from './errors.js';
 import type { AgentBook } from './networks.js';
 import { DEFAULT_AGENT_PERMISSIONS, encodePermissions, SELL_RISK_WARNING, type Permission } from './permissions.js';
 import {
-  DEFAULT_AGENT_DAYS, DEFAULT_INCREASE_DELAY, DEFAULT_PERIOD_SECONDS, DEFAULT_POLICY, MAX_AGENT_DAYS, MAX_INCREASE_DELAY,
+  DEFAULT_AGENT_DAYS, DEFAULT_INCREASE_DELAY, MAX_AGENTS, DEFAULT_PERIOD_SECONDS, DEFAULT_POLICY, MAX_AGENT_DAYS, MAX_INCREASE_DELAY,
   MAX_PERIOD_SECONDS, MIN_PERIOD_SECONDS, QUEUE_TTL_SECONDS, mergePolicy, previewPolicyChange, validatePolicy,
   type ChainPolicy, type PolicyInput, type PolicyPreview,
 } from './policy.js';
-import { effectiveEta, listQueued, scanLogs, type QueuedChange } from './queue.js';
+import { effectiveEta, listQueued, QUEUE_EVENTS, scanLogs, type QueuedChange } from './queue.js';
 import { isAgentAccount, latestTimestamp, readAccountState, readAgent, readCeilings, readRegistry, type AccountState } from './reads.js';
 import type { Signer } from './signers.js';
-import type { SentTx } from './tx.js';
 import { resolveTokenAmount, resolveUsdc6, usdc6ToWei } from './units.js';
 
 const DAY = 86_400;
 const WITHDRAW_CHUNK = 100;
+/** Pages of API actions read before falling back to the chain. */
+const MAX_ACTION_PAGES = 50;
+/** Slack on top of the delay: an agent whose expiry is not clearly after the ETA could never execute. */
+const EXPIRY_MARGIN = 60;
 const AGENT_ACTION_TOPIC = toEventSelector(getAbiItem({ abi: agentAccountAbi, name: 'AgentAction' }) as AbiEvent);
 
 export interface CreateAccountParams {
@@ -32,7 +35,20 @@ export interface CreateAccountParams {
   salt?: Hex;
 }
 export interface CreatedAccount { account: Address; salt: Hex; txHash: Hex; block: bigint }
-export interface ChangeResult { outcome: 'none' | 'immediate' | 'queued' | 'mixed'; queuedId: bigint | null; eta: number | null; txHash: Hex | null; block: bigint | null }
+/**
+ * `cancelled`: executeQueued found the item voided by a pause or ownership change and only cleared it (nothing applied).
+ * `eta` and `queuedId` come from the mined `*Queued` event. `summary` is one plain sentence; `warnings` list what the
+ * caller should know (they are also sent to `onWarning`).
+ */
+export interface ChangeResult {
+  outcome: 'none' | 'immediate' | 'queued' | 'mixed' | 'cancelled';
+  queuedId: bigint | null;
+  eta: number | null;
+  txHash: Hex | null;
+  block: bigint | null;
+  summary: string;
+  warnings: string[];
+}
 /** A policy preview plus the timing of its queued part. `etaIfQueued` and `expiresIfQueued` are null when nothing is queued. */
 export interface PolicyPreviewFull extends PolicyPreview {
   ceilings: ChainPolicy;
@@ -54,7 +70,7 @@ const rejectUnknownKeys = (p: object): void => {
   }
 };
 
-const NONE: ChangeResult = { outcome: 'none', queuedId: null, eta: null, txHash: null, block: null };
+const none = (summary: string): ChangeResult => ({ outcome: 'none', queuedId: null, eta: null, txHash: null, block: null, summary, warnings: [] });
 const randomSalt = (): Hex => bytesToHex(globalThis.crypto.getRandomValues(new Uint8Array(32)));
 
 const expiryFrom = (now: bigint, days: number | undefined): number => {
@@ -74,26 +90,57 @@ const notOwnerKey = (agent: Address, signer: Signer): void => {
   }
 };
 
-/** Sends one call and reads back the queue id the function returned in its preflight (0 = applied immediately). */
+const at = (t: number): string => new Date(t * 1000).toISOString();
+
+interface ChangeCall {
+  to: Address;
+  abi: Abi;
+  functionName: string;
+  args: readonly unknown[];
+  /** The function always queues; a receipt without a `*Queued` event is an error, not "immediate". */
+  mustQueue?: boolean;
+}
+
+/**
+ * Sends one call and builds the result from the mined receipt: the queue id and ETA come from the registry's `*Queued`
+ * event, and executeQueued / acceptOwnership are judged by `QueuedExecuted` vs `QueuedCancelled` for that id.
+ */
 const sendChange = async (
-  mf: MercurifiClient, signer: Signer, registry: Address, account: Address,
-  call: { to: Address; abi: Abi; functionName: string; args: readonly unknown[] }, expected: ChangeResult['outcome'],
+  mf: MercurifiClient, signer: Signer, registry: Address, account: Address, call: ChangeCall,
+  expected: Exclude<ChangeResult['outcome'], 'none' | 'cancelled'>, describe: (r: ChangeResult) => string, warnings: string[] = [],
 ): Promise<ChangeResult> => {
   const data = encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args } as never);
   const sent = await mf.sender.send(signer, { to: call.to, data, label: call.functionName });
-  const queuedId = returnedId(call.abi, call.functionName, sent);
-  const eta = queuedId === null
-    ? null
-    : Number((await readRegistry<readonly [number, number, bigint, bigint, Hex]>(mf.publicClient, registry, 'queued', [account, queuedId]))[1]);
-  const outcome = queuedId === null && (expected === 'queued' || expected === 'mixed') ? 'immediate' : expected;
-  return { outcome, queuedId, eta, txHash: sent.hash, block: sent.receipt.blockNumber };
-};
-
-const returnedId = (abi: Abi, functionName: string, sent: SentTx): bigint | null => {
-  const item = abi.find((i) => i.type === 'function' && i.name === functionName) as { outputs?: readonly unknown[] } | undefined;
-  if (item?.outputs === undefined || item.outputs.length === 0 || sent.preflightData === '0x') return null;
-  const id = decodeFunctionResult({ abi, functionName, data: sent.preflightData } as never) as unknown;
-  return typeof id === 'bigint' && id > 0n ? id : null;
+  const events = (parseEventLogs({
+    abi: agentPolicyRegistryAbi, strict: false,
+    logs: sent.receipt.logs.filter((l) => isAddressEqual(l.address, registry)),
+  } as never) as unknown as { eventName: string; args: Record<string, unknown> }[])
+    .filter((e) => typeof e.args?.account === 'string' && isAddressEqual(e.args.account as Address, account));
+  const queuedEv = events.find((e) => (QUEUE_EVENTS as readonly string[]).includes(e.eventName));
+  const targetId = call.functionName === 'executeQueued' || call.functionName === 'acceptOwnership' ? (call.args[1] as bigint) : null;
+  const done = (outcome: ChangeResult['outcome']): ChangeResult => {
+    const r: ChangeResult = {
+      outcome, queuedId: null, eta: null, txHash: sent.hash, block: sent.receipt.blockNumber, summary: '', warnings,
+    };
+    if (queuedEv !== undefined && outcome !== 'cancelled') {
+      r.queuedId = BigInt(queuedEv.args.id as bigint);
+      r.eta = Number(queuedEv.args.eta);
+    }
+    r.summary = describe(r);
+    for (const w of warnings) mf.warn(w);
+    return r;
+  };
+  if (targetId !== null) {
+    const cancelled = events.some((e) => e.eventName === 'QueuedCancelled' && e.args.id === targetId);
+    const executed = events.some((e) => e.eventName === 'QueuedExecuted' && e.args.id === targetId);
+    if (cancelled && call.functionName === 'executeQueued') return done('cancelled');
+    if (!executed) throw new MercurifiError('MISSING_EVENT', `The receipt of ${sent.hash} has no QueuedExecuted event for item ${targetId}; check the queue before retrying.`);
+    return done('immediate');
+  }
+  if (call.mustQueue === true && queuedEv === undefined) {
+    throw new MercurifiError('MISSING_EVENT', `The receipt of ${sent.hash} has no *Queued event, so the queue id is unknown; list the queue to find it.`);
+  }
+  return done(queuedEv === undefined && (expected === 'queued' || expected === 'mixed') ? 'immediate' : expected);
 };
 
 /** Owner-side actions, signed by the main wallet. */
@@ -137,7 +184,8 @@ export class OwnerClient {
     const created = parseEventLogs({
       abi: agentAccountFactoryAbi, eventName: 'AccountCreated', logs: sent.receipt.logs.filter((l) => isAddressEqual(l.address, agents.factory)),
     } as never) as unknown as { args: { account: Address } }[];
-    const account = created[0]?.args.account ?? predicted;
+    if (created[0] === undefined) throw new MercurifiError('MISSING_EVENT', `The receipt of ${sent.hash} has no AccountCreated event from the factory; do not assume the account exists.`);
+    const account = created[0].args.account;
     if (!isAddressEqual(account, predicted)) throw new NetworkMismatchError(`The factory created ${account}, not the predicted ${predicted}.`);
     return { account: predicted, salt, txHash: sent.hash, block: sent.receipt.blockNumber };
   }
@@ -168,17 +216,35 @@ export class OwnerClient {
     return { txHash: sent.hash };
   }
 
-  /** Called by the NEW owner from the queued transfer's ETA to 7 days after it: registry.acceptOwnership(account, id). */
+  /**
+   * Called by the NEW owner from the queued transfer's ETA to 7 days after it: registry.acceptOwnership(account, id).
+   * If the new owner is an active agent of the account, accepting revokes (and permanently retires) that agent entry.
+   */
   async acceptOwnership(account: Address, id: bigint): Promise<ChangeResult> {
     const agents = this.mf.requireAgents();
+    const warnings = ['Accepting ownership revokes and permanently retires this address as an agent of the account, if it is one.'];
     return sendChange(this.mf, this.signer, agents.registry, account,
-      { to: agents.registry, abi: agentPolicyRegistryAbi, functionName: 'acceptOwnership', args: [account, id] }, 'immediate');
+      { to: agents.registry, abi: agentPolicyRegistryAbi, functionName: 'acceptOwnership', args: [account, id] }, 'immediate',
+      () => `Ownership of ${account} moved to ${this.signer.address} (queue item ${id}).`, warnings);
+  }
+
+  /**
+   * Ownership transfers queued TO the signer for `account`, with live status. Works for the incoming owner, who is not
+   * yet the owner and so cannot `manage` the account. Complete one with `acceptOwnership(account, item.id)`.
+   */
+  async pendingOwnership(account: Address): Promise<QueuedChange[]> {
+    const agents = this.mf.requireAgents();
+    if (!(await isAgentAccount(this.mf.publicClient, agents, account))) {
+      throw new InvalidInputError('account', `${account} is not a Mercurifi agent account on ${this.mf.network.name}`);
+    }
+    const all = await listQueued(this.mf.publicClient, agents, account, { api: this.mf.settings.apiKey === undefined ? null : this.mf.api });
+    return all.filter((q) => 'newOwner' in q.detail && isAddressEqual(q.detail.newOwner, this.signer.address));
   }
 }
 
 /**
  * Management of one account by its owner. Narrowing is immediate, widening is queued. Configuration lives
- * in the policy registry (account passed first); funds stay in the account.
+ * in the policy registry (account passed first); funds stay in the account. Withdrawals always go to the owner.
  */
 export class AccountManager {
   constructor(
@@ -213,29 +279,73 @@ export class AccountManager {
 
   async setPolicy(next: PolicyInput): Promise<ChangeResult & { preview: PolicyPreviewFull }> {
     const preview = await this.previewPolicy(next);
-    if (preview.outcome === 'none') return { ...NONE, preview };
-    return { ...(await this.registryWrite('setPolicy', [preview.target], preview.outcome)), preview };
+    if (preview.outcome === 'none') return { ...none('The policy already matches; nothing to change.'), preview };
+    const warnings = preview.queued.length > 0 ? [`Widened fields (${preview.queued.join(', ')}) are queued, not applied: they can be executed from ${at(preview.etaIfQueued!)} and for 7 days after.`] : [];
+    const r = await this.registryWrite('setPolicy', [preview.target], preview.outcome, (x) => (
+      x.outcome === 'immediate' ? `Policy tightened now (${preview.immediate.join(', ')}).`
+        : `${preview.immediate.length > 0 ? `Tightened now: ${preview.immediate.join(', ')}. ` : ''}Queued as item ${x.queuedId}: ${preview.queued.join(', ')}, executable from ${at(x.eta ?? 0)}.`
+    ), warnings);
+    return { ...r, preview };
+  }
+
+  /** Reads the delay and active-agent count a queued agent change is judged against. */
+  private async agentContext(): Promise<{ now: number; delay: number; count: number }> {
+    const [now, delay, count] = await Promise.all([
+      latestTimestamp(this.mf.publicClient),
+      readRegistry<number>(this.mf.publicClient, this.agents.registry, 'increaseDelay', [this.account]),
+      readRegistry<number>(this.mf.publicClient, this.agents.registry, 'activeAgentCount', [this.account]),
+    ]);
+    return { now: Number(now), delay: Number(delay), count: Number(count) };
+  }
+
+  /** A queued agent item with `expiresAt` not after its ETA reverts AgentExpiryOutOfRange for its whole window. */
+  private checkExpiryReachable(expiresAt: number, ctx: { now: number; delay: number }): void {
+    if (expiresAt <= ctx.now + ctx.delay + EXPIRY_MARGIN) {
+      throw new InvalidInputError('expiresInDays',
+        `This change is queued for ${ctx.delay} s (until ${at(ctx.now + ctx.delay)}) but the agent would expire at ${at(expiresAt)}, so it could never be executed. Choose a longer expiry.`);
+    }
   }
 
   async addAgent(agent: Address, grant: AgentGrant = {}): Promise<ChangeResult> {
     notOwnerKey(agent, this.signer);
     const perms = grant.permissions ?? DEFAULT_AGENT_PERMISSIONS;
     const bits = encodePermissions(perms);
-    if (perms.includes('sell')) this.mf.warn(SELL_RISK_WARNING);
-    const expiresAt = expiryFrom(await latestTimestamp(this.mf.publicClient), grant.expiresInDays);
-    return this.registryWrite('addAgent', [agent, expiresAt, bits], 'queued');
+    const ctx = await this.agentContext();
+    const expiresAt = expiryFrom(BigInt(ctx.now), grant.expiresInDays);
+    this.checkExpiryReachable(expiresAt, ctx);
+    const warnings = this.agentWarnings(perms, ctx.count);
+    return this.registryWrite('addAgent', [agent, expiresAt, bits], 'queued',
+      (r) => `Agent ${agent} is queued as item ${r.queuedId}; it can be activated from ${at(r.eta ?? 0)} (executeQueued), then runs until ${at(expiresAt)}.`, warnings, true);
+  }
+
+  private agentWarnings(perms: readonly Permission[], activeCount: number, hadSell = false): string[] {
+    const w: string[] = [];
+    if (perms.includes('sell') && !hadSell) {
+      this.mf.warn(SELL_RISK_WARNING);
+    }
+    if (activeCount >= MAX_AGENTS) {
+      w.push(`The account already has ${activeCount} active agents (the limit is ${MAX_AGENTS}); executing this add reverts TooManyAgents unless one is revoked first.`);
+    }
+    return w;
   }
 
   async setAgent(agent: Address, grant: AgentGrant): Promise<ChangeResult> {
-    const now = await latestTimestamp(this.mf.publicClient);
-    const current = await readAgent(this.mf.publicClient, this.agents, this.account, agent, now);
+    const ctx = await this.agentContext();
+    const current = await readAgent(this.mf.publicClient, this.agents, this.account, agent, BigInt(ctx.now));
     if (!current.active) throw new InvalidInputError('agent', `${agent} is not an active agent; use addAgent`);
     const perms = grant.permissions ?? current.permissions;
     const bits = encodePermissions(perms);
-    const expiresAt = grant.expiresInDays === undefined ? current.expiresAt : expiryFrom(now, grant.expiresInDays);
+    const expiresAt = grant.expiresInDays === undefined ? current.expiresAt : expiryFrom(BigInt(ctx.now), grant.expiresInDays);
     const widening = expiresAt > current.expiresAt || (bits & ~current.permissionBits) !== 0;
-    if (widening && perms.includes('sell') && !current.permissions.includes('sell')) this.mf.warn(SELL_RISK_WARNING);
-    return this.registryWrite('setAgent', [agent, expiresAt, bits], widening ? 'queued' : 'immediate');
+    if (widening) this.checkExpiryReachable(expiresAt, ctx);
+    const warnings = widening
+      ? [...this.agentWarnings(perms, 0, current.permissions.includes('sell')),
+        `Widening an agent (longer expiry or more permissions) is queued for ${ctx.delay} s; the old terms stay in force until it is executed.`]
+      : [];
+    return this.registryWrite('setAgent', [agent, expiresAt, bits], widening ? 'queued' : 'immediate',
+      (r) => (r.outcome === 'queued'
+        ? `Wider terms for ${agent} are queued as item ${r.queuedId}; executable from ${at(r.eta ?? 0)}.`
+        : `Narrower terms for ${agent} applied now.`), warnings);
   }
 
   /** Retires `oldAgent` now and queues `newAgent` under the delay rule. */
@@ -243,79 +353,128 @@ export class AccountManager {
     notOwnerKey(newAgent, this.signer);
     const perms = grant.permissions ?? DEFAULT_AGENT_PERMISSIONS;
     const bits = encodePermissions(perms);
-    if (perms.includes('sell')) this.mf.warn(SELL_RISK_WARNING);
-    const expiresAt = expiryFrom(await latestTimestamp(this.mf.publicClient), grant.expiresInDays);
-    return this.registryWrite('rotateAgent', [oldAgent, newAgent, expiresAt, bits], 'mixed');
+    const ctx = await this.agentContext();
+    const expiresAt = expiryFrom(BigInt(ctx.now), grant.expiresInDays);
+    this.checkExpiryReachable(expiresAt, ctx);
+    const oldActive = (await readAgent(this.mf.publicClient, this.agents, this.account, oldAgent, BigInt(ctx.now))).active;
+    const warnings = [
+      ...this.agentWarnings(perms, ctx.count - (oldActive ? 1 : 0)),
+      `${oldAgent} is retired at once and can never be an agent of this account again; ${newAgent} starts only when its queued item is executed.`,
+    ];
+    return this.registryWrite('rotateAgent', [oldAgent, newAgent, expiresAt, bits], 'mixed',
+      (r) => `${oldAgent} was revoked now; ${newAgent} is queued as item ${r.queuedId}, executable from ${at(r.eta ?? 0)}.`, warnings, true);
   }
 
   /** Retires the address forever (revoking it if active); its queued items can no longer execute. */
   revokeAgent(agent: Address): Promise<ChangeResult> {
-    return this.registryWrite('revokeAgent', [agent], 'immediate');
+    return this.registryWrite('revokeAgent', [agent], 'immediate', () => `${agent} is revoked now and retired for good.`);
   }
 
   /** Adding is queued (and skipped when already allowed); removing is immediate and makes pending additions stale. */
   async setTokenAllowed(token: Address, allowed: boolean): Promise<ChangeResult> {
     if (allowed) {
-      const curve = (await this.mf.publicClient.readContract({
-        address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'curveOf', args: [token],
-      } as never)) as Address;
-      if (isAddressEqual(curve, zeroAddress)) throw new InvalidInputError('token', `${token} is not a Mercurifi Launch token on ${this.mf.network.name}`);
-      if (await readRegistry<boolean>(this.mf.publicClient, this.agents.registry, 'tokenAllowed', [this.account, token])) return NONE;
+      if (!(await this.isLaunchToken(token))) throw new InvalidInputError('token', `${token} is not a Mercurifi Launch token on ${this.mf.network.name}`);
+      if (await readRegistry<boolean>(this.mf.publicClient, this.agents.registry, 'tokenAllowed', [this.account, token])) return none(`${token} is already on the allowlist.`);
     }
-    return this.registryWrite('setTokenAllowed', [token, allowed], allowed ? 'queued' : 'immediate');
+    const warnings = allowed ? ['Allowing a token is queued; with allowlistOnly set, agents cannot trade it until the item is executed.'] : [];
+    return this.registryWrite('setTokenAllowed', [token, allowed], allowed ? 'queued' : 'immediate',
+      (r) => (allowed ? `Allowing ${token} is queued as item ${r.queuedId}, executable from ${at(r.eta ?? 0)}.` : `${token} removed from the allowlist now.`), warnings);
   }
 
   async setIncreaseDelay(seconds: number): Promise<ChangeResult> {
     intIn('increaseDelay', seconds, 0, MAX_INCREASE_DELAY);
     const { increaseDelay } = await this.state();
-    if (seconds === increaseDelay) return NONE;
-    return this.registryWrite('setIncreaseDelay', [seconds], seconds > increaseDelay ? 'immediate' : 'queued');
+    if (seconds === increaseDelay) return none(`The increase delay is already ${seconds} s.`);
+    const raising = seconds > increaseDelay;
+    const warnings = raising
+      ? ['Raising the delay also postpones every item already queued: its ETA becomes queuedAt + the new delay.']
+      : [`Lowering the delay is itself queued for the current ${increaseDelay} s and weakens the protection against a compromised owner key; it applies only when executed.`];
+    return this.registryWrite('setIncreaseDelay', [seconds], raising ? 'immediate' : 'queued',
+      (r) => (raising ? `The increase delay is now ${seconds} s.` : `Lowering the delay to ${seconds} s is queued as item ${r.queuedId}, executable from ${at(r.eta ?? 0)}.`), warnings);
   }
 
   /** Queues the transfer; the new owner completes it with OwnerClient.acceptOwnership after the delay. */
   transferOwnership(newOwner: Address): Promise<ChangeResult> {
-    return this.registryWrite('transferOwnership', [newOwner], 'queued');
+    const warnings = [
+      `Ownership moves only when ${newOwner} calls acceptOwnership (between the ETA and 7 days after it); you stay owner until then and can cancelQueued.`,
+      'Accepting revokes and permanently retires the new owner as an agent of this account, if it is one. Check the address: ownership controls all funds.',
+    ];
+    return this.registryWrite('transferOwnership', [newOwner], 'queued',
+      (r) => `Transfer to ${newOwner} is queued as item ${r.queuedId}; ${newOwner} can accept from ${at(r.eta ?? 0)}.`, warnings, true);
   }
 
+  /** Queued changes, from the API when a key is configured (verified on chain), else from bounded log scans. */
   listQueued(opts: { fromBlock?: bigint } = {}): Promise<QueuedChange[]> {
-    return listQueued(this.mf.publicClient, this.agents, this.account, opts);
+    return listQueued(this.mf.publicClient, this.agents, this.account, { ...opts, api: this.mf.settings.apiKey === undefined ? null : this.mf.api });
   }
 
-  executeQueued(id: bigint): Promise<ChangeResult> {
-    return this.registryWrite('executeQueued', [id], 'immediate');
+  /**
+   * Runs a queued item once its ETA has passed. The outcome is `cancelled` when the registry only cleared an item voided
+   * by a pause or ownership change. Ownership items are completed by the new owner (`acceptOwnership`), never here.
+   */
+  async executeQueued(id: bigint): Promise<ChangeResult> {
+    const [kind] = await readRegistry<readonly [number, number, bigint, bigint, Hex]>(this.mf.publicClient, this.agents.registry, 'queued', [this.account, id]);
+    if (Number(kind) === 0) throw new InvalidInputError('id', `There is no queued item ${id} for this account (already executed, cancelled or never queued).`);
+    if (Number(kind) === 6) {
+      throw new InvalidInputError('id', `Item ${id} is an ownership transfer: executeQueued reverts AcceptRequired. The new owner completes it with acceptOwnership; you can only cancelQueued it.`);
+    }
+    return this.registryWrite('executeQueued', [id], 'immediate',
+      (r) => (r.outcome === 'cancelled' ? `Item ${id} was voided by a pause or ownership change; it was cleared and nothing was applied.` : `Queued item ${id} executed.`));
   }
 
   cancelQueued(id: bigint): Promise<ChangeResult> {
-    return this.registryWrite('cancelQueued', [id], 'immediate');
+    return this.registryWrite('cancelQueued', [id], 'immediate', () => `Queued item ${id} cancelled.`);
   }
 
   /** Immediate both ways; pausing also voids every queued item. */
   pauseAgents(paused: boolean): Promise<ChangeResult> {
-    return this.registryWrite('pauseAgents', [paused], 'immediate');
-  }
-
-  /** To the owner only, from the account. Native USDC: `usdc`/`usdc6`/`all`; a Launch token: `token` with `amount` ('all' allowed) or `amountWei`. */
-  async withdraw(p: WithdrawParams): Promise<ChangeResult> {
-    rejectUnknownKeys(p);
-    let token: Address = zeroAddress;
-    let amount: bigint;
-    if (p.token === undefined || isAddressEqual(p.token, zeroAddress)) {
-      amount = p.all === true ? await this.mf.publicClient.getBalance({ address: this.account }) : usdc6ToWei(resolveUsdc6(p));
-    } else {
-      if (isAddressEqual(p.token, this.mf.network.launch.usdc)) {
-        throw new InvalidInputError('token', 'Withdraw USDC as native (omit token): the ERC-20 view at 0x3600…0000 is the same balance.');
-      }
-      token = p.token;
-      const r = resolveTokenAmount(p);
-      amount = r === 'all' ? await this.balanceOf(token) : r;
-    }
-    if (amount === 0n) throw new InvalidInputError('amount', 'Nothing to withdraw.');
-    return this.accountWrite('withdraw', [token, amount]);
+    return this.registryWrite('pauseAgents', [paused], 'immediate',
+      () => (paused ? 'Agents paused; every queued item is voided.' : 'Agents resumed.'),
+      paused ? ['Pausing voids every queued item (including pending ownership transfers); executing them only clears them.'] : []);
   }
 
   /**
-   * Full balances of every held token, then native USDC, to the owner, in chunks of 100 tokens per transaction.
-   * Without `tokens`, the list comes from the API's action history, or from the account's own AgentAction logs.
+   * To the owner only, from the account (there is no recipient parameter). Native USDC: exactly one of `usdc`, `usdc6`
+   * or `all`. A token (Launch or any other ERC-20 that ended up in the account): `token` with exactly one of `amountWei`,
+   * `all`, or (Launch tokens only, 18 decimals) `amount`. Other tokens never get a guessed decimal scale.
+   */
+  async withdraw(p: WithdrawParams): Promise<ChangeResult> {
+    rejectUnknownKeys(p);
+    const native = p.token === undefined || isAddressEqual(p.token, zeroAddress);
+    if (!native && isAddressEqual(p.token!, this.mf.network.launch.usdc)) {
+      throw new InvalidInputError('token', 'Withdraw USDC as native (omit token): the ERC-20 view at 0x3600…0000 is the same balance.');
+    }
+    const given = (['usdc', 'usdc6', 'amount', 'amountWei'] as const).filter((k) => p[k] !== undefined) as string[];
+    if (p.all === true) given.push('all');
+    if (given.length !== 1) {
+      throw new InvalidInputError('amount', given.length === 0
+        ? 'Say how much to withdraw: usdc, usdc6 or all (native), or amountWei, amount or all (token).'
+        : `Use exactly one amount field; got ${given.join(', ')}.`);
+    }
+    const field = given[0]!;
+    if (native && (field === 'amount' || field === 'amountWei')) throw new InvalidInputError(field, `${field} is for a token; for native USDC use usdc, usdc6 or all.`);
+    if (!native && (field === 'usdc' || field === 'usdc6')) throw new InvalidInputError(field, `${field} is for native USDC; for a token use amountWei, amount (Launch tokens) or all.`);
+    let token: Address = zeroAddress;
+    let amount: bigint;
+    if (native) {
+      amount = field === 'all' ? await this.mf.publicClient.getBalance({ address: this.account }) : usdc6ToWei(resolveUsdc6(p));
+    } else {
+      token = p.token!;
+      if (field === 'amount' && !(await this.isLaunchToken(token))) {
+        throw new InvalidInputError('amount', 'amount assumes 18 decimals, which only Launch tokens are known to have. For other tokens pass amountWei in the token\'s base units, or all.');
+      }
+      const r = field === 'all' ? 'all' : resolveTokenAmount(p);
+      amount = r === 'all' ? await this.balanceOf(token) : r;
+    }
+    if (amount === 0n) throw new InvalidInputError('amount', 'Nothing to withdraw.');
+    return this.accountWrite('withdraw', [token, amount], () => `Withdrew ${field === 'all' ? 'the full balance' : 'the amount'} of ${native ? 'native USDC' : token} to the owner.`);
+  }
+
+  /**
+   * Full balances of the listed tokens (any ERC-20; zero balances are skipped), then native USDC, to the owner. Native
+   * goes in its own transaction, sent first, so a token that fails cannot block the USDC exit; tokens go in chunks of
+   * 100. Without `tokens`, Launch tokens are discovered from the API's action history or the account's own logs. Nothing
+   * is sent when there is nothing to move.
    */
   async withdrawMany(tokens?: readonly Address[], opts: { fromBlock?: bigint } = {}): Promise<{ txHashes: Hex[]; tokens: Address[] }> {
     const candidates = tokens ?? (await this.launchTokensOnly(await this.tokensTouched(opts.fromBlock)));
@@ -327,10 +486,13 @@ export class AccountManager {
       seen.add(key);
       if ((await this.balanceOf(t)) > 0n) held.push(t);
     }
-    const list: Address[] = [...held, zeroAddress];
     const txHashes: Hex[] = [];
-    for (let i = 0; i < list.length; i += WITHDRAW_CHUNK) {
-      const r = await this.accountWrite('withdrawMany', [list.slice(i, i + WITHDRAW_CHUNK)]);
+    if ((await this.mf.publicClient.getBalance({ address: this.account })) > 0n) {
+      const r = await this.accountWrite('withdrawMany', [[zeroAddress]], () => 'Withdrew native USDC to the owner.');
+      if (r.txHash !== null) txHashes.push(r.txHash);
+    }
+    for (let i = 0; i < held.length; i += WITHDRAW_CHUNK) {
+      const r = await this.accountWrite('withdrawMany', [held.slice(i, i + WITHDRAW_CHUNK)], () => 'Withdrew tokens to the owner.');
       if (r.txHash !== null) txHashes.push(r.txHash);
     }
     return { txHashes, tokens: held };
@@ -342,7 +504,9 @@ export class AccountManager {
       try {
         const out: Address[] = [];
         let cursor: string | undefined;
+        let pages = 0;
         do {
+          if (pages++ >= MAX_ACTION_PAGES) throw new Error('too many pages');
           const page = await api.listActions(this.account, cursor);
           out.push(...page.items.map((a) => a.token));
           cursor = page.nextCursor ?? undefined;
@@ -356,14 +520,18 @@ export class AccountManager {
     return (parseEventLogs({ abi: agentAccountAbi, eventName: 'AgentAction', logs } as never) as unknown as { args: { token: Address } }[]).map((l) => l.args.token);
   }
 
+  private async isLaunchToken(token: Address): Promise<boolean> {
+    const curve = (await this.mf.publicClient.readContract({
+      address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'curveOf', args: [token],
+    } as never)) as Address;
+    return !isAddressEqual(curve, zeroAddress);
+  }
+
   /** Discovered tokens come from an API or logs; only Launch tokens (known to the Launch factory) are ever asked to transfer. */
   private async launchTokensOnly(tokens: readonly Address[]): Promise<Address[]> {
     const out: Address[] = [];
     for (const t of new Set(tokens.map((x) => x.toLowerCase() as Address))) {
-      const curve = (await this.mf.publicClient.readContract({
-        address: this.mf.network.launch.factory, abi: launchFactoryAbi, functionName: 'curveOf', args: [t],
-      } as never)) as Address;
-      if (!isAddressEqual(curve, zeroAddress)) out.push(t);
+      if (await this.isLaunchToken(t)) out.push(t);
     }
     return out;
   }
@@ -373,14 +541,17 @@ export class AccountManager {
   }
 
   /** A registry owner function: sent to the registry with the account as its first argument. */
-  private registryWrite(functionName: string, args: readonly unknown[], expected: ChangeResult['outcome']): Promise<ChangeResult> {
+  private registryWrite(
+    functionName: string, args: readonly unknown[], expected: Exclude<ChangeResult['outcome'], 'none' | 'cancelled'>,
+    describe: (r: ChangeResult) => string, warnings: string[] = [], mustQueue = false,
+  ): Promise<ChangeResult> {
     return sendChange(this.mf, this.signer, this.agents.registry, this.account,
-      { to: this.agents.registry, abi: agentPolicyRegistryAbi, functionName, args: [this.account, ...args] }, expected);
+      { to: this.agents.registry, abi: agentPolicyRegistryAbi, functionName, args: [this.account, ...args], mustQueue }, expected, describe, warnings);
   }
 
   /** An account function (withdrawals): sent to the account itself. */
-  private accountWrite(functionName: string, args: readonly unknown[]): Promise<ChangeResult> {
+  private accountWrite(functionName: string, args: readonly unknown[], describe: (r: ChangeResult) => string): Promise<ChangeResult> {
     return sendChange(this.mf, this.signer, this.agents.registry, this.account,
-      { to: this.account, abi: agentAccountAbi, functionName, args }, 'immediate');
+      { to: this.account, abi: agentAccountAbi, functionName, args }, 'immediate', describe);
   }
 }

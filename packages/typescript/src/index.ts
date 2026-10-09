@@ -15,5 +15,5 @@ export { NonceManager } from './nonce.js';
 export { chainDeadline } from './time.js';
 export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';
 export { OwnerClient, AccountManager, type CreateAccountParams, type CreatedAccount, type ChangeResult, type AgentGrant, type WithdrawParams } from './owner.js';
-export { decodeQueuedPayload, effectiveEta, QUEUE_KINDS, QUEUE_EVENTS, type QueuedChange, type QueuedDetail, type QueuedStatus } from './queue.js';
+export { listQueued, decodeQueuedPayload, effectiveEta, QUEUE_KINDS, QUEUE_EVENTS, type QueuedChange, type QueuedDetail, type QueuedStatus } from './queue.js';
 export type { AccountState, AgentInfo } from './reads.js';

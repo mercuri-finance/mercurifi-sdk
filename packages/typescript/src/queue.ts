@@ -1,6 +1,7 @@
 import { decodeAbiParameters, pad, parseEventLogs, toHex, type Address, type Hex, type PublicClient } from 'viem';
 
 import { agentPolicyRegistryAbi } from './abi/index.js';
+import type { MercurifiApi } from './api/types.js';
 import type { AgentBook } from './networks.js';
 import { decodePermissions, type Permission } from './permissions.js';
 import { POLICY_FIELDS, QUEUE_TTL_SECONDS, type ChainPolicy, type PolicyField } from './policy.js';
@@ -92,7 +93,7 @@ export const decodeQueuedPayload = (kind: number, payload: Hex): { kind: QueueKi
   }
 };
 
-export type QueuedStatus = 'pending' | 'ready' | 'expired' | 'cancelled' | 'stale';
+export type QueuedStatus = 'pending' | 'ready' | 'expired' | 'cancelled' | 'stale' | 'unexecutable';
 
 /**
  * The registry's effective ETA: `queuedAt + max(delayAtQueue, current delay)`. Raising the widening delay therefore also
@@ -128,21 +129,54 @@ const WARNINGS: Partial<Record<QueuedStatus, string>> = {
   stale: 'Executing this reverts StaleQueued (its subject changed after it was queued); cancel it and queue it again if still wanted.',
   expired: 'Executing this reverts QueuedExpired (the 7-day window after its ETA has passed); cancel it and queue it again if still wanted.',
   cancelled: 'Voided by a pause or an ownership change after it was queued; executing it only clears it.',
+  unexecutable: 'Executing this reverts AgentExpiryOutOfRange: the agent would already be expired at the earliest time it can run. Cancel it and queue a longer expiry.',
 };
 
-/** Queued changes of `account`, found in the registry's logs within the queue window, with live status. */
-export const listQueued = async (client: PublicClient, agents: AgentBook, account: Address, opts: { fromBlock?: bigint } = {}): Promise<QueuedChange[]> => {
+const OWNER_WARNINGS: Partial<Record<QueuedStatus, string>> = {
+  pending: 'An ownership transfer is completed only by the new owner calling acceptOwnership once the ETA has passed; executeQueued reverts AcceptRequired. The current owner can cancelQueued it.',
+  ready: 'An ownership transfer is completed only by the new owner calling acceptOwnership (within 7 days of the ETA); executeQueued reverts AcceptRequired. The current owner can cancelQueued it.',
+  cancelled: 'Voided by a pause or an ownership change: acceptOwnership now reverts StaleQueued and executeQueued reverts AcceptRequired. Only cancelQueued clears it.',
+  expired: 'The 7-day window has passed: acceptOwnership reverts QueuedExpired. Only cancelQueued clears it.',
+};
+
+/** Hard bound on the ids taken from an API answer; each is verified on chain anyway. */
+const MAX_API_IDS = 200;
+
+/** Candidate ids from the API's pending list (untrusted: each is re-read from the registry). Null when the API is unusable. */
+const idsFromApi = async (api: MercurifiApi, account: Address): Promise<Set<bigint> | null> => {
+  try {
+    const acc = await api.getAccount(account);
+    const ids = new Set<bigint>();
+    for (const item of acc.pending.slice(0, MAX_API_IDS)) {
+      if (typeof item.id === 'string' && /^[0-9]{1,18}$/.test(item.id)) ids.add(BigInt(item.id));
+    }
+    return ids;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Queued changes of `account` with live status, every field read from the registry. Candidate ids come from the API
+ * first when `opts.api` is given, and otherwise (or if it fails) from the registry's logs within the queue window.
+ */
+export const listQueued = async (
+  client: PublicClient, agents: AgentBook, account: Address, opts: { fromBlock?: bigint; api?: MercurifiApi | null } = {},
+): Promise<QueuedChange[]> => {
   const reg = <T>(fn: string, args: readonly unknown[]) => readRegistry<T>(client, agents.registry, fn, [account, ...args]);
-  const head = await client.getBlockNumber();
-  const windowStart = head > QUEUE_WINDOW_BLOCKS ? head - QUEUE_WINDOW_BLOCKS : 0n;
-  const from = opts.fromBlock ?? (windowStart > agents.deployBlock ? windowStart : agents.deployBlock);
-  const logs = await scanLogs(client, { address: agents.registry, topics: [null, accountTopic(account)] }, from, head);
-  const ids = new Set<bigint>();
-  for (const log of parseEventLogs({ abi: agentPolicyRegistryAbi, logs: logs as never, strict: false })) {
-    if (!(QUEUE_EVENTS as readonly string[]).includes(log.eventName)) continue;
-    const args = log.args as Record<string, unknown> | undefined;
-    if (typeof args?.account !== 'string' || args.account.toLowerCase() !== account.toLowerCase()) continue;
-    if (typeof args.id === 'bigint') ids.add(args.id);
+  let ids = opts.api ? await idsFromApi(opts.api, account) : null;
+  if (ids === null) {
+    ids = new Set<bigint>();
+    const head = await client.getBlockNumber();
+    const windowStart = head > QUEUE_WINDOW_BLOCKS ? head - QUEUE_WINDOW_BLOCKS : 0n;
+    const from = opts.fromBlock ?? (windowStart > agents.deployBlock ? windowStart : agents.deployBlock);
+    const logs = await scanLogs(client, { address: agents.registry, topics: [null, accountTopic(account)] }, from, head);
+    for (const log of parseEventLogs({ abi: agentPolicyRegistryAbi, logs: logs as never, strict: false })) {
+      if (!(QUEUE_EVENTS as readonly string[]).includes(log.eventName)) continue;
+      const args = log.args as Record<string, unknown> | undefined;
+      if (typeof args?.account !== 'string' || args.account.toLowerCase() !== account.toLowerCase()) continue;
+      if (typeof args.id === 'bigint') ids.add(args.id);
+    }
   }
   const [epoch, now] = await Promise.all([reg<bigint>('epoch', []), latestTimestamp(client)]);
   const out: QueuedChange[] = [];
@@ -164,13 +198,18 @@ export const listQueued = async (client: PublicClient, agents: AgentBook, accoun
       stale = d.superseded.length === POLICY_FIELDS.length;
     }
     // executeQueued checks the epoch first, then the window, then freshness; the status follows the same order.
+    // An agent item whose expiry is not after max(now, eta) fails _checkAgentTerms at every possible execution time.
+    const unexecutable = 'agent' in d && BigInt(d.expiresAt) <= (now > BigInt(etaN) ? now : BigInt(etaN));
     const status: QueuedStatus = BigInt(itemEpoch) !== BigInt(epoch) ? 'cancelled'
       : now > BigInt(expiresAt) ? 'expired'
         : stale ? 'stale'
-          : now < BigInt(etaN) ? 'pending' : 'ready';
-    const warning = status === 'stale' && 'policy' in d
-      ? 'Every policy field was changed after this was queued, so executing it changes nothing.'
-      : WARNINGS[status] ?? null;
+          : unexecutable ? 'unexecutable'
+            : now < BigInt(etaN) ? 'pending' : 'ready';
+    const warning = decoded.kind === 'owner'
+      ? OWNER_WARNINGS[status] ?? null
+      : status === 'stale' && 'policy' in d
+        ? 'Every policy field was changed after this was queued, so executing it changes nothing.'
+        : WARNINGS[status] ?? null;
     out.push({ id, ...decoded, eta: etaN, expiresAt, seq, status, warning });
   }
   return out;
