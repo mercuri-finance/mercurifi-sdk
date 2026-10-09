@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_AGENT_PERMISSIONS, decodePermissions, encodePermissions } from '../src/permissions.js';
 
-import { readFileSync } from 'node:fs';
 const vec = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/policy.json', import.meta.url), 'utf8'));
 
 describe('permissions', () => {

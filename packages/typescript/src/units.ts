@@ -8,6 +8,8 @@ export const SCALE = 10n ** 12n;
 export const MAX_SLIPPAGE = 0.5;
 
 const DECIMAL = /^(0|[1-9]\d*)(\.\d+)?$/;
+/** ASCII whitespace only, the set Python's units.py strips; Unicode spaces and U+FEFF are refused, not trimmed. */
+const ASCII_EDGE_WHITESPACE = /^[ \t\n\r]+|[ \t\n\r]+$/g;
 
 /**
  * Parses a human decimal string into base units.
@@ -26,7 +28,7 @@ export const parseDecimal = (value: unknown, decimals: number, field: string, ba
       `${field} must be a decimal string such as "25" or "0.5" (got ${typeof value}). For base units use ${baseUnitHint} with a bigint.`,
     );
   }
-  const text = value.trim();
+  const text = value.replace(ASCII_EDGE_WHITESPACE, '');
   if (!DECIMAL.test(text)) throw new InvalidInputError(field, `${field} must be a plain decimal string such as "25" or "0.5"`);
   const [whole = '0', frac = ''] = text.split('.');
   if (frac.length > decimals) throw new InvalidInputError(field, `${field} has more than ${decimals} decimal places`);

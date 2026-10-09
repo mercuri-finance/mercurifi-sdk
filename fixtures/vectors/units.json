@@ -103,6 +103,34 @@
     {
       "in": "1\u0085",
       "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\t2.5\r\n",
+      "out": "2500000"
+    },
+    {
+      "in": "\u00a02.5",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "2.5\u00a0",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\ufeff1",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1\ufeff",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\u20031",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1\u2003",
+      "error": "INVALID_INPUT"
     }
   ],
   "parseTokens": [

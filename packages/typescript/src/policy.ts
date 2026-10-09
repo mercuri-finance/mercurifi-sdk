@@ -71,7 +71,6 @@ export const MAX_AGENT_DAYS = 180;
 export const MAX_DEADLINE_SECONDS = 600;
 export const QUEUE_TTL_SECONDS = 604_800;
 
-/** Applies human input over a base policy, checking types and integer ranges. */
 /** Checks one field against its Solidity width (uint64 / uint32 / uint16 / bool). */
 const checkRange = (field: PolicyField, value: unknown): void => {
   const name = `policy.${field}`;
