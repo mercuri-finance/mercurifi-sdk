@@ -1,22 +1,44 @@
-import { http, type HttpTransport } from 'viem';
+import { custom, type CustomTransport } from 'viem';
+
+import { MercurifiError } from './errors.js';
+import { redactUrl, redactUrlsIn } from './redact.js';
 
 /** Largest JSON-RPC response read into memory (the Python Rpc's MAX_RESPONSE_BYTES). */
 export const MAX_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
+const TIMEOUT_MS = 15_000;
 
 type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
-class RpcResponseCheckError extends Error {
-  constructor(reason: string) {
-    super(reason);
-    this.name = 'RpcResponseCheckError';
+/**
+ * A transport or HTTP failure on the RPC path: host only, first line only, and no `cause`, so neither the message, the
+ * stack nor a cause chain can carry the RPC URL (which often holds a provider key in its path). `reason` is the
+ * credential-free part, for messages that name the failed check.
+ */
+export class RpcTransportError extends MercurifiError {
+  readonly reason: string;
+
+  constructor(host: string, reason: string) {
+    super('RPC_ERROR', `The RPC request to ${host} failed: ${reason}`);
+    this.name = 'RpcTransportError';
+    this.reason = reason;
   }
 }
 
-async function readCapped(response: Response, maxBytes: number): Promise<string> {
+/** The reason of an SDK transport failure found in an error's cause chain, or null. */
+export const rpcCheckReason = (error: unknown): string | null => {
+  let e: unknown = error;
+  for (let i = 0; i < 16 && typeof e === 'object' && e !== null; i += 1) {
+    if (e instanceof RpcTransportError) return e.reason;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return null;
+};
+
+async function readCapped(response: Response, maxBytes: number): Promise<string | null> {
   const declared = response.headers.get('content-length');
   if (declared !== null && /^\d+$/.test(declared) && Number(declared) > maxBytes) {
     await response.body?.cancel().catch(() => undefined);
-    throw new RpcResponseCheckError(`the response is larger than ${maxBytes} bytes`);
+    return null;
   }
   if (response.body === null) return '';
   const reader = response.body.getReader();
@@ -28,7 +50,7 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
     size += value.byteLength;
     if (size > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      throw new RpcResponseCheckError(`the response is larger than ${maxBytes} bytes`);
+      return null;
     }
     chunks.push(value);
   }
@@ -41,63 +63,84 @@ async function readCapped(response: Response, maxBytes: number): Promise<string>
   return new TextDecoder().decode(all);
 }
 
-const idOf = (v: unknown): unknown => (typeof v === 'object' && v !== null ? (v as { id?: unknown }).id : undefined);
-
-/** One response object: JSON-RPC 2.0 and the id of the request it answers (a number, never a boolean or a string). */
-function checkOne(sentId: unknown, body: unknown): void {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new RpcResponseCheckError('the response is not a JSON-RPC object');
-  if ((body as { jsonrpc?: unknown }).jsonrpc !== '2.0') throw new RpcResponseCheckError('the response is not JSON-RPC 2.0');
-  const id = idOf(body);
-  if (typeof id !== 'number' || id !== sentId) throw new RpcResponseCheckError('the response id does not match the request');
-}
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
- * A fetch for viem's HTTP transport with the Python Rpc's response checks: the body is read up to
- * {@link MAX_RPC_RESPONSE_BYTES} (declared or streamed), and a 2xx body must be JSON-RPC 2.0 answering the request's own
- * id (each id once, for a batch). Anything else fails the request instead of being decoded.
+ * The SDK's HTTP JSON-RPC transport, with the Python Rpc's rules (rpc.py): bodies over {@link MAX_RPC_RESPONSE_BYTES}
+ * (declared or streamed) fail; a body must be JSON-RPC 2.0 answering the request's own numeric id. A JSON-RPC error
+ * answer is passed on as `{ code, message, data }` (URLs in the node's words reduced to hosts), so revert data still
+ * decodes; every other failure is an {@link RpcTransportError}. The RPC URL is never part of any error.
  */
-export const checkedRpcFetch = (inner?: FetchFn, maxBytes = MAX_RPC_RESPONSE_BYTES): FetchFn => async (input, init) => {
-  const doFetch: FetchFn = inner ?? ((i, o) => globalThis.fetch(i, o));
-  let sent: unknown;
-  try {
-    sent = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
-  } catch {
-    sent = undefined;
-  }
-  const response = await doFetch(input, init);
-  const text = await readCapped(response, maxBytes);
-  if (response.ok) {
-    let body: unknown;
+export const rpcTransport = (rpcUrl: string, inner?: FetchFn, maxBytes = MAX_RPC_RESPONSE_BYTES): CustomTransport => {
+  const host = redactUrl(rpcUrl);
+  // Anything the runtime says about the request may quote the URL (or just its path): both are cut before redaction.
+  const path = (() => {
     try {
-      body = JSON.parse(text);
+      const u = new URL(rpcUrl);
+      return `${u.pathname}${u.search}`.length > 1 ? `${u.pathname}${u.search}` : null;
     } catch {
-      throw new RpcResponseCheckError('the response is not JSON');
+      return null;
     }
-    if (Array.isArray(sent)) {
-      if (!Array.isArray(body) || body.length !== sent.length) throw new RpcResponseCheckError('the batch response does not match the request');
-      const want = new Set(sent.map(idOf));
-      for (const item of body) {
-        const id = idOf(item);
-        if (!want.delete(id)) throw new RpcResponseCheckError('the response id does not match the request');
-        checkOne(id, item);
-      }
-    } else {
-      checkOne(idOf(sent), body);
-    }
-  }
-  return new Response(text === '' ? null : text, { status: response.status, statusText: response.statusText, headers: { 'content-type': 'application/json' } });
+  })();
+  const clean = (text: string): string => {
+    let t = text.split(rpcUrl).join(host);
+    if (path !== null) t = t.split(path).join('/…');
+    return redactUrlsIn(t).split('\n')[0]!.slice(0, 200);
+  };
+  const fail = (reason: string) => new RpcTransportError(host, clean(reason));
+  let nextId = 0;
+  return custom(
+    {
+      async request({ method, params }: { method: string; params?: unknown }) {
+        nextId += 1;
+        const id = nextId;
+        const doFetch: FetchFn = inner ?? ((i, o) => globalThis.fetch(i, o));
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        let status = 0;
+        let text: string | null = null;
+        let failure: string | null = null;
+        try {
+          const response = await doFetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id, method, params: params ?? [] }),
+            signal: controller.signal,
+            redirect: 'error',
+          });
+          status = response.status;
+          text = await readCapped(response, maxBytes);
+          if (text === null) failure = `the response is larger than ${maxBytes} bytes`;
+        } catch (error) {
+          // Only the error's name and own first line: its cause (undici's socket error, a DNS record) is dropped.
+          failure = controller.signal.aborted ? `timed out after ${TIMEOUT_MS / 1000} s` : `${(error as Error)?.name ?? 'Error'}: ${String((error as Error)?.message ?? error)}`;
+        } finally {
+          clearTimeout(timer);
+        }
+        if (failure !== null) throw fail(failure);
+        let body: unknown;
+        try {
+          body = JSON.parse(text ?? '');
+        } catch {
+          body = undefined;
+        }
+        const ok = status >= 200 && status < 300;
+        // A non-2xx answer still counts when it is a well-formed JSON-RPC error for this request (viem's rule).
+        if (!ok && !(isObject(body) && isObject(body.error) && typeof body.error.code === 'number')) throw fail(`HTTP ${status}`);
+        if (body === undefined) throw fail('the response is not JSON');
+        if (!isObject(body)) throw fail('the response is not a JSON-RPC object');
+        if (body.jsonrpc !== '2.0') throw fail('the response is not JSON-RPC 2.0');
+        if (typeof body.id !== 'number' || body.id !== id) throw fail('the response id does not match the request');
+        if (body.error !== undefined && body.error !== null) {
+          const e = body.error;
+          if (!isObject(e) || typeof e.code !== 'number') throw fail('malformed JSON-RPC error');
+          const message = typeof e.message === 'string' ? clean(e.message) : '';
+          throw Object.assign(new Error(message), { code: e.code, ...(e.data === undefined ? {} : { data: e.data }) });
+        }
+        if (!('result' in body)) throw fail('the response has neither result nor error');
+        return body.result;
+      },
+    },
+    { key: 'mercurifi-http', name: 'Mercurifi HTTP JSON-RPC', retryCount: 2 },
+  );
 };
-
-/** The reason of an SDK response check found in an error's cause chain, or null. */
-export const rpcCheckReason = (error: unknown): string | null => {
-  let e: unknown = error;
-  for (let i = 0; i < 8 && typeof e === 'object' && e !== null; i += 1) {
-    if (e instanceof RpcResponseCheckError) return e.message;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return null;
-};
-
-/** The SDK's HTTP transport: viem's, with the checked fetch and the same body cap. */
-export const rpcTransport = (rpcUrl: string, inner?: FetchFn): HttpTransport =>
-  http(rpcUrl, { retryCount: 2, timeout: 15_000, fetchFn: checkedRpcFetch(inner), maxResponseBodySize: MAX_RPC_RESPONSE_BYTES });

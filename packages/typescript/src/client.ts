@@ -57,7 +57,8 @@ export const arcChain = (book: NetworkBook, rpcUrl: string): Chain =>
     id: book.chainId,
     name: `Arc ${book.name}`,
     nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
-    rpcUrls: { default: { http: [rpcUrl] } },
+    // The transport holds the URL; the chain object (visible to inspection and to viem's error text) carries the host only.
+    rpcUrls: { default: { http: [`http://${redactUrl(rpcUrl)}`] } },
   });
 
 export class MercurifiClient {

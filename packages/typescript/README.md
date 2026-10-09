@@ -99,7 +99,7 @@ An agent key can move money within the account's caps, so treat it like any serv
 
 ## Logging and secrets
 
-RPC provider URLs usually carry an API key in the path. The SDK shows only the host in its own errors and never logs a URL. If you wrap the transport or add request logging, redact URLs yourself. An API key (`mfk_live_…` or `mfk_test_…`) sets a rate tier, attribution and route scopes (read, stream, build, upload), and never authorises funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public API host like any other client. The SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher; it never follows redirects with the key.
+RPC provider URLs usually carry an API key in the path. The SDK shows only the host in its own errors and never logs a URL: its HTTP transport turns every transport or HTTP failure into an `RPC_ERROR` naming the host only, with no `cause`, so no error the SDK raises (message, stack or cause chain) carries the URL. If you pass your own `transport` or add request logging, redact URLs yourself. An API key (`mfk_live_…` or `mfk_test_…`) sets a rate tier, attribution and route scopes (read, stream, build, upload), and never authorises funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public API host like any other client. The SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher; it never follows redirects with the key.
 
 ## Supply chain
 
