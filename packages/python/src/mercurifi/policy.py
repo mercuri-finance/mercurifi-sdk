@@ -173,9 +173,9 @@ class PolicyChange:
 
 @dataclass(frozen=True)
 class PolicyPreview:
-    changes: list[PolicyChange]
-    immediate: list[str]
-    queued: list[str]
+    changes: tuple[PolicyChange, ...]
+    immediate: tuple[str, ...]
+    queued: tuple[str, ...]
     outcome: Literal["none", "immediate", "queued", "mixed"]
     #: The policy in force right after the transaction: narrowed fields applied, widened ones not yet.
     immediate_policy: ChainPolicy
@@ -201,4 +201,4 @@ def preview_policy_change(current: ChainPolicy, next_: ChainPolicy) -> PolicyPre
     outcome: Literal["none", "immediate", "queued", "mixed"] = (
         "none" if not changes else "immediate" if not queued else "queued" if not immediate else "mixed"
     )
-    return PolicyPreview(changes, immediate, queued, outcome, replace(current, **applied), next_)  # type: ignore[arg-type]
+    return PolicyPreview(tuple(changes), tuple(immediate), tuple(queued), outcome, replace(current, **applied), next_)  # type: ignore[arg-type]

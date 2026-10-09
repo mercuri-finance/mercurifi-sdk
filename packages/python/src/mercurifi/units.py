@@ -15,11 +15,18 @@ SCALE = 10**12
 #: Largest accepted slippage fraction (exclusive).
 MAX_SLIPPAGE = 0.5
 
+_WS = " \t\n\r"
+_MAX_TEXT = 80
+_MAX_EXPONENT = 40
 _DECIMAL = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]+)?", re.ASCII)
 
 
 def parse_decimal(value: object, decimals: int, field: str, base_unit_hint: str | None = None) -> int:
-    """Parse a plain non-negative ASCII decimal string into base units; numbers are refused."""
+    """Parse a plain non-negative ASCII decimal string into base units; numbers are refused.
+
+    More fractional digits than `decimals` are an error even when the extra digits are zeros
+    ("1.0000000" is rejected for USDC): the caller must state an exact amount, nothing is rounded or trimmed.
+    """
     hint = base_unit_hint if base_unit_hint is not None else f"{field}6"
     if not isinstance(value, str):
         raise InvalidInputError(
@@ -27,7 +34,9 @@ def parse_decimal(value: object, decimals: int, field: str, base_unit_hint: str 
             f'{field} must be a decimal string such as "25" or "0.5" (got {type(value).__name__}). '
             f"For base units use {hint} with an int.",
         )
-    text = value.strip()
+    text = value.strip(_WS)  # ASCII whitespace only; Unicode spaces, \x1f, \x85 and U+FEFF are rejected
+    if len(text) > _MAX_TEXT:
+        raise InvalidInputError(field, f"{field} is too long")
     if _DECIMAL.fullmatch(text) is None:
         raise InvalidInputError(field, f'{field} must be a plain decimal string such as "25" or "0.5"')
     whole, _, frac = text.partition(".")
@@ -75,7 +84,13 @@ def wei_to_usdc6_ceil(w: int) -> int:
 
 def slippage_to_bps(s: object) -> int:
     """Slippage fraction (0.02 = 2%) to whole basis points; must be in [0, 0.5)."""
-    if isinstance(s, bool) or not isinstance(s, (int, float)) or not math.isfinite(s) or s < 0 or s >= MAX_SLIPPAGE:
+    if (
+        isinstance(s, bool)
+        or not isinstance(s, (int, float))
+        or (isinstance(s, float) and not math.isfinite(s))  # never float() an int: huge ints overflow
+        or s < 0
+        or s >= MAX_SLIPPAGE
+    ):
         raise InvalidInputError("slippage", "slippage is a fraction: 0.02 means 2%. It must be at least 0 and below 0.5.")
     if s == 0:
         return 0  # normalises -0.0
@@ -87,6 +102,8 @@ def slippage_to_bps(s: object) -> int:
 
 def apply_slippage_floor(amount: int, bps: int) -> int:
     """Minimum acceptable output for a quote, rounded down."""
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+        raise InvalidInputError("amount", "amount must be a non-negative int of base units")
     if isinstance(bps, bool) or not isinstance(bps, int) or not 0 <= bps <= 10_000:
         raise InvalidInputError("slippage", "bps must be an integer from 0 to 10000")
     return amount * (10_000 - bps) // 10_000
@@ -95,7 +112,10 @@ def apply_slippage_floor(amount: int, bps: int) -> int:
 def _human(value: str | Decimal) -> object:
     """A Decimal becomes its plain positional string; anything else is passed on to be rejected or parsed."""
     if isinstance(value, Decimal):
-        return format(value, "f") if value.is_finite() else "NaN"
+        exponent = value.as_tuple().exponent
+        if not value.is_finite() or not isinstance(exponent, int) or abs(exponent) > _MAX_EXPONENT:
+            return "NaN"  # rejected by parse_decimal; never expand a huge exponent
+        return format(value, "f")
     return value
 
 

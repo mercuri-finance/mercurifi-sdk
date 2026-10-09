@@ -46,7 +46,7 @@ def test_merge_and_ceilings() -> None:
 
 def test_preview_mixed() -> None:
     pv = preview_policy_change(DEFAULT_POLICY, replace(DEFAULT_POLICY, max_trade_usdc=50_000_000, period_spend_cap=900_000_000))
-    assert (pv.outcome, pv.immediate, pv.queued) == ("mixed", ["max_trade_usdc"], ["period_spend_cap"])
+    assert (pv.outcome, pv.immediate, pv.queued) == ("mixed", ("max_trade_usdc",), ("period_spend_cap",))
     assert pv.immediate_policy.period_spend_cap == 500_000_000
     assert [c for c in pv.changes if c.field == "period_spend_cap"][0].next == "900"
 
@@ -116,3 +116,8 @@ def test_decode_rejects_bool_and_float() -> None:
     for bad in (True, 2.0, "1", None):
         with pytest.raises(InvalidInputError):
             decode_permissions(bad)  # type: ignore[arg-type]
+
+
+def test_preview_sequences_are_tuples() -> None:
+    pv = preview_policy_change(DEFAULT_POLICY, replace(DEFAULT_POLICY, max_trade_usdc=1))
+    assert isinstance(pv.changes, tuple) and isinstance(pv.immediate, tuple) and isinstance(pv.queued, tuple)

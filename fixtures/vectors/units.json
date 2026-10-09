@@ -87,6 +87,22 @@
     {
       "in": "18446744073709.551615",
       "out": "18446744073709551615"
+    },
+    {
+      "in": "\u001f1",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1\u001f",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\u00851",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1\u0085",
+      "error": "INVALID_INPUT"
     }
   ],
   "parseTokens": [

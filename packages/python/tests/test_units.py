@@ -112,3 +112,36 @@ def test_decimal_and_all() -> None:
         resolve_token_amount(None, True)  # type: ignore[arg-type]
     with pytest.raises(InvalidInputError):
         resolve_token_amount(None, None)
+
+
+def test_huge_inputs_are_typed_and_cheap() -> None:
+    for bad in (10**400, -(10**400)):
+        with pytest.raises(InvalidInputError):
+            slippage_to_bps(bad)
+    for huge in (Decimal("1E+99999999"), Decimal("1E+999999999"), Decimal("1E-999999999"), Decimal("1E+41"), Decimal("1E-41")):
+        with pytest.raises(InvalidInputError):
+            resolve_usdc6(huge, None)
+    with pytest.raises(InvalidInputError):
+        parse_usdc("9" * 5000)
+    with pytest.raises(InvalidInputError):
+        parse_usdc("1" + "0" * 80)
+    assert parse_usdc("0." + "0" * 5 + "1") == 1
+
+
+def test_trailing_zeros_beyond_places_rejected() -> None:
+    with pytest.raises(InvalidInputError, match="decimal places"):
+        parse_usdc("1.0000000")
+
+
+def test_whitespace_is_ascii_only() -> None:
+    assert parse_usdc("\t 1\r\n") == 1_000_000
+    for ch in ("\x1f", "\x85", "﻿", " ", " "):
+        for text in (ch + "1", "1" + ch):
+            with pytest.raises(InvalidInputError):
+                parse_usdc(text)
+
+
+def test_floor_amount_type() -> None:
+    for bad in (True, 1.0, "1", -1, None):
+        with pytest.raises(InvalidInputError):
+            apply_slippage_floor(bad, 0)  # type: ignore[arg-type]

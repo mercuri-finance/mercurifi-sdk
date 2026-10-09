@@ -1,6 +1,14 @@
 """Errors the SDK raises on purpose. `code` is stable across versions and identical to the TypeScript SDK."""
 from __future__ import annotations
 
+from typing import Any
+
+
+def _restore(cls: type[MercurifiError], args: tuple[Any, ...]) -> MercurifiError:
+    err = cls.__new__(cls)
+    Exception.__init__(err, *args)
+    return err
+
 
 class MercurifiError(Exception):
     code = "MERCURIFI_ERROR"
@@ -9,6 +17,10 @@ class MercurifiError(Exception):
         super().__init__(message)
         if code is not None:
             self.code = code
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        # Subclasses take different constructor arguments, so rebuild without calling __init__.
+        return (_restore, (type(self), self.args), self.__dict__)
 
     @property
     def message(self) -> str:
@@ -65,7 +77,7 @@ class TxDroppedError(MercurifiError):
 
     def __init__(self, tx_hash: str, seconds: float) -> None:
         super().__init__(
-            f"No receipt for {tx_hash} after {seconds} s. Arc drops transactions priced under 20 gwei or sent from a "
+            f"No receipt for {tx_hash} after {seconds:g} s. Arc drops transactions priced under 20 gwei or sent from a "
             "blocklisted address without a receipt. The nonce is re-read before the next send."
         )
         self.tx_hash = tx_hash
