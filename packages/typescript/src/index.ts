@@ -17,7 +17,8 @@ export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.
 export { OwnerClient, AccountManager, type CreateAccountParams, type CreatedAccount, type ChangeResult, type AgentGrant, type WithdrawParams } from './owner.js';
 export { listQueued, decodeQueuedPayload, effectiveEta, QUEUE_KINDS, QUEUE_EVENTS, type QueuedChange, type QueuedDetail, type QueuedStatus } from './queue.js';
 export type { AccountState, AgentInfo } from './reads.js';
-export { AgentClient, type BuyParams, type SellParams, type Headroom, type Position } from './agent.js';
+export { AgentClient, type BuyParams, type SellParams, type LaunchParams, type SwapParams, type SweepParams, type Headroom, type Position } from './agent.js';
+export { readPoolKey, quoteExactIn, estimatePoolImpactBps, UINT128_MAX, type PoolKey } from './pool.js';
 export { readBasis, recordedSellValue6, curveSellValue6, poolSellValue6, HIGH_WATER_SCALE, type Basis } from './basis.js';
 export { fillFromReceipt, type Fill, type ReceiptLike } from './fills.js';
-export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, PHASE, type LaunchConfigValue } from './curve.js';
+export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, mayGraduateBuy, PHASE, type LaunchConfigValue } from './curve.js';

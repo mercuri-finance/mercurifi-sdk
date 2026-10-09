@@ -46,11 +46,16 @@ export const fillFromReceipt = (receipt: ReceiptLike, account: Address, launchFa
     throw new MercurifiError('FILL_NOT_FOUND', `Expected one AgentAction from ${account} in ${receipt.transactionHash}, found ${actions.length}.`);
   }
   const a = actions[0]!.args;
-  const created = parseEventLogs({
-    abi: launchFactoryAbi, eventName: 'TokenCreated', logs: receipt.logs.filter((l) => isAddressEqual(l.address, launchFactory)),
-  } as never) as unknown as { args: { token: Address; curve: Address } }[];
   const action = ACTIONS[Number(a.action)];
   if (action === undefined) throw new MercurifiError('UNKNOWN_ACTION', `${account} reported an unknown action code ${String(a.action)} in ${receipt.transactionHash}; this SDK version does not know it.`);
+  const created = parseEventLogs({
+    abi: launchFactoryAbi, eventName: 'TokenCreated', logs: receipt.logs.filter((l) => isAddressEqual(l.address, launchFactory)),
+  } as never) as unknown as { args: { token: Address; curve: Address; creator: Address } }[];
+  // A launch must show the factory creating the very token the account reports, with the account as its creator.
+  const made = created.find((c) => isAddressEqual(c.args.token, a.token) && isAddressEqual(c.args.creator, account));
+  if (action === 'launch' && made === undefined) {
+    throw new MercurifiError('FILL_NOT_FOUND', `The launch in ${receipt.transactionHash} has no TokenCreated event for ${a.token} created by ${account}.`);
+  }
   const delta = BigInt(a.tokenDelta);
   const abs = delta < 0n ? -delta : delta;
   return {
@@ -60,6 +65,6 @@ export const fillFromReceipt = (receipt: ReceiptLike, account: Address, launchFa
     usdcSpent: formatUsdc6(BigInt(a.usdcSpent)), usdcReceived: formatUsdc6(BigInt(a.usdcReceived)), tokens: formatTokens(abs),
     periodId: BigInt(a.periodId), txHash: receipt.transactionHash, block: receipt.blockNumber,
     gasUsed: receipt.gasUsed, gasCostWei: receipt.gasUsed * receipt.effectiveGasPrice,
-    launched: created[0] === undefined ? null : { token: created[0].args.token, curve: created[0].args.curve },
+    launched: action === 'launch' && made !== undefined ? { token: made.args.token, curve: made.args.curve } : null,
   };
 };

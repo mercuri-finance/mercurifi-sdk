@@ -1,12 +1,14 @@
-import { encodeFunctionData, isAddressEqual, zeroAddress, type Address, type Hex } from 'viem';
+import { bytesToHex, encodeFunctionData, isAddressEqual, zeroAddress, type Address, type Hex } from 'viem';
 
+import type { ImageUpload } from './api/types.js';
 import { agentAccountAbi, bondingCurveAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
-import { curveSellValue6, readBasis, recordedSellValue6 } from './basis.js';
+import { curveSellValue6, poolSellValue6, readBasis, recordedSellValue6 } from './basis.js';
 import type { MercurifiClient } from './client.js';
-import { buyImpactBps, mayGraduateBuy, PHASE, sellImpactBps } from './curve.js';
+import { buyImpactBps, mayGraduateBuy, PHASE, quoteFreshBuy, sellImpactBps, type LaunchConfigValue } from './curve.js';
 import { InvalidInputError } from './errors.js';
 import { fillFromReceipt, type Fill } from './fills.js';
 import type { AgentBook } from './networks.js';
+import { estimatePoolImpactBps, quoteExactIn, readPoolKey, UINT128_MAX } from './pool.js';
 import { PERMISSIONS, type Permission } from './permissions.js';
 import type { ChainPolicy } from './policy.js';
 import { latestTimestamp, readAgent, readPaused, readPolicy, readRegistry, type AgentInfo } from './reads.js';
@@ -19,6 +21,23 @@ import {
 
 export interface BuyParams { token: Address; usdc?: string; usdc6?: bigint; slippage?: number; minTokensOut?: bigint }
 export interface SellParams { token: Address; amount?: string; amountWei?: bigint; slippage?: number; minUsdcOut6?: bigint }
+export interface LaunchParams {
+  name: string;
+  symbol: string;
+  description?: string;
+  links?: Record<string, string>;
+  image?: ImageUpload;
+  /** An already-stored metadata URI (chain-only launches); cannot be combined with description, links or image. */
+  metadataURI?: string;
+  initialBuyUsdc?: string;
+  initialBuyUsdc6?: bigint;
+  salt?: Hex;
+}
+export interface SwapParams { token: Address; side: 'buy' | 'sell'; usdc?: string; usdc6?: bigint; amount?: string; amountWei?: bigint; slippage?: number }
+export interface SweepParams { token?: Address; usdc?: string; usdc6?: bigint; all?: boolean; amount?: string; amountWei?: bigint }
+
+const utf8Length = (v: string): number => new TextEncoder().encode(v).length;
+
 export interface Headroom {
   spendUsdc6: bigint;
   sellUsdc6: bigint;
@@ -179,6 +198,163 @@ export class AgentClient {
     const minUsdcOut6 = maxOf(maxOf(weiToUsdc6Floor(applySlippageFloor(out, bps)), 1n), p.minUsdcOut6 ?? 0n);
     const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
     return this.send(this.encode('sell', [p.token, tokensIn, minUsdcOut6, deadline]), false, 'sell');
+  }
+
+  /**
+   * Launches a token whose creator is the account. Metadata goes through the API unless `metadataURI` is given. The launch
+   * checks run in the account's order (pause, agent, trade limit), then the factory's cap on the initial buy, then the
+   * period caps; the request carries a chain-time deadline like a trade. The fill reports the new token and curve.
+   */
+  async launch(p: LaunchParams): Promise<Fill> {
+    if (typeof p.name !== 'string' || utf8Length(p.name) < 1 || utf8Length(p.name) > 32) throw new InvalidInputError('name', 'name must be 1–32 bytes (UTF-8)');
+    if (typeof p.symbol !== 'string' || utf8Length(p.symbol) < 1 || utf8Length(p.symbol) > 10) throw new InvalidInputError('symbol', 'symbol must be 1–10 bytes (UTF-8)');
+    const hasMetadata = p.description !== undefined || p.links !== undefined || p.image !== undefined;
+    if (p.metadataURI !== undefined && hasMetadata) throw new InvalidInputError('metadataURI', 'pass either metadataURI or description, links and image, not both');
+    if (p.metadataURI !== undefined && utf8Length(p.metadataURI) > 256) throw new InvalidInputError('metadataURI', 'metadataURI must be at most 256 bytes');
+    if (p.metadataURI === undefined && hasMetadata && this.mf.api === null) {
+      throw new InvalidInputError('metadataURI', 'Uploading a description, links or an image needs the Mercurifi API; pass metadataURI to launch chain-only.');
+    }
+    const firstBuy6 = p.initialBuyUsdc === undefined && p.initialBuyUsdc6 === undefined ? 0n : resolveUsdc6({ usdc: p.initialBuyUsdc, usdc6: p.initialBuyUsdc6 }, 'initialBuyUsdc');
+    const client = this.mf.publicClient;
+    const factory = this.mf.network.launch.factory;
+    const { at, policy, room } = await this.gate('launch');
+    const pin = { blockNumber: at };
+    const [raw, configHash, launchPaused] = await Promise.all([
+      client.readContract({ address: factory, abi: launchFactoryAbi, functionName: 'config', ...pin } as never) as Promise<LaunchConfigValue>,
+      client.readContract({ address: factory, abi: launchFactoryAbi, functionName: 'configHash', ...pin } as never) as Promise<Hex>,
+      client.readContract({ address: factory, abi: launchFactoryAbi, functionName: 'paused', ...pin } as never) as Promise<boolean>,
+    ]);
+    const config: LaunchConfigValue = {
+      ...raw, tradeFeeBps: Number(raw.tradeFeeBps), creatorShareBps: Number(raw.creatorShareBps), referrerShareBps: Number(raw.referrerShareBps),
+      snipeStartBps: Number(raw.snipeStartBps), snipeBlocks: Number(raw.snipeBlocks),
+    };
+    if (firstBuy6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
+    const firstBuyWei = usdc6ToWei(firstBuy6);
+    // The account's own test: the initial buy and the launch fee (usdc6, rounded up) must both fit in maxTradeUsdc.
+    const feeUsdc6 = weiToUsdc6Ceil(config.launchFee);
+    if (firstBuy6 > policy.maxTradeUsdc || feeUsdc6 > policy.maxTradeUsdc - firstBuy6) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+    if (launchPaused) throw localRevert('EnforcedPause');
+    // The initial buy runs tax-exempt in the launch block, before any other trade, so this quote is exact.
+    const quote = firstBuy6 === 0n ? null : quoteFreshBuy(config, firstBuyWei);
+    if (quote !== null && quote.tokensOut === 0n) throw localRevert('ZeroOutput');
+    if (quote !== null && quote.tokensOut > config.maxInitialBuyTokens) throw localRevert('InitialBuyTooLarge');
+    // What the account records: the fee plus what the initial buy really uses (a surplus is refunded), rounded up.
+    const spend6 = weiToUsdc6Ceil(config.launchFee + (quote?.usdcUsed ?? 0n));
+    if (spend6 > BigInt(room[0])) throw localRevert('PeriodSpendExceeded', [BigInt(room[0])]);
+    if (spend6 > policy.perTokenPeriodCap) throw localRevert('TokenCapExceeded', [policy.perTokenPeriodCap]);
+    if (Number(room[3]) === 0) throw localRevert('LaunchLimit');
+
+    let metadataURI = p.metadataURI ?? '';
+    if (p.metadataURI === undefined && hasMetadata) {
+      const meta = { ...(p.description !== undefined ? { description: p.description } : {}), ...(p.links !== undefined ? { links: p.links } : {}) };
+      metadataURI = (await this.mf.api!.uploadLaunchMetadata(meta, p.image)).metadataURI;
+      if (utf8Length(metadataURI) > 256) throw new InvalidInputError('metadataURI', 'The uploaded metadata URI is longer than 256 bytes; the factory would refuse it.');
+    }
+    // After the upload, so a slow upload cannot use up the deadline window.
+    const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
+    const request = {
+      name: p.name, symbol: p.symbol, metadataURI, salt: p.salt ?? bytesToHex(globalThis.crypto.getRandomValues(new Uint8Array(32))),
+      expectedConfigHash: configHash, initialBuyUsdc: firstBuy6, minTokensOut: quote?.tokensOut ?? 0n, deadline,
+    };
+    return this.send(this.encode('launch', [request]), false, 'launch');
+  }
+
+  /**
+   * Exact-in swap on a graduated Launch pool. `side: 'buy'` spends usdc6 (the pool's 6-decimal USDC view); `side: 'sell'`
+   * spends tokens ('all' allowed) for a usdc6 minimum. The pool is derived, never supplied. Buys above maxTradeUsdc and
+   * sells valued above it (recorded part at the higher of average and high-water cost, the rest at its share of the quoted
+   * proceeds) are refused locally. A quoted price impact above the policy only warns: the account measures the real one.
+   */
+  async swapExactIn(p: SwapParams): Promise<Fill> {
+    if (p.side !== 'buy' && p.side !== 'sell') throw new InvalidInputError('side', "side must be 'buy' or 'sell'");
+    const buyToken = p.side === 'buy';
+    if (buyToken && (p.amount !== undefined || p.amountWei !== undefined)) throw new InvalidInputError('amount', 'a pool buy spends USDC: pass usdc or usdc6');
+    if (!buyToken && (p.usdc !== undefined || p.usdc6 !== undefined)) throw new InvalidInputError('usdc', 'a pool sell spends tokens: pass amount or amountWei');
+    const bps = this.bps(p.slippage);
+    const wanted = buyToken ? resolveUsdc6(p) : resolveTokenAmount(p);
+    const client = this.mf.publicClient;
+    const book = this.mf.network;
+    const { at, policy, room } = await this.gate('swap');
+    const curve = await this.curveOf(p.token, at);
+    if (Number(await this.curveRead<number>(curve, 'phase', undefined, at)) !== PHASE.Graduated) throw localRevert('NotGraduated');
+    const balance = buyToken ? 0n : await this.balanceOf(p.token, at);
+    const amountIn = wanted === 'all' ? balance : wanted;
+    if (amountIn === 0n) throw new InvalidInputError(buyToken ? 'usdc' : 'amount', wanted === 'all' ? 'The account holds none of this token.' : 'The swap amount must be above zero.');
+    if (amountIn > UINT128_MAX) throw localRevert('AmountTooLarge');
+    const key = await readPoolKey(client, book, p.token, at);
+
+    let basis = null as Awaited<ReturnType<typeof readBasis>> | null;
+    if (buyToken) {
+      if (policy.allowlistOnly && !(await readRegistry<boolean>(client, this.agents.registry, 'tokenAllowed', [this.account, p.token], at))) {
+        throw localRevert('TokenNotAllowed');
+      }
+      if (amountIn > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+    } else {
+      basis = await readBasis(client, this.account, p.token, at);
+      // Before the swap the account values only the recorded part; the excess is added once the proceeds are known.
+      if (recordedSellValue6(basis, amountIn).value6 > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+      if (amountIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
+    }
+
+    const zeroForOne = isAddressEqual(buyToken ? book.launch.usdc : p.token, key.currency0);
+    const out = await quoteExactIn(client, book, key, zeroForOne, amountIn, this.account, at);
+    if (out === 0n) {
+      if (buyToken) throw localRevert('ZeroOutput');
+      throw new InvalidInputError('amount', 'The sell proceeds are below 1 micro-USDC; sell a larger amount.');
+    }
+    if (buyToken) {
+      // An exact-in buy spends the whole amount.
+      if (amountIn > BigInt(room[0])) throw localRevert('PeriodSpendExceeded', [BigInt(room[0])]);
+      const spent = await readRegistry<bigint>(client, this.agents.registry, 'tokenSpent', [this.account, p.token], at);
+      const tokenLeft = policy.perTokenPeriodCap > BigInt(spent) ? policy.perTokenPeriodCap - BigInt(spent) : 0n;
+      if (amountIn > tokenLeft) throw localRevert('TokenCapExceeded', [tokenLeft]);
+    } else {
+      const value = poolSellValue6(basis!, amountIn, out * SCALE);
+      if (value > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+      if (value > BigInt(room[1])) throw localRevert('PeriodSellExceeded', [BigInt(room[1])]);
+    }
+    const impact = await estimatePoolImpactBps(client, book, key, zeroForOne, amountIn, out, this.account, at);
+    if (impact !== null && impact > BigInt(policy.maxPriceImpactBps)) {
+      this.mf.warn(`This swap moves the pool price by roughly ${impact} bps, above the account limit of ${policy.maxPriceImpactBps} bps; the account will refuse it if the real move is above the limit. Try a smaller amount.`);
+    }
+    // Slippage floor on the quote; never zero. (A sell's output is usdc6, a buy's is token wei.)
+    const minAmountOut = maxOf(applySlippageFloor(out, bps), 1n);
+    const deadline = await chainDeadline(client, policy.maxDeadlineSeconds, this.deadlineSeconds);
+    return this.send(this.encode('swapExactIn', [p.token, buyToken, amountIn, minAmountOut, deadline]), false, buyToken ? 'poolBuy' : 'poolSell');
+  }
+
+  /** Claims the account's creator and referral fees into the account itself. No deadline. */
+  async claimFees(): Promise<Fill> {
+    await this.gate('claim');
+    return this.send(this.encode('claimFees', []), false, 'claim');
+  }
+
+  /**
+   * Moves native USDC (wei; `usdc`/`usdc6`, or everything with `all`) or a registered Launch token (`amount`/`amountWei`,
+   * or everything with `all` or amount 'all') to the owner. No deadline.
+   */
+  async sweepToOwner(p: SweepParams): Promise<Fill> {
+    const native = p.token === undefined || isAddressEqual(p.token, zeroAddress);
+    const given = [p.usdc, p.usdc6, p.amount, p.amountWei].filter((v) => v !== undefined).length;
+    if (p.all === true && given > 0) throw new InvalidInputError('all', 'all cannot be combined with an amount');
+    if (native && (p.amount !== undefined || p.amountWei !== undefined) && p.amount !== 'all') {
+      throw new InvalidInputError('amount', 'a native sweep is in USDC: pass usdc or usdc6 (or all)');
+    }
+    if (!native && (p.usdc !== undefined || p.usdc6 !== undefined)) throw new InvalidInputError('usdc', 'a token sweep is in token units: pass amount or amountWei (or all)');
+    const { at } = await this.gate('sweep');
+    let token: Address = zeroAddress;
+    let amount: bigint;
+    if (native) {
+      const everything = p.all === true || p.amount === 'all';
+      amount = everything ? await this.mf.publicClient.getBalance({ address: this.account, blockNumber: at }) : usdc6ToWei(resolveUsdc6(p));
+    } else {
+      token = p.token!;
+      await this.curveOf(token, at); // TokenNotRegistered: only Launch tokens can be swept
+      const wanted = p.all === true ? 'all' : resolveTokenAmount(p);
+      amount = wanted === 'all' ? await this.balanceOf(token, at) : wanted;
+    }
+    if (amount === 0n) throw new InvalidInputError('amount', 'Nothing to sweep.');
+    return this.send(this.encode('sweepToOwner', [token, amount]), false, 'sweep');
   }
 
   /**
