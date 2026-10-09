@@ -504,3 +504,54 @@ describe('withdraw rules', () => {
     expect(r.tokens.map((t) => t.toLowerCase())).toEqual([TOKEN]);
   });
 });
+
+describe('owner client polish', () => {
+  it('puts the sell-risk warning into result.warnings as well as onWarning', async () => {
+    const { rpc, m, onWarning } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'addAgent', 6n);
+    rpc.receiptLogs = [registryLog('AgentQueued', { id: 6n, eta: 1_700_003_600 })];
+    const r = await m.addAgent(A(0x51), { permissions: ['buy', 'sell'] });
+    expect(r.warnings).toContain(SELL_RISK_WARNING);
+    expect(onWarning).toHaveBeenCalledWith(SELL_RISK_WARNING);
+  });
+
+  it('still scans recent logs when the API answers with an empty pending list', async () => {
+    const api = { getAccount: vi.fn(async () => ({ pending: [] })) };
+    const { rpc, owner: o } = await setup(owner.address, { api, apiKey: 'k' });
+    rpc.logs = [queueLog(1n)];
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'queued', [1, 1_700_000_000 - 10, 1n, 1n, encodeAbiParameters([{ type: 'address' }, { type: 'uint40' }, { type: 'uint16' }], [A(0x51), 1_800_000_000, 1])]);
+    const list = await (await o.manage(ACCOUNT)).listQueued();
+    expect(api.getAccount).toHaveBeenCalledTimes(1);
+    expect(rpc.methods('eth_getLogs').length).toBeGreaterThan(0);
+    expect(list.map((q) => q.id)).toEqual([1n]);
+  });
+
+  it('warns that raising the delay can push queued agent items past their expiry', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setIncreaseDelay', 0n);
+    const r = await m.setIncreaseDelay(7_200);
+    expect(r.warnings.join(' ')).toMatch(/past its own expiry/);
+  });
+
+  it('warns about agent retirement on acceptOwnership only when the signer is an agent', async () => {
+    const plain = await setup();
+    plain.rpc.read(REGISTRY, agentPolicyRegistryAbi, 'acceptOwnership', undefined);
+    plain.rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n })];
+    expect((await plain.owner.acceptOwnership(ACCOUNT, 3n)).warnings).toEqual([]);
+
+    const asAgent = await setup();
+    asAgent.rpc.read(REGISTRY, agentPolicyRegistryAbi, 'acceptOwnership', undefined);
+    asAgent.rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n })];
+    const r = await asAgent.mf.owner(agent).acceptOwnership(ACCOUNT, 3n);
+    expect(r.warnings.join(' ')).toMatch(/retires it as an agent/);
+  });
+
+  it('does not accept a QueuedExecuted for a different id or another account', async () => {
+    const { rpc, owner: o } = await setup();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'acceptOwnership', undefined);
+    rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 4n })];
+    await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+    rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n, account: A(0x88) })];
+    await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+});

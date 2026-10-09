@@ -222,7 +222,9 @@ export class OwnerClient {
    */
   async acceptOwnership(account: Address, id: bigint): Promise<ChangeResult> {
     const agents = this.mf.requireAgents();
-    const warnings = ['Accepting ownership revokes and permanently retires this address as an agent of the account, if it is one.'];
+    const warnings: string[] = [];
+    const me = await readRegistry<{ active: boolean }>(this.mf.publicClient, agents.registry, 'agent', [account, this.signer.address]);
+    if (me.active) warnings.push('This address is an active agent of the account: accepting ownership revokes and permanently retires it as an agent.');
     return sendChange(this.mf, this.signer, agents.registry, account,
       { to: agents.registry, abi: agentPolicyRegistryAbi, functionName: 'acceptOwnership', args: [account, id] }, 'immediate',
       () => `Ownership of ${account} moved to ${this.signer.address} (queue item ${id}).`, warnings);
@@ -320,9 +322,7 @@ export class AccountManager {
 
   private agentWarnings(perms: readonly Permission[], activeCount: number, hadSell = false): string[] {
     const w: string[] = [];
-    if (perms.includes('sell') && !hadSell) {
-      this.mf.warn(SELL_RISK_WARNING);
-    }
+    if (perms.includes('sell') && !hadSell) w.push(SELL_RISK_WARNING);
     if (activeCount >= MAX_AGENTS) {
       w.push(`The account already has ${activeCount} active agents (the limit is ${MAX_AGENTS}); executing this add reverts TooManyAgents unless one is revoked first.`);
     }
@@ -387,7 +387,7 @@ export class AccountManager {
     if (seconds === increaseDelay) return none(`The increase delay is already ${seconds} s.`);
     const raising = seconds > increaseDelay;
     const warnings = raising
-      ? ['Raising the delay also postpones every item already queued: its ETA becomes queuedAt + the new delay.']
+      ? ['Raising the delay also postpones every item already queued: its ETA becomes queuedAt + the new delay. That can push a queued agent item past its own expiry, so it can never be executed; check the queue and requeue such items.']
       : [`Lowering the delay is itself queued for the current ${increaseDelay} s and weakens the protection against a compromised owner key; it applies only when executed.`];
     return this.registryWrite('setIncreaseDelay', [seconds], raising ? 'immediate' : 'queued',
       (r) => (raising ? `The increase delay is now ${seconds} s.` : `Lowering the delay to ${seconds} s is queued as item ${r.queuedId}, executable from ${at(r.eta ?? 0)}.`), warnings);

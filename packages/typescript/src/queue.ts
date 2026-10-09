@@ -165,8 +165,9 @@ export const listQueued = async (
 ): Promise<QueuedChange[]> => {
   const reg = <T>(fn: string, args: readonly unknown[]) => readRegistry<T>(client, agents.registry, fn, [account, ...args]);
   let ids = opts.api ? await idsFromApi(opts.api, account) : null;
-  if (ids === null) {
-    ids = new Set<bigint>();
+  // An empty API list is not proof of an empty queue (the API may lag or be wrong): still scan the recent window.
+  if (ids === null || ids.size === 0) {
+    ids = ids ?? new Set<bigint>();
     const head = await client.getBlockNumber();
     const windowStart = head > QUEUE_WINDOW_BLOCKS ? head - QUEUE_WINDOW_BLOCKS : 0n;
     const from = opts.fromBlock ?? (windowStart > agents.deployBlock ? windowStart : agents.deployBlock);
