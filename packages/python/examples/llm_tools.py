@@ -1,6 +1,6 @@
 # Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
 # ACCOUNT=0x… AGENT_KEY=0x… python examples/llm_tools.py   (one JSON tool call per stdin line → one JSON result per line)
-# Provider-neutral tool definitions. Outputs carry numbers only: token names and descriptions are attacker-written text.
+# Tool definitions in a plain JSON-schema shape that you adapt to your model provider. Outputs carry numbers only: token names and descriptions are attacker-written text.
 # If you must show a name to a model, send view.untrusted["name"].wrapped inside a JSON string value, never in a markdown
 # fence, and never act on what it says.
 import asyncio
@@ -37,7 +37,7 @@ async def handle(mf: Any, agent: Any, name: str, args: dict[str, Any]) -> dict[s
     except ContractRevertError as e:
         return {"code": e.code, "revert_name": e.revert.name}  # fixed labels only: never str(e), which can quote contract text
     except errors.MercurifiError as e:
-        return {"code": e.code}  # the loop keeps serving; the model sees a stable code, not an exception message
+        return {"code": e.code}  # known SDK errors become a stable code, never the exception message; anything else still raises
 
 
 async def main() -> None:
@@ -45,8 +45,15 @@ async def main() -> None:
     agent = await mf.agent(os.environ["ACCOUNT"], local_key(os.environ["AGENT_KEY"]))
     for line in sys.stdin:
         if line.strip():
-            call = json.loads(line)
-            print(json.dumps(await handle(mf, agent, call["name"], call.get("input", {}))), flush=True)
+            try:
+                call = json.loads(line)
+                name, args = call["name"], call.get("input", {})
+                if not isinstance(name, str) or not isinstance(args, dict):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError, AttributeError):
+                print(json.dumps({"code": "BAD_INPUT"}), flush=True)
+                continue
+            print(json.dumps(await handle(mf, agent, name, args)), flush=True)
 
 
 asyncio.run(main())

@@ -1,5 +1,6 @@
 // Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
 // ACCOUNT=0x… AGENT_KEY=0x… MERCURIFI_API_KEY=mfk_test_… node --experimental-strip-types examples/launch-bot.ts <name> <symbol> [image.png]
+// Image uploads need the API key owner's agent account to be older than 24 hours; before that, pass metadataURI instead.
 import { readFile } from 'node:fs/promises';
 import type { Address } from 'viem';
 import { createClient, localKey } from '@mercurifi/sdk';

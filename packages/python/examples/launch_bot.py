@@ -1,5 +1,6 @@
 # Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
 # ACCOUNT=0x… AGENT_KEY=0x… MERCURIFI_API_KEY=mfk_test_… python examples/launch_bot.py <name> <symbol> [image.png]
+# Image uploads need the API key owner's agent account to be older than 24 hours; before that, pass metadata_uri instead.
 import asyncio
 import os
 import sys

@@ -32,6 +32,10 @@ describe('the security model matches the contracts as built', () => {
   it('names every immutable piece', () => expect(model).toContain('Accounts, the policy registry and factories are immutable'));
   it('states the testnet-only notice, gas figures and the API', () => {
     expect(model).toContain('NotDeployedError');
+    expect(model).toContain('No Agent Accounts deployment exists on any public network yet');
+    expect(model).toContain('withdraw them');
+    expect(model).toContain('older than 24 hours');
+    expect(model).toContain('60 seconds on testnet');
     expect(model).toContain('353,719');
     expect(model).toContain('16,777,216');
     expect(model).toContain('X-Api-Key');
@@ -45,8 +49,10 @@ describe('the security model matches the contracts as built', () => {
   it('keeps the handling notes and the testnet notice in the package README', () => {
     const readme = read('../README.md');
     for (const h of ['## Handling agent keys', '## Untrusted text for models', '## Logging and secrets', '## Supply chain']) expect(readme).toContain(h);
-    expect(readme).toContain('Testnet only');
-    expect(readme).toContain('empty until an owner-approved deployment');
+    expect(readme).toContain('No Agent Accounts deployment exists on any public network yet');
+    expect(readme).toContain('stay empty until an owner-approved deployment');
+    expect(readme).toContain('older than 24 hours');
+    expect(readme).toContain('withdraw them');
     expect(readme).toContain('exportPrivateKey()');
     expect(readme).toContain('Never put it in a markdown code fence');
     expect(readme).toContain('pool_trade');

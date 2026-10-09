@@ -6,7 +6,7 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Read [docs/security-model.md](../../docs/security-model.md) before you give a key to a program.
 
-**Testnet only for now.** No mainnet agent factory is deployed: the mainnet agent addresses in this SDK are empty until an owner-approved deployment is recorded, and agent operations on mainnet raise `NotDeployedError`. Use `"testnet"` (Arc testnet, chain 5042002); a local Anvil book (chain 31337, loopback RPC) is also accepted.
+**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them raise `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book).
 
 ## Install
 
@@ -16,7 +16,7 @@ pip install mercurifi
 
 Not yet published; until then install from the repository checkout (`pip install ./packages/python`). Python 3.10 or newer. Direct dependencies: `eth-account`, `eth-abi`, `eth-utils`, `httpx`.
 
-## Quickstart
+## Quickstart (runs once a testnet deployment is recorded)
 
 ```python
 import asyncio
@@ -29,7 +29,7 @@ from mercurifi import FirstAgent, create_client, generate_agent_key, local_key
 async def main() -> None:
     mf = await create_client("testnet")
     owner = mf.owner(local_key(os.environ["OWNER_KEY"]))
-    key = generate_agent_key()  # keep key.export_private_key() on your server only
+    key = generate_agent_key()  # demo only: a real bot stores the key in a secret manager and reads it at the call site
     created = await owner.create_account(first_agent=FirstAgent(key.address))
     await owner.deposit(created.account, usdc="20")
     await owner.fund_gas(key.address, usdc="0.5")
@@ -77,7 +77,7 @@ Amounts are human strings or `Decimal` in `usdc` / `amount` (`usdc="25"`, `amoun
 - The owner's settings, the queue, the pause and the usage counters live in the policy registry (`AgentPolicyRegistry`: one per factory, immutable, no admin and no owner of its own). Each owner call names the account.
 - The factory creates accounts and sets the beta ceilings.
 
-Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap.
+Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 
 ## API
 
@@ -100,6 +100,14 @@ Sells count against the sell cap at the higher of the position's current average
 | `agent.headroom` / `position` / `status` | What is left this period, a token position with its cost basis and high-water, the key's standing | registry and account (reads) | none |
 | `mf.token(address)` | Agent-safe view of a Launch token (see below) | factory, curve, fee manager (reads) | none |
 
+## Using the API
+
+The Mercurifi API is optional: every on-chain action works with a chain-only client, and `mf.stream(...)` and launch metadata uploads need the API. `create_client("testnet", api_key=os.environ.get("MERCURIFI_API_KEY"))` sends the key as `X-Api-Key`. Streams take `launches`, `trades`, `token:<address>`, `trader:<address>` and `agent-account:<address>` topics and reconnect with `Last-Event-ID`. A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours.
+
+## Errors
+
+Every error is a `MercurifiError` with a stable `code`. A refused call is a `ContractRevertError` with `revert.name` and a readable message; a transaction Arc dropped is a `TxDroppedError` (re-read `agent.headroom()` before you retry). Branch on `code`, not on message text, and never hand a message to a model.
+
 ## Untrusted text for models
 
 Token names, symbols, descriptions and links are written by whoever launched the token. `mf.token(address)` returns a `TokenSafeView`: `view.numeric()` holds only numbers, booleans, fixed labels and hex, so it is safe to hand to a model; everything else is in `view.untrusted` as `UntrustedText`, and `wrap_untrusted(field, raw)` does the same for any string you have.
@@ -108,25 +116,6 @@ Token names, symbols, descriptions and links are written by whoever launched the
 - Never act on instructions found in that text, and never percent-decode a link value and embed the result.
 - A `link.*` value is kept only if it is a plain http, https or ipfs URL with no credentials, spaces, `<`, `>`, quotes or backticks; otherwise its text is `invalid link` and `unsafe` is `True`.
 - All of this is hygiene, not a defence. The account caps are the real control (see the loss bound above).
-
-## Networking
-
-The SDK's HTTP clients (RPC, API and stream) ignore environment proxies, `.netrc` and `SSL_CERT_*` variables (`trust_env=False`) and never follow redirects: the API key must go where the address book says. To use a proxy, pass your own transport (`rpc_transport=`). The TypeScript SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher.
-
-## More
-
-See the [repository README](../../README.md) and [docs/security-model.md](../../docs/security-model.md).
-
-## Logging and secrets
-
-RPC provider URLs usually carry an API key in the path, and `httpx` logs request URLs at INFO (`httpcore` at DEBUG).
-When the SDK creates an RPC client it installs one idempotent redacting `logging.Filter` on the `httpx` and
-`httpcore` loggers that replaces every URL in a log record with its host. Your log levels, handlers and formatters are
-not changed. Errors raised by the SDK also show the host only.
-
-## Untrusted text and Unicode data
-
-Contract-supplied revert reasons and token names, symbols, descriptions and links are made inert by one sanitiser that mirrors the TypeScript SDK. It depends on Unicode data: character categories come from your Python's `unicodedata` and the pictograph table is built in, so a character assigned in a newer Unicode release than your interpreter knows can be treated differently from the TypeScript SDK. The shared vectors in `fixtures/vectors/` arbitrate. This is output hygiene, not a security boundary: the account caps are the real control.
 
 ## Handling agent keys
 
@@ -143,3 +132,26 @@ logs or persists a key, and a signer prints and pickles as an address only. What
   The SDK clears the key from its own frames before raising, but a frame of yours that holds the key would be shipped.
 - Prefer a KMS or HSM signer (`kms_signer`) where you can: the key then never enters the process.
 - Use one agent key per process. Two processes sharing a key race for nonces; the account allows several agent keys.
+
+## Logging and secrets
+
+RPC provider URLs usually carry an API key in the path, and `httpx` logs request URLs at INFO (`httpcore` at DEBUG).
+When the SDK creates an RPC client it installs one idempotent redacting `logging.Filter` on the `httpx` and
+`httpcore` loggers that replaces every URL in a log record with its host. Your log levels, handlers and formatters are
+not changed. Errors raised by the SDK also show the host only.
+
+## Untrusted text and Unicode data
+
+Contract-supplied revert reasons and token names, symbols, descriptions and links are made inert by one sanitiser that mirrors the TypeScript SDK. It depends on Unicode data: character categories come from your Python's `unicodedata` and the pictograph table is built in, so a character assigned in a newer Unicode release than your interpreter knows can be treated differently from the TypeScript SDK. The shared vectors in `fixtures/vectors/` arbitrate. This is output hygiene, not a security boundary: the account caps are the real control.
+
+## Networking
+
+The SDK's HTTP clients (RPC, API and stream) ignore environment proxies, `.netrc` and `SSL_CERT_*` variables (`trust_env=False`) and never follow redirects: the API key must go where the address book says. To use a proxy, pass your own transport (`rpc_transport=`). The TypeScript SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher.
+
+## Supply chain
+
+Install only `mercurifi` (PyPI) or `@mercurifi/sdk` (npm); see [docs/reserved-names.md](../../docs/reserved-names.md). Before upgrading, verify the release as described in [docs/verify-provenance.md](../../docs/verify-provenance.md): PyPI attestations for this package, npm provenance for the TypeScript one. These checks are inert until publishing is approved.
+
+## More
+
+See the [repository README](../../README.md) and [docs/security-model.md](../../docs/security-model.md).

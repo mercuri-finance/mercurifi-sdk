@@ -6,7 +6,7 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Read [docs/security-model.md](../../docs/security-model.md) before you give a key to a program.
 
-**Testnet only for now.** No mainnet agent factory is deployed: the mainnet agent addresses in this SDK are empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. Use `'testnet'` (Arc testnet, chain 5042002); a local Anvil book (chain 31337, loopback RPC) is also accepted.
+**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them throw `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book).
 
 ## Install
 
@@ -16,7 +16,7 @@ npm install @mercurifi/sdk
 
 Not yet published; until then build from the repository checkout (`cd packages/typescript && npm ci && npm run build`). Node 20 or newer. The one runtime dependency is `viem`.
 
-## Quickstart
+## Quickstart (runs once a testnet deployment is recorded)
 
 ```ts
 import type { Address } from 'viem';
@@ -24,7 +24,7 @@ import { createClient, generateAgentKey, localKey } from '@mercurifi/sdk';
 
 const mf = await createClient({ network: 'testnet' });
 const owner = mf.owner(localKey(process.env.OWNER_KEY!));
-const key = generateAgentKey(); // keep key.exportPrivateKey() on your server only
+const key = generateAgentKey(); // demo only: a real bot stores the key in a secret manager and reads it at the call site
 const { account } = await owner.createAccount({ firstAgent: { address: key.address } });
 await owner.deposit(account, { usdc: '20' });
 await owner.fundGas(key.address, { usdc: '0.5' });
@@ -45,7 +45,7 @@ Amounts are human strings in `usdc` / `amount` (`usdc: '25'`, `amount: '1000.5'`
 - The owner's settings, the queue, the pause and the usage counters live in the policy registry (`AgentPolicyRegistry`: one per factory, immutable, no admin and no owner of its own). Each owner call names the account.
 - The factory creates accounts and sets the beta ceilings.
 
-Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap.
+Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 
 ## API
 
@@ -99,7 +99,7 @@ An agent key can move money within the account's caps, so treat it like any serv
 
 ## Logging and secrets
 
-RPC provider URLs usually carry an API key in the path. The SDK shows only the host in its own errors and never logs a URL. If you wrap the transport or add request logging, redact URLs yourself. An API key (`mfk_live_…` or `mfk_test_…`) only selects a rate tier and attribution; it never authorises funds, and there is no origin bypass for keys: a keyed client reaches the public API host like any other client. The SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher; it never follows redirects with the key.
+RPC provider URLs usually carry an API key in the path. The SDK shows only the host in its own errors and never logs a URL. If you wrap the transport or add request logging, redact URLs yourself. An API key (`mfk_live_…` or `mfk_test_…`): A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public API host like any other client. The SDK uses `fetch`, which on Node does not read proxy variables unless you configure a dispatcher; it never follows redirects with the key.
 
 ## Supply chain
 

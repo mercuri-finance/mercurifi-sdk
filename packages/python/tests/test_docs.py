@@ -25,7 +25,7 @@ def test_readme_keeps_the_handling_notes_and_the_testnet_notice() -> None:
     readme = (PKG / "README.md").read_text()
     for heading in ("## Handling agent keys", "## Untrusted text for models", "## Untrusted text and Unicode data"):
         assert heading in readme
-    assert "Testnet only" in readme and "NotDeployedError" in readme and "empty until an owner-approved deployment" in readme
+    assert "No Agent Accounts deployment exists on any public network yet" in readme and "NotDeployedError" in readme and "stay empty until an owner-approved deployment" in readme
     assert "never in a markdown code fence" in readme or "Never put it in a markdown code fence" in readme
 
 

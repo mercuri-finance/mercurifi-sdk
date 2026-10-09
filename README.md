@@ -8,7 +8,7 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Read [docs/security-model.md](docs/security-model.md) before you give a key to a program.
 
-**Testnet only for now.** No mainnet agent factory is deployed: the mainnet agent addresses in this SDK are empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. Use `'testnet'` (Arc testnet, chain 5042002); a local Anvil book (chain 31337, loopback RPC) is also accepted.
+**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them throw `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book).
 
 ## Install
 
@@ -19,7 +19,7 @@ pip install mercurifi
 
 Neither package is published yet (publishing needs an owner decision). Until then install from a checkout: `cd packages/typescript && npm ci && npm run build`, or `pip install ./packages/python`.
 
-## Quickstart (testnet)
+## Quickstart (runs once a testnet deployment is recorded)
 
 ```ts
 import type { Address } from 'viem';
@@ -27,7 +27,7 @@ import { createClient, generateAgentKey, localKey } from '@mercurifi/sdk';
 
 const mf = await createClient({ network: 'testnet' });
 const owner = mf.owner(localKey(process.env.OWNER_KEY!));
-const key = generateAgentKey(); // keep key.exportPrivateKey() on your server only
+const key = generateAgentKey(); // demo only: a real bot stores the key in a secret manager and reads it at the call site
 const { account } = await owner.createAccount({ firstAgent: { address: key.address } });
 await owner.deposit(account, { usdc: '20' });
 await owner.fundGas(key.address, { usdc: '0.5' });
@@ -50,13 +50,13 @@ The owner (main wallet) creates the account, deposits and sets policy; an agent 
 - The owner's settings, the queue, the pause and the usage counters live in the policy registry (`AgentPolicyRegistry`: one per factory, immutable, no admin and no owner of its own). Each owner call names the account.
 - The factory creates accounts and sets the beta ceilings.
 
-Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap.
+Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 
 Full detail, including who else holds power (the guardian pause, the Launch timelock), is in [docs/security-model.md](docs/security-model.md#where-things-live).
 
 ## Chain-only or with the API
 
-Every on-chain action works with only an RPC URL. Add an API key (`X-Api-Key`, `mfk_live_…` / `mfk_test_…`) for streams, metadata uploads and the account index. A key only selects a rate tier; it never authorises funds.
+Every on-chain action works with only an RPC URL. Add an API key (`X-Api-Key`, `mfk_live_…` / `mfk_test_…`) for streams, metadata uploads and the account index. A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours.
 
 ## Errors
 

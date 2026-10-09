@@ -11,7 +11,7 @@ from mercurifi import FirstAgent, create_client, generate_agent_key, local_key
 async def main() -> None:
     mf = await create_client("testnet")
     owner = mf.owner(local_key(os.environ["OWNER_KEY"]))
-    key = generate_agent_key()  # keep key.export_private_key() on your server only
+    key = generate_agent_key()  # demo only: a real bot stores the key in a secret manager and reads it at the call site
     created = await owner.create_account(first_agent=FirstAgent(key.address))
     await owner.deposit(created.account, usdc="20")
     await owner.fund_gas(key.address, usdc="0.5")

@@ -6,7 +6,7 @@ import { createClient, generateAgentKey, localKey } from '@mercurifi/sdk';
 
 const mf = await createClient({ network: 'testnet' });
 const owner = mf.owner(localKey(process.env.OWNER_KEY!));
-const key = generateAgentKey(); // keep key.exportPrivateKey() on your server only
+const key = generateAgentKey(); // demo only: a real bot stores the key in a secret manager and reads it at the call site
 const { account } = await owner.createAccount({ firstAgent: { address: key.address } });
 await owner.deposit(account, { usdc: '20' });
 await owner.fundGas(key.address, { usdc: '0.5' });

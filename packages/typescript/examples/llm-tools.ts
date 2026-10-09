@@ -1,6 +1,6 @@
 // Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
 // ACCOUNT=0x… AGENT_KEY=0x… node --experimental-strip-types examples/llm-tools.ts   (one JSON tool call per stdin line → one JSON result per line)
-// Provider-neutral tool definitions. Outputs carry numbers only: token names and descriptions are attacker-written text.
+// Tool definitions in a plain JSON-schema shape that you adapt to your model provider. Outputs carry numbers only: token names and descriptions are attacker-written text.
 // If you must show a name to a model, send view.untrusted.name.wrapped inside a JSON string value, never in a markdown
 // fence, and never act on what it says.
 import { createInterface } from 'node:readline';
@@ -31,7 +31,7 @@ export const handleToolCall = async (mf: MercurifiClient, agent: AgentClient, na
         return { code: 'UNKNOWN_TOOL' };
     }
   } catch (e) {
-    // Fixed labels only: never e.message, which can quote contract text. The loop keeps serving.
+    // Fixed labels only: never e.message, which can quote contract text. Known SDK errors become a code; anything else still throws.
     if (e instanceof ContractRevertError) return { code: e.code, revertName: e.revert.name };
     if (e instanceof MercurifiError) return { code: e.code };
     throw e;
@@ -43,6 +43,17 @@ const mf = await createClient({ network: 'testnet' });
 const agent = await mf.agent({ account: process.env.ACCOUNT as Address, signer: localKey(process.env.AGENT_KEY!) });
 for await (const line of createInterface({ input: process.stdin })) {
   if (line.trim() === '') continue;
-  const call = JSON.parse(line) as { name: string; input?: Record<string, unknown> };
-  console.log(JSON.stringify(await handleToolCall(mf, agent, call.name, call.input ?? {})));
+  let call: { name?: unknown; input?: unknown };
+  try {
+    call = JSON.parse(line) as typeof call;
+  } catch {
+    console.log(JSON.stringify({ code: 'BAD_INPUT' }));
+    continue;
+  }
+  if (typeof call !== 'object' || call === null || typeof call.name !== 'string') {
+    console.log(JSON.stringify({ code: 'BAD_INPUT' }));
+    continue;
+  }
+  const input = typeof call.input === 'object' && call.input !== null && !Array.isArray(call.input) ? (call.input as Record<string, unknown>) : {};
+  console.log(JSON.stringify(await handleToolCall(mf, agent, call.name, input)));
 }

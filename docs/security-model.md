@@ -6,11 +6,11 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Fixed periods allow up to twice every cap across a period boundary. Keep holdings small, sweep profits to the owner, and revoke a key the moment you suspect it.
 
-Sells count against the sell cap at the **higher** of the position's current average cost and its high-water average cost (the highest average it has had after any buy, reset only when the position is fully sold). A stolen key therefore cannot buy a crashed token cheaply to drag the average down and then sell the account's older, dearer holdings under a stretched cap. Tokens the account holds without a recorded purchase are valued at their quoted output.
+Sells count against the sell cap at the **higher** of the position's current average cost and its high-water average cost (the highest average it has had after any buy, reset only when the position is fully sold). A stolen key therefore cannot buy a crashed token cheaply to drag the average down and then sell the account's older, dearer holdings under a stretched cap, for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 
-## Testnet only for now
+## No deployment yet
 
-No agent factory is deployed on mainnet. The factory and registry addresses in both SDKs are empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. Use `testnet` (Arc testnet, chain 5042002); a local Anvil book (chain 31337, loopback RPC only) is also accepted. Nothing in this repository broadcasts to a real network.
+**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them throw `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book). Nothing in this repository broadcasts to a real network.
 
 ## Where things live
 
@@ -29,7 +29,7 @@ Narrowing a policy takes effect at once. Widening one (more cap, a new agent, a 
 
 ## Who else has power
 
-- **The guardian** (a platform key set on the factory) can pause agent functions only, for at most 72 hours, then must wait a 72 hour cooldown. It cannot move funds, cannot touch policy and cannot block owner withdrawals, revocations or tightening. Only the Launch timelock (48 hour delay) can extend or lift a pause.
+- **The guardian** (a platform key set on the factory) can pause agent functions only, for at most 72 hours, then must wait a 72 hour cooldown. It cannot move funds, cannot touch policy and cannot block owner withdrawals, revocations or tightening. Only the admin (the Launch timelock) can extend an active pause, to at most 30 days from now, or lift or shorten it; the admin cannot start a pause. The timelock delay is 48 hours on mainnet and 60 seconds on testnet. The owner can also pause their own account's agents at any time.
 - **The account trusts the upgradeable Launch components** it trades against (the Launch factory's curve registry, the fee manager and the graduation manager), which sit behind the same 48 hour timelock every Launch user already trusts.
 - **Mercurifi never runs agents and never holds an agent key.**
 
@@ -38,7 +38,7 @@ Narrowing a policy takes effect at once. Widening one (more cap, a new agent, a 
 - Generate agent keys on your own server with `generateAgentKey()` (TypeScript) or `generate_agent_key()` (Python).
 - The SDK never transmits, logs or stores a private key; use one key per process.
 - Never put the owner key on a trading server.
-- API keys (`mfk_live_...`, `mfk_test_...`) select a rate tier only and never authorise funds.
+- API keys (`mfk_live_...`, `mfk_test_...`): A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours.
 
 See "Handling agent keys" in each package README for the language-specific rules.
 
@@ -53,7 +53,7 @@ Token names, symbols, descriptions and links are written by whoever launched the
 
 ## RPC URLs and API keys
 
-RPC provider URLs usually carry a key in the path. The SDK shows only the host in its errors, and the Python SDK installs a redacting filter on the `httpx` and `httpcore` loggers. API keys are held privately by the HTTP client and are never part of an error, a log line or a serialised object. A key only sets a rate tier and attribution; it never signs or authorises anything. There is no origin bypass for keys: a keyed client reaches the public hostname like any other client.
+RPC provider URLs usually carry a key in the path. The SDK shows only the host in its errors, and the Python SDK installs a redacting filter on the `httpx` and `httpcore` loggers. API keys are held privately by the HTTP client and are never part of an error, a log line or a serialised object. A key sets a rate tier, attribution and route scopes (read, stream, build, upload); it never authorises funds. Uploads need the key owner's agent account to be older than 24 hours. There is no origin bypass for keys: a keyed client reaches the public hostname like any other client.
 
 ## The API
 
@@ -69,7 +69,7 @@ The API is optional: every on-chain action works with a chain-only client. With 
 
 ## Gas on Arc
 
-Arc caps a single transaction at 16,777,216 gas (below the 30,000,000 block limit). `createAccount` with a referrer and a first agent costs about 353,719 gas, which is a fraction of a cent. A graduating buy needs at least 1.8M gas allowed, and the SDK sets the limit and the 20 gwei fee floor for you. `withdrawMany` of 500 cold tokens does not fit in one transaction; the SDK sends the tokens in chunks well below the 200-token ceiling.
+Arc caps a single transaction at 16,777,216 gas (below the 30,000,000 block limit). `createAccount` with a referrer and a first agent costs about 353,719 gas, which is a fraction of a cent. A graduating buy needs at least 1.8M gas allowed, and the SDK sets the limit and the 20 gwei fee floor for you. `withdrawMany` of 500 cold tokens does not fit in one transaction; the SDK sends tokens in chunks of 100, well inside one Arc transaction (200 tokens cost about 7.2M gas).
 
 ## The SDK supply chain
 
