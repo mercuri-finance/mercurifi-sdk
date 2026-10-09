@@ -418,7 +418,8 @@ export class AgentClient {
   /**
    * Verifies API-built calldata against your expectation, then signs and sends it. Refuses on any mismatch.
    *
-   * The expectation must cover every argument (see verifyBuiltTx): buy, sell and swapExactIn need every token, amount and
+   * Build the expectation from your own request, never from the build response (that would compare the answer with itself).
+   * It must cover every argument (see verifyBuiltTx): buy, sell and swapExactIn need every token, amount and
    * flag in `exact`, the `min…Out` in `atLeast` (or `exact`); sweepToOwner needs `token` and `amount`; claimFees nothing. A launch needs
    * all eight request fields; its `expectedConfigHash` must be the factory's current `configHash()`, which is read here
    * (omit it), and its deadline is checked against a window computed here from the latest block and the policy.
@@ -426,10 +427,12 @@ export class AgentClient {
    * checks run first, and a buy always gets the graduation gas floor.
    */
   async sendBuilt(built: BuiltTx, e: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
-    const permission = BUILT_PERMISSION[e.functionName];
+    const permission = Object.hasOwn(BUILT_PERMISSION, e.functionName) ? BUILT_PERMISSION[e.functionName] : undefined;
     if (permission === undefined) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
     const { at, block, policy } = await this.gate(permission);
-    const own = BigInt(Math.min(this.deadlineSeconds, policy.maxDeadlineSeconds));
+    const ownSeconds = Math.min(this.deadlineSeconds, policy.maxDeadlineSeconds);
+    if (!Number.isInteger(ownSeconds) || ownSeconds < 1) throw new InvalidInputError('deadlineSeconds', 'the deadline window must be at least 1 second (check deadlineSeconds and the policy maxDeadlineSeconds)');
+    const own = BigInt(ownSeconds);
     const window = { min: e.deadline?.min !== undefined && e.deadline.min > block.timestamp ? e.deadline.min : block.timestamp, max: block.timestamp + own };
     if (e.deadline !== undefined && e.deadline.max < window.max) window.max = e.deadline.max;
     let exact = e.exact;

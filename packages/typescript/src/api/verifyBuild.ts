@@ -24,12 +24,11 @@ const MIN_OUT = /^min[A-Za-z0-9]*Out$/;
 
 const same = (a: unknown, b: unknown): boolean => {
   if (typeof a === 'string' && typeof b === 'string' && HEX_ID.test(a) && HEX_ID.test(b)) return a.toLowerCase() === b.toLowerCase();
-  if (typeof a === 'bigint' || typeof b === 'bigint') {
-    try {
-      return BigInt(a as bigint) === BigInt(b as bigint);
-    } catch {
-      return false;
-    }
+  if (typeof a === 'bigint') {
+    // A numeric expectation is a bigint or a plain decimal string; nothing else is coerced.
+    if (typeof b === 'bigint') return a === b;
+    if (typeof b === 'string' && /^\d+$/.test(b)) return a === BigInt(b);
+    throw new InvalidInputError('exact', 'a numeric expectation must be a bigint or a decimal string');
   }
   return a === b;
 };
@@ -44,12 +43,16 @@ const asBigint = (v: unknown): bigint | null => (typeof v === 'bigint' ? v : nul
  *
  * Verification is total and fails closed: every decoded top-level argument (launch request fields flattened) must be
  * covered by `exact`, by `atLeast` (minimum outputs only) or be `deadline` with a deadline window; an uncovered argument
- * is refused by name. For a launch that means all eight request fields (creator and referrer are not arguments: the
+ * is refused by name. The expectation must come from your own request, never from the build response or from the
+ * `args` this function returns (that would only compare the answer with itself). For a launch that means all eight request fields (creator and referrer are not arguments: the
  * account sets them).
  */
 export const verifyBuiltTx = (built: BuiltTx, e: BuildExpectation): { functionName: AgentFunction; args: Record<string, unknown> } => {
   if (!AGENT_FUNCTIONS.includes(e.functionName)) throw new InvalidInputError('functionName', `${String(e.functionName)} is not an agent trade function`);
-  for (const k of Object.keys(e.atLeast ?? {})) if (!MIN_OUT.test(k)) throw new InvalidInputError('atLeast', `atLeast applies to minimum-output arguments only, not ${k}`);
+  for (const [k, v] of Object.entries(e.atLeast ?? {})) {
+    if (!MIN_OUT.test(k)) throw new InvalidInputError('atLeast', `atLeast applies to minimum-output arguments only, not ${k}`);
+    if (typeof v !== 'bigint' || v < 0n) throw new InvalidInputError('atLeast', `atLeast.${k} must be a non-negative bigint`);
+  }
   if (e.deadline !== undefined && (typeof e.deadline.min !== 'bigint' || typeof e.deadline.max !== 'bigint' || e.deadline.min > e.deadline.max)) {
     throw new InvalidInputError('deadline', 'the deadline window needs bigint min <= max');
   }

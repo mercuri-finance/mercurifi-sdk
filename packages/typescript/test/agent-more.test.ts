@@ -453,4 +453,33 @@ describe('AgentClient.sendBuilt', () => {
     await expect(agent.sendBuilt(tx(claim), { functionName: 'claimFees' })).rejects.toMatchObject({ revert: { name: 'MissingPermission' } });
     expect(rpc.sent).toHaveLength(0);
   });
+
+  it('refuses a launch with a non-zero initial buy and a lowered minimum', async () => {
+    const { agent, rpc } = await setup();
+    const data = launchData({ initialBuyUsdc: 100_000_000n, minTokensOut: 1n });
+    await expect(agent.sendBuilt(tx(data), { functionName: 'launch', exact: { ...LAUNCH_FIELDS, initialBuyUsdc: 10_000_000n } })).rejects.toThrow(/initialBuyUsdc/);
+    await expect(agent.sendBuilt(tx(data), { functionName: 'launch', exact: { ...LAUNCH_FIELDS, initialBuyUsdc: 100_000_000n, minTokensOut: 5_000n } })).rejects.toThrow(/minTokensOut/);
+    expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('refuses inherited property names before any RPC call', async () => {
+    const { agent, rpc } = await setup();
+    const before = rpc.sent.length;
+    await expect(agent.sendBuilt(tx(claim), { functionName: 'toString' as never })).rejects.toThrow(InvalidInputError);
+    await expect(agent.sendBuilt(tx(claim), { functionName: 'constructor' as never })).rejects.toThrow(InvalidInputError);
+    expect(rpc.sent.length).toBe(before);
+  });
+
+  it('refuses a zero-length deadline window before sending', async () => {
+    const zeroPolicy = await setup({}, null, 3, { policy: { ...DEFAULT_POLICY, maxDeadlineSeconds: 0 } });
+    await expect(zeroPolicy.agent.sendBuilt(tx(claim), { functionName: 'claimFees' })).rejects.toThrow(InvalidInputError);
+    expect(zeroPolicy.rpc.sent).toHaveLength(0);
+    const rpc = localRpc();
+    mockAccount(rpc, { owner: A(0x99), agent: signer.address });
+    const mf = await localClient(rpc);
+    const agent = await mf.agent({ account: ACCOUNT, signer });
+    (agent as unknown as { deadlineSeconds: number }).deadlineSeconds = 0;
+    await expect(agent.sendBuilt(tx(claim), { functionName: 'claimFees' })).rejects.toThrow(InvalidInputError);
+    expect(rpc.sent).toHaveLength(0);
+  });
 });

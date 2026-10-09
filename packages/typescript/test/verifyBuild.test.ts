@@ -131,4 +131,17 @@ describe('verifyBuiltTx', () => {
     expect(() => verifyBuiltTx(built(), { ...expectation, atLeast: { usdcIn: 1n } })).toThrow(InvalidInputError);
     expect(() => verifyBuiltTx(built(), { ...expectation, deadline: { min: 5n, max: 1n } })).toThrow(InvalidInputError);
   });
+
+  it.each([undefined, null, '', 'abc', -1n, 5, '5'])('rejects a non-bigint or negative atLeast value: %s', (v) => {
+    expect(() => verifyBuiltTx(built(), { ...expectation, atLeast: { minTokensOut: v as never } })).toThrow(InvalidInputError);
+  });
+
+  it.each(['', ' 25000000', '25000000 ', '-1', '0x10', 'abc', false, [], null, undefined, 25_000_000, 1.5])('rejects a bad numeric exact value: %j', (v) => {
+    expect(() => verifyBuiltTx(built(), { ...expectation, exact: { token: TOKEN, usdcIn: v } })).toThrow(InvalidInputError);
+  });
+
+  it('accepts a decimal string for a numeric exact value', () => {
+    expect(verifyBuiltTx(built(), { ...expectation, exact: { token: TOKEN, usdcIn: '25000000' } }).functionName).toBe('buy');
+    expect(() => verifyBuiltTx(built(), { ...expectation, exact: { token: TOKEN, usdcIn: '25000001' } })).toThrow(BuildMismatchError);
+  });
 });
