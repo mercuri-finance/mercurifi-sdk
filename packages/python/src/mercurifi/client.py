@@ -191,6 +191,14 @@ async def create_client(
     # Skipping start-up verification is for the loopback book only; on Arc the chain check is unconditional.
     if verify is False and book.name != "local":
         warn(f"verify=False is ignored on {book.name}; start-up verification always runs outside the local book.")
+    # The default HTTP API: built before the RPC so a bad option fails early; it holds the key privately.
+    resolved_api: Any
+    if isinstance(api, str) and api == "default":
+        from .api import HttpApi
+
+        resolved_api = None if resolved_api_url is None else HttpApi(resolved_api_url, book.chain_id, api_key=api_key, on_warning=warn)
+    else:
+        resolved_api = api
     rpc = Rpc(url, transport=rpc_transport)
     if verify or book.name != "local":
         failure: MercurifiError | None = None
@@ -205,8 +213,8 @@ async def create_client(
             )
         if failure is not None:
             await rpc.aclose()
+            if resolved_api is not None and hasattr(resolved_api, "aclose") and api is not resolved_api:
+                await resolved_api.aclose()
             raise failure
     settings = ClientSettings(receipt_timeout, poll_interval, max_fee_per_gas_cap, deadline_seconds, api_key, max_priority_fee_per_gas)
-    # The default HTTP API arrives in Task P9; until then "default" resolves to None.
-    resolved_api: Any = None if isinstance(api, str) and api == "default" else api
     return AsyncClient(book, rpc, resolved_api, settings, warn, resolved_api_url)

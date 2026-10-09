@@ -6,7 +6,7 @@ import pytest
 from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, GRADUATION_MANAGER, V4_QUOTER
 from mercurifi.abi import LAUNCH_FACTORY as LF
 from mercurifi.agent import AgentClient, ImageUpload, metadata_uri_problem
-from mercurifi.errors import InvalidInputError, MercurifiError
+from mercurifi.errors import BuildMismatchError, InvalidInputError, MercurifiError
 from mercurifi.policy import DEFAULT_POLICY
 from mercurifi.pool import estimate_pool_impact_bps
 from mercurifi.revert import ContractRevertError
@@ -499,3 +499,155 @@ async def test_claim_and_sweep_go_through_the_gate() -> None:
     rpc2, paused_sweep = await setup(action=7)
     rpc2.read(FACTORY, AGENT_ACCOUNT_FACTORY, "isPaused", True)
     await refused(paused_sweep.sweep_to_owner(usdc="1"), "Paused")
+
+
+# ---------------------------------------------------------------- send_built
+
+TS0 = 1_700_000_000
+CLAIM = AGENT_ACCOUNT.encode("claimFees")
+BUY_E: dict[str, Any] = {"function_name": "buy", "exact": {"token": TOKEN, "usdcIn": 25_000_000}, "at_least": {"minTokensOut": 900}}
+LAUNCH_FIELDS = {"name": "Ok", "symbol": "OK", "metadataURI": "ipfs://m", "salt": SALT, "initialBuyUsdc": 0, "minTokensOut": 0}
+LAUNCH_E: dict[str, Any] = {"function_name": "launch", "exact": LAUNCH_FIELDS}
+
+
+def buy_data(token: str = TOKEN, min_out: int = 900, deadline: int = TS0 + 60) -> str:
+    return AGENT_ACCOUNT.encode("buy", token, 25_000_000, min_out, deadline)
+
+
+def launch_data(deadline: int = TS0 + 60, **over: Any) -> str:
+    return AGENT_ACCOUNT.encode("launch", {**LAUNCH_FIELDS, "expectedConfigHash": HASH, "deadline": deadline, **over})
+
+
+def tx(data: str, **over: Any) -> dict[str, Any]:
+    return {"chainId": 31337, "to": ACCOUNT, "data": data, "value": "0", **over}
+
+
+async def test_send_built_signs_only_after_verification() -> None:
+    rpc, agent = await setup()
+    with pytest.raises(BuildMismatchError):
+        await agent.send_built(tx(CLAIM, to=A(0x77)), function_name="claimFees")
+    with pytest.raises(BuildMismatchError):
+        await agent.send_built(tx(CLAIM, chainId=5042002), function_name="claimFees")
+    with pytest.raises(BuildMismatchError):
+        await agent.send_built(tx(CLAIM), function_name="sweepToOwner")
+    assert rpc.sent == []
+    await agent.send_built(tx(CLAIM), function_name="claimFees")
+    assert sent_call(rpc, AGENT_ACCOUNT)[0] == "claimFees"
+
+
+async def test_send_built_refuses_a_buy_unless_every_argument_is_named_and_matches() -> None:
+    rpc, agent = await setup()
+    rpc.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
+    refusals: list[tuple[str, dict[str, Any]]] = [
+        (buy_data(), {"function_name": "buy"}),  # bare buy
+        (buy_data(min_out=1), BUY_E),  # lowered minimum
+        (buy_data(token=A(0xCC)), BUY_E),  # a different token
+        (buy_data(deadline=TS0 + 61), BUY_E),  # beyond the SDK's own window
+        (buy_data(deadline=TS0 + 3_000), {**BUY_E, "deadline": (0, 9_999_999_999)}),  # a caller window cannot widen
+    ]
+    for data, e in refusals:
+        with pytest.raises(BuildMismatchError):
+            await agent.send_built(tx(data), **e)
+    assert rpc.sent == []
+
+
+async def test_send_built_signs_a_matching_buy_with_the_graduation_gas_floor() -> None:
+    rpc, agent = await setup()
+    rpc.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
+    await agent.send_built(tx(buy_data()), **BUY_E)
+    assert sent_call(rpc, AGENT_ACCOUNT)[2]["gas"] == 1_800_000
+    # a caller window may narrow: a window that ends before the built deadline refuses it
+    with pytest.raises(BuildMismatchError, match="deadline"):
+        await agent.send_built(tx(buy_data()), **BUY_E, deadline=(TS0 + 10, TS0 + 30))
+    assert len(rpc.sent) == 1
+
+
+async def test_send_built_refuses_a_flipped_swap_direction() -> None:
+    rpc, agent = await setup()
+    swap = AGENT_ACCOUNT.encode("swapExactIn", TOKEN, False, 5, 4, TS0 + 30)
+    with pytest.raises(BuildMismatchError, match="buyToken"):
+        await agent.send_built(tx(swap), function_name="swapExactIn", exact={"token": TOKEN, "buyToken": True, "amountIn": 5}, at_least={"minAmountOut": 4})
+    assert rpc.sent == []
+
+
+async def test_send_built_launch_pins_the_chain_config_hash_and_its_own_window() -> None:
+    rpc, agent = await setup()
+    with pytest.raises(BuildMismatchError, match="not covered"):
+        await agent.send_built(tx(launch_data()), function_name="launch", exact={"name": "Ok"})
+    with pytest.raises(BuildMismatchError, match="expectedConfigHash"):
+        await agent.send_built(tx(launch_data(expectedConfigHash="0x" + "55" * 32)), **LAUNCH_E)
+    with pytest.raises(BuildMismatchError, match="configHash"):
+        await agent.send_built(tx(launch_data()), function_name="launch", exact={**LAUNCH_FIELDS, "expectedConfigHash": "0x" + "55" * 32})
+    for over in ({"metadataURI": "https://evil.example/x"}, {"salt": "0x" + "77" * 32}, {"initialBuyUsdc": 1}, {"deadline": TS0 + 61}):
+        with pytest.raises(BuildMismatchError):
+            await agent.send_built(tx(launch_data(**over)), **LAUNCH_E)
+    missing = {k: v for k, v in LAUNCH_FIELDS.items() if k != "salt"}
+    with pytest.raises(BuildMismatchError, match="salt of launch is not covered"):
+        await agent.send_built(tx(launch_data()), function_name="launch", exact=missing)
+    assert rpc.sent == []
+    await agent.send_built(tx(launch_data()), **LAUNCH_E)
+    assert len(rpc.sent) == 1
+    # a caller-supplied hash equal to the chain's (any case) is accepted
+    await agent.send_built(tx(launch_data()), function_name="launch", exact={**LAUNCH_FIELDS, "expectedConfigHash": HASH.upper().replace("0X", "0x")})
+    assert len(rpc.sent) == 2
+
+
+async def test_send_built_runs_the_local_permission_gate_first() -> None:
+    rpc, agent = await setup(account={"agent_permissions": 1})
+    with pytest.raises(ContractRevertError) as e:
+        await agent.send_built(tx(CLAIM), function_name="claimFees")
+    assert e.value.revert.name == "MissingPermission"
+    assert rpc.sent == []
+
+
+async def test_send_built_refuses_inherited_names_before_any_rpc_call() -> None:
+    rpc, agent = await setup()
+    before = len(rpc.calls)
+    for name in ("toString", "constructor", "__class__", "withdraw", 5, None):
+        with pytest.raises(InvalidInputError):
+            await agent.send_built(tx(CLAIM), function_name=name)  # type: ignore[arg-type]
+    assert len(rpc.calls) == before and rpc.sent == []
+
+
+async def test_send_built_refuses_a_non_int_at_least_and_non_numeric_exact_before_sending() -> None:
+    rpc, agent = await setup()
+    rpc.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
+    for bad in (None, "", "abc", -1, True):
+        with pytest.raises(InvalidInputError):
+            await agent.send_built(tx(buy_data()), **{**BUY_E, "at_least": {"minTokensOut": bad}})
+    for bad_exact in (True, 1.5, "0x10", ""):
+        with pytest.raises(InvalidInputError):
+            await agent.send_built(tx(buy_data()), **{**BUY_E, "exact": {"token": TOKEN, "usdcIn": bad_exact}})
+    assert rpc.sent == []
+
+
+async def test_send_built_refuses_a_zero_length_deadline_window() -> None:
+    rpc, agent = await setup(account={"policy": replace(DEFAULT_POLICY, max_deadline_seconds=0)})
+    with pytest.raises(InvalidInputError):
+        await agent.send_built(tx(CLAIM), function_name="claimFees")
+    assert rpc.sent == []
+    rpc2, agent2 = await setup()
+    agent2._deadline_seconds = 0
+    with pytest.raises(InvalidInputError):
+        await agent2.send_built(tx(CLAIM), function_name="claimFees")
+    assert rpc2.sent == []
+    rpc3, agent3 = await setup()
+    rpc3.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
+    with pytest.raises(InvalidInputError):  # the caller's window ends before the chain's now: min > max after narrowing
+        await agent3.send_built(tx(buy_data()), **BUY_E, deadline=(TS0 - 100, TS0 - 50))
+    assert rpc3.sent == []
+
+
+async def test_send_built_signs_the_bytes_it_verified() -> None:
+    class Flip(dict[str, Any]):
+        reads = 0
+
+        def __getitem__(self, key: str) -> Any:
+            if key == "data":
+                Flip.reads += 1
+                return CLAIM if Flip.reads == 1 else AGENT_ACCOUNT.encode("sweepToOwner", TOKEN, 1)
+            return super().__getitem__(key)
+
+    rpc, agent = await setup()
+    await agent.send_built(Flip(tx(CLAIM)), function_name="claimFees")
+    assert sent_call(rpc, AGENT_ACCOUNT)[0] == "claimFees"

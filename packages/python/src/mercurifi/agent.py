@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .abi import AGENT_ACCOUNT, BONDING_CURVE, LAUNCH_FACTORY, LAUNCH_TOKEN
 from .basis import curve_sell_value6, pool_sell_value6, read_basis, recorded_sell_value6
 from .curve import PHASE_GRADUATED, PHASE_TRADING, LaunchConfig, buy_impact_bps, may_graduate_buy, quote_fresh_buy, sell_impact_bps
-from .errors import InvalidInputError, MercurifiError
+from .errors import BuildMismatchError, InvalidInputError, MercurifiError
 from .fills import Fill, fill_from_receipt
 from .networks import AgentBook
 from .permissions import PERMISSIONS
@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 
 ZERO = "0x" + "00" * 20
 MAX_UINT256 = 2**256 - 1
+_BUILT_PERMISSION = {"buy": "buy", "sell": "sell", "launch": "launch", "swapExactIn": "swap", "claimFees": "claim", "sweepToOwner": "sweep"}
 _SALT = re.compile(r"0x[0-9a-fA-F]{64}")
 
 
@@ -433,6 +434,43 @@ class AgentClient:
         if value == 0:
             raise InvalidInputError("amount", "Nothing to sweep.")
         return await self._send(AGENT_ACCOUNT.encode("sweepToOwner", target, value), False, "sweep")
+
+    async def send_built(self, built: Mapping[str, Any], *, function_name: str, exact: Mapping[str, Any] | None = None,
+                         at_least: Mapping[str, int] | None = None, deadline: tuple[int, int] | None = None) -> Fill:
+        """Verifies API-built calldata against your expectation, then signs and sends it. Refuses on any mismatch.
+
+        Build the expectation from your own request, never from the build response (that would compare the answer with
+        itself). It must cover every argument (see verify_built_tx): buy, sell and swap_exact_in need every token, amount
+        and flag in `exact`, the min...Out in `at_least` (or `exact`); sweepToOwner needs `token` and `amount`; claimFees
+        nothing. A launch needs all eight request fields; its `expectedConfigHash` must be the factory's current
+        `configHash()`, which is read here (omit it), and its deadline is checked against a window computed here from the
+        latest block and the policy. Your own `deadline` window is intersected with that window, never widened. The local
+        permission, pause and cap checks run first, and a buy always gets the graduation gas floor.
+        """
+        from .build_verify import snapshot_built, snapshot_expectation, verify_built_tx
+
+        if type(function_name) is not str or function_name not in _BUILT_PERMISSION:  # own keys of a dict: no inherited names
+            raise InvalidInputError("function_name", "function_name is not an agent trade function")
+        exact_c, least_c, caller_window = snapshot_expectation(exact, at_least, deadline)
+        snap = snapshot_built(built)
+        g = await self._gate(_BUILT_PERMISSION[function_name])
+        own = min(self._deadline_seconds, g.policy.max_deadline_seconds)
+        if isinstance(own, bool) or not isinstance(own, int) or own < 1:
+            raise InvalidInputError("deadline_seconds", "the deadline window must be at least 1 second (check deadline_seconds and the policy max_deadline_seconds)")
+        lo, hi = g.timestamp, g.timestamp + own
+        if caller_window is not None:
+            lo, hi = max(lo, caller_window[0]), min(hi, caller_window[1])  # a caller window may only narrow
+        expected = dict(exact_c) if exact_c is not None else None
+        if function_name == "launch":
+            config_hash = str(await self._mf.rpc.read(LAUNCH_FACTORY, self._mf.network.launch.factory, "configHash", at=g.at))
+            if expected is not None and "expectedConfigHash" in expected and str(expected["expectedConfigHash"]).lower() != config_hash.lower():
+                raise BuildMismatchError("expectedConfigHash is not the factory's current configHash")
+            expected = {**(expected or {}), "expectedConfigHash": config_hash}
+        window = None if function_name in ("claimFees", "sweepToOwner") else (lo, hi)
+        verify_built_tx(snap, chain_id=self._mf.network.chain_id, account=self.account, function_name=function_name,
+                        exact=expected, at_least=least_c, deadline=window)
+        # A decoded buy cannot be proven to stay off the graduation path, so it always gets the graduation gas floor.
+        return await self._send(str(snap["data"]), function_name == "buy", function_name)
 
     async def _gate(self, permission: str) -> Gate:
         """The registry's authorize() preamble against one pinned block: Paused first (the account owner's pause or the
