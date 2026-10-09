@@ -1,6 +1,6 @@
 import { hexToNumber, TransactionReceiptNotFoundError, type Address, type Hex, type PublicClient, type TransactionReceipt } from 'viem';
 
-import { MercurifiError, NetworkMismatchError, TxDroppedError } from './errors.js';
+import { InvalidInputError, MercurifiError, NetworkMismatchError, TxDroppedError } from './errors.js';
 import { feesWithFloor, gasLimitFor, GRADUATION_GAS_LIMIT } from './gas.js';
 import type { NonceManager } from './nonce.js';
 import { redactUrlsIn, rpcError } from './redact.js';
@@ -55,6 +55,10 @@ export class TxSender {
   private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(private readonly deps: SenderDeps) {
+    for (const field of ['pollMs', 'receiptTimeoutMs'] as const) {
+      const value = deps[field];
+      if (!Number.isSafeInteger(value) || value < 1) throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
+    }
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
@@ -126,7 +130,7 @@ export class TxSender {
       });
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error);
       throw new MercurifiError('SIGNER_ERROR', `The signer failed: ${redactUrlsIn(reason).split('\n')[0]}`);
     }
     const hash = await this.deps.client.sendRawTransaction({ serializedTransaction: raw });

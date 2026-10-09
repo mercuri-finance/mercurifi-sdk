@@ -10,6 +10,7 @@ import { localJson } from './helpers/local.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
 import { chainDeadline } from '../src/time.js';
+import { TxSender } from '../src/tx.js';
 import { ACCOUNT, localClient, localRpc, OWNER_KEY as KEY, TOKEN } from './helpers/local.js';
 import { MockRpc } from './helpers/mockRpc.js';
 
@@ -207,5 +208,29 @@ describe('verify: false', () => {
       })).rejects.toThrow(NetworkMismatchError);
       expect(warnings.join(' ')).toContain('verify: false is ignored');
     }
+  });
+});
+
+describe('signer and sender hardening', () => {
+  it('reports a signer failure by its shortMessage with URLs reduced to hosts', async () => {
+    const rpc = localRpc();
+    const mf = await setup(rpc);
+    const bad = {
+      address: localKey(KEY).address,
+      signTransaction: async () => { throw Object.assign(new Error('long message https://kms.example/secret-key-path\nbody'), { shortMessage: 'kms down at https://kms.example/secret-key-path' }); },
+    };
+    const err = await mf.sender.send(bad, { to: ACCOUNT, data: buyData, label: 'buy' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code: 'SIGNER_ERROR' });
+    expect((err as Error).message).toContain('kms down at kms.example');
+    expect((err as Error).message).not.toContain('secret-key-path');
+  });
+
+  it('validates pollMs and receiptTimeoutMs on direct construction', async () => {
+    const mf = await setup(localRpc());
+    const deps = { client: mf.publicClient, chainId: 31337, nonces: mf.nonces, receiptTimeoutMs: 1000, pollMs: 10, maxFeePerGasCap: undefined, maxPriorityFeePerGas: 1n };
+    for (const over of [{ pollMs: 0 }, { pollMs: 1.5 }, { pollMs: Number.NaN }, { receiptTimeoutMs: 0 }, { receiptTimeoutMs: Infinity }]) {
+      expect(() => new TxSender({ ...deps, ...over })).toThrow(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    }
+    expect(() => new TxSender(deps)).not.toThrow();
   });
 });
