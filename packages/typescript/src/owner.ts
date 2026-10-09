@@ -140,7 +140,14 @@ const sendChange = async (
   if (call.mustQueue === true && queuedEv === undefined) {
     throw new MercurifiError('MISSING_EVENT', `The receipt of ${sent.hash} has no *Queued event, so the queue id is unknown; list the queue to find it.`);
   }
-  return done(queuedEv === undefined && (expected === 'queued' || expected === 'mixed') ? 'immediate' : expected);
+  // Decided as queued before sending, but nothing was queued: the chain state moved since the check. Report it as
+  // applied only when the receipt shows the account changing (e.g. PolicyApplied, IncreaseDelaySet); otherwise the
+  // outcome is unknown and is never reported as a queue item without an id.
+  if (expected === 'queued' && queuedEv === undefined) {
+    if (events.length > 0) return done('immediate');
+    throw new MercurifiError('MISSING_EVENT', `The receipt of ${sent.hash} has no *Queued event and no event showing the change applied; the account changed since it was checked, so read its state or list the queue before retrying.`);
+  }
+  return done(queuedEv === undefined && expected === 'mixed' ? 'immediate' : expected);
 };
 
 /** Owner-side actions, signed by the main wallet. */
@@ -290,14 +297,22 @@ export class AccountManager {
     return { ...r, preview };
   }
 
-  /** Reads the delay and active-agent count a queued agent change is judged against. */
-  private async agentContext(): Promise<{ now: number; delay: number; count: number }> {
-    const [now, delay, count] = await Promise.all([
+  /** Reads the chain time and delay a queued agent change is judged against. */
+  private async timeAndDelay(): Promise<{ now: number; delay: number }> {
+    const [now, delay] = await Promise.all([
       latestTimestamp(this.mf.publicClient),
       readRegistry<number>(this.mf.publicClient, this.agents.registry, 'increaseDelay', [this.account]),
+    ]);
+    return { now: Number(now), delay: Number(delay) };
+  }
+
+  /** Adds the active-agent count (for the agent-limit warning) to timeAndDelay. */
+  private async agentContext(): Promise<{ now: number; delay: number; count: number }> {
+    const [ctx, count] = await Promise.all([
+      this.timeAndDelay(),
       readRegistry<number>(this.mf.publicClient, this.agents.registry, 'activeAgentCount', [this.account]),
     ]);
-    return { now: Number(now), delay: Number(delay), count: Number(count) };
+    return { ...ctx, count: Number(count) };
   }
 
   /** A queued agent item with `expiresAt` not after its ETA reverts AgentExpiryOutOfRange for its whole window. */
@@ -330,7 +345,7 @@ export class AccountManager {
   }
 
   async setAgent(agent: Address, grant: AgentGrant): Promise<ChangeResult> {
-    const ctx = await this.agentContext();
+    const ctx = await this.timeAndDelay();
     const current = await readAgent(this.mf.publicClient, this.agents, this.account, agent, BigInt(ctx.now));
     if (!current.active) throw new InvalidInputError('agent', `${agent} is not an active agent; use addAgent`);
     const perms = grant.permissions ?? current.permissions;

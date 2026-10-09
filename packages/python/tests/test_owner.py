@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -164,6 +165,10 @@ async def test_set_policy_same_sends_nothing() -> None:
     assert res.outcome == "none" and t.rpc.sent == []
 
 
+def _iso(t: int) -> str:
+    return datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
 async def test_preview_splits_immediate_and_queued_with_the_window() -> None:
     t, m = await mgr()
     p = await m.preview_policy({"max_trade_usdc": "50", "period_spend_cap": "900"})
@@ -173,6 +178,8 @@ async def test_preview_splits_immediate_and_queued_with_the_window() -> None:
     assert p.ceilings is not None
     assert "max_trade_usdc: 100 -> 50 applies immediately" in p.summary[0]
     assert "period_spend_cap: 500 -> 900 is queued; executable from " in p.summary[1] and " until " in p.summary[1]
+    # Same ISO form as TypeScript's Date.toISOString (milliseconds included).
+    assert p.summary[1].endswith(f"executable from {_iso(now + 3_600)} until {_iso(now + 3_600 + 604_800)}")
     assert t.rpc.sent == []
     n = await m.preview_policy({"max_trade_usdc": "50"})
     assert (n.eta_if_queued, n.expires_if_queued, n.queued) == (None, None, ())
@@ -493,9 +500,18 @@ async def test_token_allowlist_rules() -> None:
     assert (await m.set_token_allowed(TOKEN, True)).outcome == "none" and t.rpc.sent == []
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "tokenAllowed", False)
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "setTokenAllowed", 0)
-    r = await m.set_token_allowed(TOKEN, True)  # id 0 and no event: applied at once
+    t.rpc.receipt_logs = []
+    with pytest.raises(MercurifiError) as missing:  # id 0 and no event: the outcome is unknown
+        await m.set_token_allowed(TOKEN, True)
+    assert missing.value.code == "MISSING_EVENT"
     assert sent(t.rpc) == (REGISTRY.lower(), "setTokenAllowed", [ACCOUNT, TOKEN, True])
+    t.rpc.receipt_logs = [registry_log("TokenAllowed", account=A(0x99), token=TOKEN, allowed=True)]
+    with pytest.raises(MercurifiError, match="no \\*Queued event"):  # another account's event proves nothing
+        await m.set_token_allowed(TOKEN, True)
+    t.rpc.receipt_logs = [registry_log("TokenAllowed", token=TOKEN, allowed=True)]
+    r = await m.set_token_allowed(TOKEN, True)  # id 0, but the receipt shows it applied
     assert (r.outcome, r.queued_id) == ("immediate", None) and r.warnings
+    t.rpc.receipt_logs = []
     assert (await m.set_token_allowed(TOKEN, False)).outcome == "immediate"
     with pytest.raises(InvalidInputError, match="not a Mercurifi Launch token"):
         await m.set_token_allowed(A(0x42), True)

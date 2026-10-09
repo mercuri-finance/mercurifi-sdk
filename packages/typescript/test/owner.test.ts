@@ -185,6 +185,9 @@ describe('owner UX', () => {
     expect(p.expiresIfQueued).toBe(now + 3_600 + 604_800);
     expect(p.summary[0]).toMatch(/maxTradeUsdc: 100 -> 50 applies immediately/);
     expect(p.summary[1]).toMatch(/periodSpendCap: 500 -> 900 is queued; executable from .* until /);
+    const iso = (t: number) => new Date(t * 1000).toISOString();
+    expect(p.summary[1]!.endsWith(`executable from ${iso(now + 3_600)} until ${iso(now + 3_600 + 604_800)}`)).toBe(true);
+    expect(iso(1_700_000_000)).toBe('2023-11-14T22:13:20.000Z');
     expect(rpc.sent).toHaveLength(0);
   });
 
@@ -347,15 +350,26 @@ describe('owner functions: target, arguments and outcome', () => {
     expect(onWarning).toHaveBeenCalled();
   });
 
-  it('setTokenAllowed(true) warns; an id-0 race maps to immediate; false is immediate', async () => {
+  it('setTokenAllowed(true) warns; an id-0 race is MISSING_EVENT unless the receipt shows it applied; false is immediate', async () => {
     const { rpc, m } = await mgr();
     rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setTokenAllowed', 0n);
-    const r = await m.setTokenAllowed(TOKEN, true);
+    rpc.receiptLogs = [];
+    await expect(m.setTokenAllowed(TOKEN, true)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
     expect(sent(rpc)).toEqual({ to: REGISTRY, functionName: 'setTokenAllowed', args: [ACCOUNT, TOKEN, true] });
+    rpc.receiptLogs = [registryLog('TokenAllowed', { token: TOKEN, allowed: true })];
+    const r = await m.setTokenAllowed(TOKEN, true);
     expect([r.outcome, r.queuedId]).toEqual(['immediate', null]);
     expect(r.warnings.length).toBeGreaterThan(0);
+    rpc.receiptLogs = [];
     const off = await m.setTokenAllowed(TOKEN, false);
     expect(off.outcome).toBe('immediate');
+  });
+
+  it('a queued decision with an event of another account is still MISSING_EVENT', async () => {
+    const { rpc, m } = await mgr();
+    rpc.read(REGISTRY, agentPolicyRegistryAbi, 'setTokenAllowed', 0n);
+    rpc.receiptLogs = [registryLog('TokenAllowed', { account: A(0x99), token: TOKEN, allowed: true })];
+    await expect(m.setTokenAllowed(TOKEN, true)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
   });
 
   it('executeQueued reports executed vs cancelled from the receipt', async () => {

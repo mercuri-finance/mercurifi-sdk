@@ -10,7 +10,6 @@ import asyncio
 import secrets
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from .abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, LAUNCH_FACTORY, LAUNCH_TOKEN
@@ -37,6 +36,7 @@ from .policy import (
 )
 from .queue import QUEUE_EVENTS, QueuedChange, effective_eta, list_queued, scan_logs
 from .reads import AccountState, is_agent_account, read_account_state, read_agent, read_ceilings, read_registry
+from .revert import _time
 from .signers import Signer
 from .tx import WriteRequest
 from .units import resolve_token_amount, resolve_usdc6, usdc6_to_wei
@@ -104,7 +104,8 @@ def _none(summary: str) -> ChangeResult:
 
 
 def _at(t: int) -> str:
-    return datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """ISO 8601 UTC with milliseconds, as the TypeScript SDK prints it (Date.toISOString)."""
+    return _time(t)
 
 
 def _expiry(now: int, days: int | None) -> int:
@@ -176,7 +177,17 @@ async def _send_change(
         raise MercurifiError(
             f"The receipt of {sent.tx_hash} has no *Queued event, so the queue id is unknown; list the queue to find it.", code="MISSING_EVENT"
         )
-    return done("immediate" if queued_ev is None and expected in ("queued", "mixed") else expected)
+    # Decided as queued before sending, but nothing was queued: the chain state moved since the check. Reported as applied
+    # only when the receipt shows the account changing (e.g. PolicyApplied, IncreaseDelaySet); otherwise the outcome is
+    # unknown and is never reported as a queue item without an id.
+    if expected == "queued" and queued_ev is None:
+        if events:
+            return done("immediate")
+        raise MercurifiError(
+            f"The receipt of {sent.tx_hash} has no *Queued event and no event showing the change applied; the account changed "
+            "since it was checked, so read its state or list the queue before retrying.", code="MISSING_EVENT"
+        )
+    return done("immediate" if queued_ev is None and expected == "mixed" else expected)
 
 
 class OwnerClient:
@@ -327,13 +338,17 @@ class AccountManager:
 
         return replace(await self._registry_write("setPolicy", [plan.target.to_abi()], plan.outcome, describe, warnings), preview=plan)
 
+    async def _time_and_delay(self) -> tuple[int, int]:
+        """(now, delay): what a queued agent change is judged against."""
+        now, delay = await asyncio.gather(
+            self._mf.rpc.latest_timestamp(), read_registry(self._mf.rpc, self._agents.registry, "increaseDelay", self.account))
+        return int(now), int(delay)
+
     async def _agent_context(self) -> tuple[int, int, int]:
-        """(now, delay, active agent count): what a queued agent change is judged against."""
-        now, delay, count = await asyncio.gather(
-            self._mf.rpc.latest_timestamp(),
-            read_registry(self._mf.rpc, self._agents.registry, "increaseDelay", self.account),
-            read_registry(self._mf.rpc, self._agents.registry, "activeAgentCount", self.account))
-        return int(now), int(delay), int(count)
+        """(now, delay, active agent count): _time_and_delay plus the count for the agent-limit warning."""
+        (now, delay), count = await asyncio.gather(
+            self._time_and_delay(), read_registry(self._mf.rpc, self._agents.registry, "activeAgentCount", self.account))
+        return now, delay, int(count)
 
     @staticmethod
     def _check_expiry_reachable(expires_at: int, now: int, delay: int) -> None:
@@ -368,7 +383,7 @@ class AccountManager:
             self._agent_warnings(perms, count), True)
 
     async def set_agent(self, agent: str, *, expires_in_days: int | None = None, permissions: Sequence[str] | None = None) -> ChangeResult:
-        now, delay, _count = await self._agent_context()
+        now, delay = await self._time_and_delay()
         current = await read_agent(self._mf.rpc, self._agents, self.account, agent, now)
         if not current.active:
             raise InvalidInputError("agent", f"{agent} is not an active agent; use add_agent")
