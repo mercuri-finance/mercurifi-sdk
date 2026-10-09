@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import weakref
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -14,16 +15,21 @@ class NonceManager:
     error, a timeout, a cancellation) forgets the local value, so the next send re-reads the pending count from the
     chain. Use one agent key per process: two processes sharing a key race for nonces; the account allows up to 8
     agent keys for parallelism, so give each process its own.
+
+    Locks are kept per running event loop (an asyncio.Lock binds to the loop that first waits on it), so a wrapper
+    that calls `asyncio.run` per call cannot hit a cross-loop RuntimeError here. The nonce cache is shared across
+    loops, which is safe because sends are never concurrent across loops in one thread. The RPC client itself (httpx)
+    is still bound to one loop: use one client per loop.
     """
 
     def __init__(self, fetch_pending: Callable[[str], Awaitable[int]]) -> None:
         self._fetch = fetch_pending
         self._next: dict[str, int] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, asyncio.Lock]] = weakref.WeakKeyDictionary()
 
     async def with_nonce(self, address: str, fn: Callable[[int], Awaitable[T]]) -> T:
         key = address.lower()
-        lock = self._locks.setdefault(key, asyncio.Lock())
+        lock = self._locks.setdefault(asyncio.get_running_loop(), {}).setdefault(key, asyncio.Lock())
         async with lock:
             nonce = self._next.get(key)
             if nonce is None:

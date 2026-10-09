@@ -324,3 +324,40 @@ async def test_private_key_stays_out_of_surfaced_errors() -> None:
     import traceback
 
     assert SECRET_KEY not in "".join(traceback.format_exception(e.value)) + repr(e.value)
+
+
+async def test_malformed_receipt_is_an_rpc_error() -> None:
+    rpc = local_rpc()
+    mf = await _client(rpc)
+    rpc.on("eth_getTransactionReceipt", lambda p: {"status": "0x0"})
+    with pytest.raises(MercurifiError) as e:
+        await mf.sender.send(local_key(OWNER_KEY), req())
+    assert e.value.code == "RPC_ERROR"
+
+
+async def test_chain_deadline_validates_both_arguments() -> None:
+    mf = await _client(local_rpc())
+    for args in ((0, 60), (120, 0), (120, True), (120.5, 60), (120, "60")):
+        with pytest.raises(MercurifiError) as e:
+            await chain_deadline(mf.rpc, *args)
+        assert e.value.code == "INVALID_INPUT"
+
+
+def test_nonce_locks_are_per_event_loop() -> None:
+    import asyncio
+
+    async def fetch(address: str) -> int:
+        return 3
+
+    manager = NonceManager(fetch)
+
+    async def two() -> list[int]:
+        async def fn(n: int) -> int:
+            await asyncio.sleep(0.001)
+            return n
+
+        return list(await asyncio.gather(manager.with_nonce("0xAb", fn), manager.with_nonce("0xab", fn)))
+
+    for _ in range(2):  # a fresh loop per call, as a sync wrapper using asyncio.run would
+        assert asyncio.run(two()) == [3, 4]
+        manager.reset("0xab")

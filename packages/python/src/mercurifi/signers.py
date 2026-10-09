@@ -6,9 +6,11 @@ from collections.abc import Callable
 from typing import Any, NoReturn, Protocol
 
 from eth_account import Account
+from eth_account.signers.local import LocalAccount
 from eth_account.typed_transactions.typed_transaction import TypedTransaction
 
 from .errors import InvalidInputError, MercurifiError
+from .redact import first_line, redact_urls_in
 
 _KEY = re.compile(r"0x[0-9a-fA-F]{64}")
 # secp256k1 group order, and half of it: a larger s is the malleable twin, which nodes reject.
@@ -25,7 +27,9 @@ class Signer(Protocol):
 
 
 class _Sealed:
-    """Base for objects that hide a secret: read-only, never pickled or copied."""
+    """Base for objects that hide a secret: slots only (no __dict__ to dump), read-only, never pickled or copied."""
+
+    __slots__ = ()
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"{type(self).__name__} is read-only")
@@ -45,48 +49,67 @@ def _set(obj: object, **values: object) -> None:
         object.__setattr__(obj, name, value)
 
 
-class LocalKeySigner(_Sealed):
-    """Signs with a key held in this process. The key lives only in a closure: not an attribute, not in any message."""
+def _account_from(private_key: object) -> LocalAccount | None:
+    """Validates and loads a key. Never raises, and clears every local that held the key before returning, so a
+    traceback taken later (Sentry local variables, loguru diagnose, rich) cannot contain it."""
+    account: LocalAccount | None = None
+    key: str | None = None
+    try:
+        if isinstance(private_key, str):
+            key = private_key if private_key.startswith("0x") else f"0x{private_key}"
+            if _KEY.fullmatch(key) is not None:
+                account = Account.from_key(key)
+    except Exception:  # deliberately dropped: nothing derived from the key may reach a message
+        account = None
+    finally:
+        key = None
+        private_key = None
+    return account
 
+
+class LocalKeySigner(_Sealed):
+    """Signs with a key held in this process. The key lives only in a closure: not an attribute, not in any message.
+    Build one with `local_key`."""
+
+    __slots__ = ("address", "_sign")
     address: str
     _sign: Callable[[dict[str, Any]], bytes]
 
-    def __init__(self, private_key: str) -> None:
-        if not isinstance(private_key, str):
-            raise InvalidInputError("private_key", "expected a 32-byte hex private key as a string")
-        key = private_key if private_key.startswith("0x") else f"0x{private_key}"
-        if _KEY.fullmatch(key) is None:
-            raise InvalidInputError("private_key", "expected a 32-byte hex private key")
-        account = None
-        try:
-            account = Account.from_key(key)
-        except Exception:  # deliberately dropped: nothing derived from the key may reach a message
-            pass
-        if account is None:
-            raise InvalidInputError("private_key", "the value is not a valid secp256k1 private key (32-byte hex, non-zero, below the curve order)")
-        acct = account
-
+    def __init__(self, account: LocalAccount) -> None:
         def sign(tx: dict[str, Any]) -> bytes:
-            return bytes(acct.sign_transaction(tx).raw_transaction)
+            return bytes(account.sign_transaction(tx).raw_transaction)
 
-        _set(self, address=acct.address, _sign=sign)
+        _set(self, address=account.address, _sign=sign)
 
     async def sign_transaction(self, tx: dict[str, Any]) -> bytes:
-        return self._sign(tx)
+        failure: MercurifiError | None = None
+        try:
+            return self._sign(tx)
+        except Exception as exc:  # eth_account frames hold the key: raise a fresh error outside, with no traceback into them
+            failure = MercurifiError(f"The signer failed: {redact_urls_in(first_line(str(exc) or type(exc).__name__))}", code="SIGNER_ERROR")
+        raise failure
 
     def __repr__(self) -> str:
-        return f"LocalKeySigner({self.address})"
+        return f"LocalKeySigner({getattr(self, 'address', '?')})"
 
 
 def local_key(private_key: str) -> LocalKeySigner:
-    """A signer over a private key. Raises InvalidInputError for non-string input or anything but a valid 32-byte hex key."""
-    return LocalKeySigner(private_key)
+    """A signer over a private key. Raises InvalidInputError for non-string input or anything but a valid 32-byte hex key.
+
+    Every frame that held the key is cleared before the error is raised.
+    """
+    account = _account_from(private_key)
+    private_key = None  # type: ignore[assignment]
+    if account is None:
+        raise InvalidInputError("private_key", "expected a 32-byte hex private key as a string (0x plus 64 hex digits, non-zero, below the curve order)")
+    return LocalKeySigner(account)
 
 
 class AgentKey(_Sealed):
-    """A freshly generated agent key. The secret is not in repr, str, vars() or pickle; read it on purpose with
-    `export_private_key()` and store it on your server only."""
+    """A freshly generated agent key. The secret is not in repr, str, vars() or pickle, and there is no attribute for it;
+    read it on purpose with `export_private_key()` and store it on your server only."""
 
+    __slots__ = ("address", "_export")
     address: str
     _export: Callable[[], str]
 
@@ -99,12 +122,8 @@ class AgentKey(_Sealed):
     def export_private_key(self) -> str:
         return self._export()
 
-    @property
-    def private_key(self) -> str:
-        return self._export()
-
     def __repr__(self) -> str:
-        return f"AgentKey(address={self.address})"
+        return f"AgentKey(address={getattr(self, 'address', '?')})"
 
 
 def generate_agent_key() -> AgentKey:
@@ -135,6 +154,7 @@ def _is_int(v: object) -> bool:
 class KmsSigner(_Sealed):
     """Wraps a KmsAdapter; every signature is recovered and checked against the adapter's address."""
 
+    __slots__ = ("address", "_adapter")
     address: str
     _adapter: KmsAdapter
 
@@ -172,7 +192,7 @@ class KmsSigner(_Sealed):
             return None
 
     def __repr__(self) -> str:
-        return f"KmsSigner({self.address})"
+        return f"KmsSigner({getattr(self, 'address', '?')})"
 
 
 def kms_signer(adapter: KmsAdapter) -> KmsSigner:

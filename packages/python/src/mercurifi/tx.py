@@ -105,7 +105,14 @@ class TxSender:
         assert outcome is not None
         tx_hash, receipt, preflight_data = outcome
         if receipt.get("status") != "0x1":
-            raise TxRevertedError(tx_hash, await self._replay(signer.address, req, int(receipt["blockNumber"], 16)))
+            block_number: int | None = None
+            try:
+                block_number = int(receipt["blockNumber"], 16)
+            except Exception:
+                block_number = None
+            if block_number is None:
+                raise MercurifiError("The RPC request failed: the receipt has no valid block number", code="RPC_ERROR")
+            raise TxRevertedError(tx_hash, await self._replay(signer.address, req, block_number))
         return SentTx(tx_hash, receipt, preflight_data)
 
     async def _attempt(self, signer: Signer, req: WriteRequest, nonce: int) -> tuple[str, dict[str, Any], str]:
