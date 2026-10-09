@@ -80,9 +80,9 @@ def test_rejects_direct_references(tmp_path: Path) -> None:
 
 
 def test_declares_tomli_for_python_310() -> None:
-    try:
+    if sys.version_info >= (3, 11):
         import tomllib
-    except ModuleNotFoundError:  # Python 3.10
-        import tomli as tomllib  # type: ignore[no-redef]
+    else:  # Python 3.10
+        import tomli as tomllib
     data = tomllib.loads((SCRIPT.parent.parent / "pyproject.toml").read_text())
     assert 'tomli==2.2.1; python_version < "3.11"' in data["dependency-groups"]["dev"]

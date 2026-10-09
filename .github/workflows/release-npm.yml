@@ -1,0 +1,46 @@
+name: release-npm
+
+# Inert until the owner creates the repository, the npm trusted publisher and the npm-release environment with required
+# reviewers. Manual dispatch only; the environment gate is the owner's approval for this specific publish.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write # OIDC token for trusted publishing and provenance; this job only
+    defaults:
+      run:
+        working-directory: packages/typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install the pinned CI tools (hashed)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci"
+          "$RUNNER_TEMP/ci/bin/pip" install --require-hashes --no-deps -r "$GITHUB_WORKSPACE/.github/ci-requirements.txt"
+          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"
+      - run: npm ci --ignore-scripts
+      - run: npm audit signatures
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run check:package && npm run typecheck && npm test && npm run build && npm run smoke:dist
+      - run: npm sbom --sbom-format cyclonedx --omit dev > sbom.cdx.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: npm-sbom
+          path: packages/typescript/sbom.cdx.json
+      # Trusted publishing: the OIDC token is minted for this job only; no long-lived npm token is stored.
+      - run: npm publish --provenance --access public

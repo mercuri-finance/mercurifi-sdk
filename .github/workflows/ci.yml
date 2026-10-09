@@ -1,0 +1,87 @@
+name: ci
+
+# Runs only on pull requests and pushes to main of a repository that does not exist yet. Nothing here publishes.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/typescript
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: packages/typescript/package-lock.json
+      - name: Install the pinned CI tools (hashed)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci"
+          "$RUNNER_TEMP/ci/bin/pip" install --require-hashes --no-deps -r "$GITHUB_WORKSPACE/.github/ci-requirements.txt"
+          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"
+      - run: npm ci --ignore-scripts
+      - run: npm audit signatures
+      # Runtime tree only (viem and its dependencies). The dev-only advisory GHSA-82fw-gwwq-j7x9 in vitest 3.2.7's
+      # @vitest/mocker is accepted until vitest 4 (docs/releasing.md, "Accepted advisories").
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run check:package
+      - run: node ../../scripts/gen-abis.mjs --verify-digest
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # ESM and CJS imports in fresh processes, then the built Python wheel in an isolated venv.
+      - run: npm run smoke:dist
+
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install the pinned CI tools (hashed)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci"
+          "$RUNNER_TEMP/ci/bin/pip" install --require-hashes --no-deps -r "$GITHUB_WORKSPACE/.github/ci-requirements.txt"
+          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"
+      - run: uv sync --frozen
+      - run: uv run python scripts/check_pyproject.py
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest -q
+
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install the pinned CI tools (hashed)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci"
+          "$RUNNER_TEMP/ci/bin/pip" install --require-hashes --no-deps -r "$GITHUB_WORKSPACE/.github/ci-requirements.txt"
+          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"
+      - run: node scripts/check-workflows.mjs
+      - run: zizmor --min-severity medium .github/workflows

@@ -35,7 +35,7 @@
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "check:package": "node scripts/check-package.mjs",
     "gen:abis": "node ../../scripts/gen-abis.mjs",
-    "smoke:dist": "node scripts/smoke-dist.mjs && node scripts/smoke-dist.cjs"
+    "smoke:dist": "node scripts/smoke-dist.mjs && node scripts/smoke-dist.cjs && python3 ../python/scripts/smoke_wheel.py"
   },
   "dependencies": {
     "viem": "2.56.5"
