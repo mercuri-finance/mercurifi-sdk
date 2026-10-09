@@ -26,7 +26,9 @@ const frame = (field: string, text: string, unsafe: boolean): UntrustedText =>
 
 /** A link is kept only as a plain http(s)/ipfs URL: no credentials (`https://x.com@evil/` shows a decoy host), no spaces. */
 const isPlainLink = (text: string): boolean => {
-  if (text === '' || /\s/.test(text)) return false;
+  // `text` is already NFKC, so full-width forms of these characters have become ASCII here. `<` and `>` would let a link
+  // close its own wrapper; quotes and backticks break out of the strings and code spans a caller may embed it in.
+  if (text === '' || /[\s<>"`]/.test(text)) return false;
   try {
     const u = new URL(text);
     return LINK_PROTOCOLS.has(u.protocol) && u.username === '' && u.password === '';
@@ -53,9 +55,9 @@ export const wrapUntrusted = (field: string, raw: string, maxChars = DEFAULT_MAX
   const isLink = safeField.startsWith('link.');
   const input = preBound(typeof raw === 'string' ? raw : String(raw), max);
   const neutral = neutralizeUntrusted(input.normalize('NFKC'), { keepUrls: isLink }).trim();
-  if (isLink) return isPlainLink(neutral) && Array.from(neutral).length <= max ? frame(safeField, neutral, false) : frame(safeField, 'invalid link', true);
-  // Done last, so nothing removed above can splice a delimiter back together.
+  // Done last, so nothing removed above can splice a delimiter back together. Links get it too, as defence in depth (the plain-link check runs on the text before it, so a forged delimiter is rejected, not rewritten).
   const noDelims = neutral.replace(/<</g, '‹‹').replace(/>>/g, '››').trim();
+  if (isLink) return isPlainLink(neutral) && Array.from(noDelims).length <= max ? frame(safeField, noDelims, false) : frame(safeField, 'invalid link', true);
   return frame(safeField, truncateChars(noDelims, max, '…'), false);
 };
 

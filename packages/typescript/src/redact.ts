@@ -42,7 +42,7 @@ export const neutralizeUntrusted = (raw: string, o: { keepUrls?: boolean } = {})
   return o.keepUrls === true ? plain : redactUrlsIn(plain);
 };
 
-/** How much raw input is worth sanitising for a result of `maxChars` code points: 4x plus a margin (NFKC and stripping shrink, never grow it past this). */
+/** How much raw input is worth sanitising for a result of `maxChars` code points: 4x plus a margin (stripping only shrinks the text; NFKC can expand a code point, e.g. U+FDFA to 18, but the result is truncated to `maxChars` afterwards, so the output bound holds). */
 export const preBound = (raw: string, maxChars: number): string => raw.slice(0, maxChars * 4 + 256);
 
 /** Keeps at most `max` code points (never splits a surrogate pair) and appends `suffix` when it cut. */
