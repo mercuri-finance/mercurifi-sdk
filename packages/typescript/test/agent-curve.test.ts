@@ -1,13 +1,13 @@
 import { decodeFunctionData, encodeFunctionData, getAbiItem, parseTransaction, toFunctionSelector } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
+import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi } from '../src/abi/index.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 import { InvalidInputError } from '../src/errors.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
 import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, type AccountMockOptions, type CurveMockOptions } from './helpers/account.js';
-import { A, ACCOUNT, AGENT_KEY, localClient, localRpc, REGISTRY, TOKEN } from './helpers/local.js';
+import { A, ACCOUNT, AGENT_KEY, CURVE, localClient, localRpc, REGISTRY, TOKEN } from './helpers/local.js';
 
 const signer = localKey(AGENT_KEY);
 const WAD = 10n ** 18n;
@@ -194,6 +194,13 @@ describe('AgentClient preflight mirrors the account', () => {
     const { rpc, agent } = await setup();
     rpc.receiptLogs = [];
     await expect(agent.buy({ token: TOKEN, usdc: '1' })).rejects.toMatchObject({ code: 'FILL_NOT_FOUND' });
+  });
+
+  it('refuses a sell on a graduated curve before quoting it', async () => {
+    const { rpc, agent } = await setup({ phase: 2, balance: 5n * WAD });
+    rpc.read(CURVE, bondingCurveAbi, 'quoteSell', () => { throw new Error('quoteSell must not be read on a graduated curve'); });
+    await refused(agent.sell({ token: TOKEN, amountWei: WAD }), 'NotTrading');
+    expect(rpc.sent).toHaveLength(0);
   });
 
   it('checks Paused first: the owner pause or the platform pause, before the agent and the token', async () => {

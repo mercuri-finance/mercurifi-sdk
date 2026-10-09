@@ -195,13 +195,13 @@ export class AgentClient {
     const tokensIn = amount === 'all' ? balance : amount;
     if (tokensIn === 0n) throw new InvalidInputError('amount', amount === 'all' ? 'The account holds none of this token.' : 'The sell amount must be above zero.');
     if (tokensIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
-    const [phase, price, quote, basis] = await Promise.all([
-      this.curveRead<number>(curve, 'phase', undefined, at),
+    // Phase first: quoteSell on a graduated curve would revert with the curve's own error instead of NotTrading.
+    if (Number(await this.curveRead<number>(curve, 'phase', undefined, at)) === PHASE.Graduated) throw localRevert('NotTrading');
+    const [price, quote, basis] = await Promise.all([
       this.curveRead<bigint>(curve, 'price', undefined, at),
       this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn], at),
       readBasis(client, this.account, p.token, at),
     ]);
-    if (Number(phase) === PHASE.Graduated) throw localRevert('NotTrading');
     if (p.minUsdcOut6 !== undefined && p.minUsdcOut6 > MAX_UINT256 / SCALE) throw localRevert('AmountTooLarge');
     const { recorded } = recordedSellValue6(basis, tokensIn);
     const excessOutWei = tokensIn > recorded ? (await this.curveRead<readonly [bigint, bigint]>(curve, 'quoteSell', [tokensIn - recorded], at))[0] : 0n;
