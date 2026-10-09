@@ -1,6 +1,7 @@
 import type { Address, PublicClient } from 'viem';
 
 import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi } from './abi/index.js';
+import { MercurifiError } from './errors.js';
 import type { AgentBook } from './networks.js';
 import { decodePermissions, type Permission } from './permissions.js';
 import type { ChainPolicy } from './policy.js';
@@ -104,3 +105,13 @@ export const readAgent = async (client: PublicClient, agents: AgentBook, account
 };
 
 export const latestTimestamp = async (client: PublicClient): Promise<bigint> => (await client.getBlock({ blockTag: 'latest' })).timestamp;
+/**
+ * The current head, always read from the node: getBlock('latest') is never cached or joined to another call, unlike
+ * getBlockNumber, which shares an in-flight request even with cacheTime 0 (so it could answer with a head read before
+ * the caller's own last transaction was mined).
+ */
+export const latestBlockNumber = async (client: PublicClient): Promise<bigint> => {
+  const n = (await client.getBlock({ blockTag: 'latest' })).number;
+  if (n === null) throw new MercurifiError('RPC_ERROR', 'The RPC returned the latest block without a number.');
+  return n;
+};

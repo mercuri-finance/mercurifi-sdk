@@ -5,7 +5,7 @@ import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launch
 import { InvalidInputError, NotOwnerError } from '../src/errors.js';
 import { SELL_RISK_WARNING } from '../src/permissions.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
-import { listQueued, POLICY_TUPLE } from '../src/queue.js';
+import { listQueued, POLICY_TUPLE, scanLogs } from '../src/queue.js';
 import { localNetwork } from '../src/networks.js';
 import { localKey } from '../src/signers.js';
 import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, queueLog, registryLog, REGISTRY } from './helpers/account.js';
@@ -568,6 +568,37 @@ describe('owner client polish', () => {
     await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
     rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n, account: A(0x88) })];
     await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+});
+
+describe('scanLogs without toBlock', () => {
+  const scanTo = (rpc: ReturnType<typeof localRpc>, from: number) =>
+    rpc.calls.slice(from).filter((c) => c.method === 'eth_getLogs').map((c) => (c.params[0] as { toBlock: Hex }).toBlock).at(-1);
+
+  it('scans to the current head even when the client caches the block number', async () => {
+    const rpc = localRpc();
+    const cached = createPublicClient({ transport: rpc.transport() }) as PublicClient; // viem default cacheTime: 4 s
+    await cached.getBlockNumber();
+    rpc.block.number += 7n;
+    const from = rpc.calls.length;
+    await scanLogs(cached, { address: REGISTRY }, rpc.block.number - 3n);
+    expect(scanTo(rpc, from)).toBe(toHex(rpc.block.number));
+  });
+
+  it('does not join a block-number request already in flight from before the head moved', async () => {
+    const rpc = localRpc();
+    const client = createPublicClient({ transport: rpc.transport(), cacheTime: 0 }) as PublicClient;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const old = rpc.block.number;
+    rpc.on('eth_blockNumber', async () => { await gate; return toHex(old); });
+    const inflight = client.getBlockNumber({ cacheTime: 0 });
+    rpc.block.number += 7n;
+    const from = rpc.calls.length;
+    const scan = scanLogs(client, { address: REGISTRY }, old);
+    release();
+    await Promise.all([inflight, scan]);
+    expect(scanTo(rpc, from)).toBe(toHex(rpc.block.number));
   });
 });
 

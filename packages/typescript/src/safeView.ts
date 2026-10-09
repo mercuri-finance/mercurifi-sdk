@@ -5,7 +5,7 @@ import type { MercurifiClient } from './client.js';
 import { PHASE } from './curve.js';
 import { UnexpectedChainStateError } from './errors.js';
 import { neutralizeUntrusted, preBound, truncateChars } from './redact.js';
-import { isAgentAccount } from './reads.js';
+import { isAgentAccount, latestBlockNumber } from './reads.js';
 import { localRevert } from './revert.js';
 import { formatDecimal } from './units.js';
 
@@ -103,7 +103,7 @@ const safeWei = (v: unknown): bigint | null => (typeof v === 'string' && /^\d{1,
 export const readTokenSafeView = async (mf: MercurifiClient, token: Address): Promise<TokenSafeView> => {
   const client = mf.publicClient;
   const book = mf.network.launch;
-  const at = await client.getBlockNumber({ cacheTime: 0 });
+  const at = await latestBlockNumber(client);
   const read = <T>(address: Address, abi: unknown, functionName: string, args?: readonly unknown[]): Promise<T> =>
     client.readContract({ address, abi, functionName, ...(args === undefined ? {} : { args }), blockNumber: at } as never) as Promise<T>;
   const curve = await read<Address>(book.factory, launchFactoryAbi, 'curveOf', [token]);

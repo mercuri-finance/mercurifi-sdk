@@ -5,7 +5,7 @@ import type { MercurifiApi } from './api/types.js';
 import type { AgentBook } from './networks.js';
 import { decodePermissions, type Permission } from './permissions.js';
 import { POLICY_FIELDS, QUEUE_TTL_SECONDS, type ChainPolicy, type PolicyField } from './policy.js';
-import { latestTimestamp, readRegistry, toChainPolicy } from './reads.js';
+import { latestBlockNumber, latestTimestamp, readRegistry, toChainPolicy } from './reads.js';
 
 export const LOG_CHUNK = 10_000n;
 /** 14 days at ~0.5 s blocks: an item is executable at most `increaseDelay` (≤ 7 d) + 7 d after it was queued. */
@@ -23,7 +23,7 @@ export const accountTopic = (account: Address): Hex => pad(account.toLowerCase()
 export const scanLogs = async (
   client: PublicClient, filter: { address: Address; topics?: readonly (Hex | null)[] }, fromBlock: bigint, toBlock?: bigint, chunk = LOG_CHUNK,
 ): Promise<RawLog[]> => {
-  const head = toBlock ?? (await client.getBlockNumber({ cacheTime: 0 }));
+  const head = toBlock ?? (await latestBlockNumber(client));
   const out: RawLog[] = [];
   for (let start = fromBlock; start <= head; start += chunk) {
     const end = start + chunk - 1n > head ? head : start + chunk - 1n;
@@ -168,7 +168,7 @@ export const listQueued = async (
   // An empty API list is not proof of an empty queue (the API may lag or be wrong): still scan the recent window.
   if (ids === null || ids.size === 0) {
     ids = ids ?? new Set<bigint>();
-    const head = await client.getBlockNumber({ cacheTime: 0 });
+    const head = await latestBlockNumber(client);
     const windowStart = head > QUEUE_WINDOW_BLOCKS ? head - QUEUE_WINDOW_BLOCKS : 0n;
     const from = opts.fromBlock ?? (windowStart > agents.deployBlock ? windowStart : agents.deployBlock);
     const logs = await scanLogs(client, { address: agents.registry, topics: [null, accountTopic(account)] }, from, head);
