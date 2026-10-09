@@ -29,8 +29,8 @@ export interface StreamOptions {
    * Called before every reconnect wait. Without it the stream retries silently: a dead server or a rejected key (401 on a
    * retryable path, 5xx) loops with backoff and no signal, so pass this to log, count or give up (abort the signal).
    */
-  onReconnect?: (info: ReconnectInfo) => void;
-  /** Clock for connection lifetimes (tests). */
+  onReconnect?: (info: ReconnectInfo) => void | Promise<void>;
+  /** Clock for connection lifetimes in milliseconds (tests). Defaults to `performance.now`. */
   now?: () => number;
 }
 
@@ -167,7 +167,7 @@ export async function* openStream(request: { url: string; headers: Record<string
   const sleepFn = o.sleep;
   const sleep = (ms: number): Promise<void> => (sleepFn === undefined ? abortableSleep(ms, o.signal) : sleepFn(ms));
   const random = o.random ?? Math.random;
-  const now = o.now ?? Date.now;
+  const now = o.now ?? (() => performance.now()); // monotonic: a wall-clock step cannot fake or hide a healthy connection
   const min = Math.max(1, o.minBackoffMs ?? 500);
   const max = Math.max(min, o.maxBackoffMs ?? 30_000);
   const idleMs = o.idleTimeoutMs ?? 45_000;
@@ -183,7 +183,9 @@ export async function* openStream(request: { url: string; headers: Record<string
   const spent = () => o.maxReconnects !== undefined && reconnects++ >= o.maxReconnects;
   const notify = (reason: string, delayMs: number) => {
     try {
-      o.onReconnect?.({ attempt, delayMs, reason });
+      // An async observer's rejection must not become an unhandled rejection that kills the process.
+      const r: unknown = o.onReconnect?.({ attempt, delayMs, reason });
+      void Promise.resolve(r).catch(() => undefined);
     } catch {
       // a throwing observer must not break the stream
     }

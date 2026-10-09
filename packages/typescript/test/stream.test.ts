@@ -168,13 +168,32 @@ describe('openStream', () => {
 
   it('reconnects when the connection goes silent past the idle timeout', async () => {
     let n = 0;
+    const signals: AbortSignal[] = [];
     const f = vi.fn(async (_u: unknown, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
       if (n++ > 0) return sse(200, ['id: 9-0\nevent: t\ndata: 9\n\n']);
+      // The mock honours the signal like real fetch: the body only ends when the connection is aborted.
       return new Response(new ReadableStream<Uint8Array>({ start(c) { init?.signal?.addEventListener('abort', () => c.error(new Error('idle'))); } }), { status: 200 });
     });
     const events = await collect(openStream(REQ, { fetch: f as unknown as typeof fetch, idleTimeoutMs: 20, maxReconnects: 1, sleep: nosleep }));
     expect(events.map((e) => e.id)).toEqual(['9-0']);
     expect(f).toHaveBeenCalledTimes(2);
+    expect(signals[0]?.aborted).toBe(true); // the idle timer aborted the first connection's signal
+  });
+
+  it('swallows an async onReconnect rejection', async () => {
+    let n = 0;
+    const unhandled: unknown[] = [];
+    const h = (e: unknown) => unhandled.push(e);
+    process.on('unhandledRejection', h);
+    const f = vi.fn(async () => { if (n++ > 0) return sse(200, ['id: 1-0\nevent: t\ndata: 1\n\n']); throw new Error('down'); });
+    const seen: number[] = [];
+    const events = await collect(openStream(REQ, { fetch: f as unknown as typeof fetch, maxReconnects: 1, sleep: nosleep, onReconnect: async (i) => { seen.push(i.attempt); throw new Error('async observer bug'); } }));
+    await new Promise((r) => setTimeout(r, 10));
+    process.off('unhandledRejection', h);
+    expect(seen).toHaveLength(1);
+    expect(events.map((e) => e.id)).toEqual(['1-0']);
+    expect(unhandled).toEqual([]);
   });
 
   it('rejects a malformed lastEventId', async () => {
