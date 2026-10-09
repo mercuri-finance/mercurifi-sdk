@@ -432,8 +432,11 @@ export class AgentClient {
    * flag in `exact`, the `min…Out` in `atLeast` (or `exact`); sweepToOwner needs `token` and `amount`; claimFees nothing. A launch needs
    * all eight request fields; its `expectedConfigHash` must be the factory's current `configHash()`, which is read here
    * (omit it), and its deadline is checked against a window computed here from the latest block and the policy.
-   * Your own `deadline` window is intersected with that window, never widened. The local permission, pause and cap
-   * checks run first, and a buy always gets the graduation gas floor.
+   * Your own `deadline` window is intersected with that window, never widened. Only the registry's authorize preamble
+   * runs locally first (pause, active and unexpired key, permission, action and launch limits); the trade caps
+   * (maxTradeUsdc, period spend and sell caps, per-token cap, price impact, token age, allowlist) are not re-checked
+   * here: the contract enforces them, and a breach reverts in the preflight before anything is sent. A buy always gets
+   * the graduation gas floor.
    */
   async sendBuilt(built: BuiltTx, expectation: Omit<BuildExpectation, 'chainId' | 'account'>): Promise<Fill> {
     const e = { functionName: expectation.functionName, ...snapshotExpectation(expectation) };
