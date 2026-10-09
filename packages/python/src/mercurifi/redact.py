@@ -6,6 +6,8 @@ import re
 import unicodedata
 from urllib.parse import urlsplit
 
+from .errors import MercurifiError
+
 # Any "scheme://" or "scheme:\\" matches anywhere (no leading word boundary, so "x:https://k@h/KEY" cannot slip
 # through); data:/javascript: only after a non-alphanumeric so words such as "metadata:" are left alone. The lookbehind
 # anchors a scheme at the start of its run, so a long letter run is scanned once, not once per start.
@@ -164,6 +166,16 @@ def truncate_chars(text: str, max_chars: int, suffix: str) -> str:
 
 def first_line(message: str) -> str:
     return message.split("\n", 1)[0]
+
+
+def rpc_error(error: BaseException) -> MercurifiError:
+    """Turns any non-SDK failure from the RPC path into a credential-free RPC_ERROR: first line only, URLs reduced to
+    hosts. Callers raise the result OUTSIDE their except block, so no __cause__ or __context__ keeps the original
+    exception (whose text may embed the RPC URL)."""
+    if isinstance(error, MercurifiError):
+        return error
+    text = str(error) or type(error).__name__
+    return MercurifiError(f"The RPC request failed: {redact_urls_in(first_line(text))}", code="RPC_ERROR")
 
 
 class RedactingFilter(logging.Filter):

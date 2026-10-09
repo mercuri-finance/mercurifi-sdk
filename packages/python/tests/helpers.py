@@ -46,6 +46,17 @@ class _Revert(Exception):
         self.data = data
 
 
+Revert = _Revert
+
+
+class NodeError(Exception):
+    """A JSON-RPC error answer (not a revert): the node itself failed the request."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class MockRpc:
     def __init__(self, chain_id: int) -> None:
         self.chain_id = chain_id
@@ -62,6 +73,13 @@ class MockRpc:
         self._reads: dict[tuple[str, str], tuple[Contract, str, Any]] = {}
         self._reverts: dict[tuple[str, str], str] = {}
         self._receipts: dict[str, dict[str, Any]] = {}
+        self._on: dict[str, Callable[[list[Any]], Any]] = {}
+
+    def on(self, method: str, handler: Callable[[list[Any]], Any]) -> MockRpc:
+        """Overrides one method. The handler returns a result, raises NodeError (a JSON-RPC error answer), Revert, or any
+        other exception (a transport failure)."""
+        self._on[method] = handler
+        return self
 
     def read(self, address: str, contract: Contract, fn: str, result: Any) -> MockRpc:
         key = (address.lower(), contract.selector(fn))
@@ -87,6 +105,8 @@ class MockRpc:
             result = self._dispatch(method, params)
         except _Revert as r:
             return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"code": 3, "message": "execution reverted", "data": r.data}})
+        except NodeError as e:
+            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"code": e.code, "message": str(e)}})
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
 
     def _call(self, tx: dict[str, Any]) -> str:
@@ -116,6 +136,8 @@ class MockRpc:
 
     def _dispatch(self, method: str, params: list[Any]) -> Any:
         b = self.block
+        if method in self._on:
+            return self._on[method](params)
         if method == "eth_chainId":
             return hex(self.chain_id)
         if method == "eth_blockNumber":

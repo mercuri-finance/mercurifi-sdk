@@ -8,10 +8,13 @@ from typing import Any, NoReturn
 import httpx
 
 from .errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
+from .gas import MAX_PRIORITY_FEE_PER_GAS
 from .networks import LOCAL_CHAIN_ID, NETWORKS, AgentBook, NetworkBook, is_loopback_url, url_host
+from .nonce import NonceManager
 from .policy import MAX_DEADLINE_SECONDS
 from .redact import first_line, redact_url, redact_urls_in
 from .rpc import Rpc, RpcError
+from .tx import TxSender
 from .verify import verify_network
 
 
@@ -22,12 +25,13 @@ class ClientSettings:
     max_fee_per_gas_cap: int | None
     deadline_seconds: int
     api_key: str | None
+    max_priority_fee_per_gas: int = MAX_PRIORITY_FEE_PER_GAS
 
     def __repr__(self) -> str:
         key = "None" if self.api_key is None else "'[redacted]'"
         return (
             f"ClientSettings(receipt_timeout={self.receipt_timeout!r}, poll_interval={self.poll_interval!r}, "
-            f"max_fee_per_gas_cap={self.max_fee_per_gas_cap!r}, deadline_seconds={self.deadline_seconds!r}, api_key={key})"
+            f"max_fee_per_gas_cap={self.max_fee_per_gas_cap!r}, max_priority_fee_per_gas={self.max_priority_fee_per_gas!r}, deadline_seconds={self.deadline_seconds!r}, api_key={key})"
         )
 
     def __reduce__(self) -> NoReturn:
@@ -45,6 +49,12 @@ class AsyncClient:
         self.settings = settings
         self.api_base_url = api_base_url
         self._on_warning = on_warning
+        # One agent key per process: sends from one key are serialised and nonces are counted locally.
+        self.nonces = NonceManager(lambda address: rpc.get_transaction_count(address, "pending"))
+        self.sender = TxSender(
+            rpc, network.chain_id, self.nonces, settings.receipt_timeout, settings.poll_interval, settings.max_fee_per_gas_cap,
+            max_priority_fee_per_gas=settings.max_priority_fee_per_gas,
+        )
 
     def __repr__(self) -> str:
         return f"AsyncClient(network={self.network.name!r}, rpc={self.rpc!r}, settings={self.settings!r})"
@@ -117,6 +127,7 @@ async def create_client(
     receipt_timeout: float = 60.0,
     poll_interval: float = 0.25,
     max_fee_per_gas_cap: int | None = None,
+    max_priority_fee_per_gas: int = MAX_PRIORITY_FEE_PER_GAS,
     deadline_seconds: int = 60,
     on_warning: Callable[[str], None] | None = None,
     api_base_url: str | None = None,
@@ -144,6 +155,8 @@ async def create_client(
     _positive("poll_interval", poll_interval, "seconds")
     if max_fee_per_gas_cap is not None and (isinstance(max_fee_per_gas_cap, bool) or not isinstance(max_fee_per_gas_cap, int) or max_fee_per_gas_cap < 1):
         raise InvalidInputError("max_fee_per_gas_cap", "max_fee_per_gas_cap must be a positive integer (wei per gas)")
+    if isinstance(max_priority_fee_per_gas, bool) or not isinstance(max_priority_fee_per_gas, int) or max_priority_fee_per_gas < 1:
+        raise InvalidInputError("max_priority_fee_per_gas", "max_priority_fee_per_gas must be a positive integer (wei per gas)")
     resolved_api_url = api_base_url if api_base_url is not None else book.api_base_url
     if api_base_url is not None:
         _check_api_url("api_base_url", api_base_url)
@@ -170,7 +183,7 @@ async def create_client(
         if failure is not None:
             await rpc.aclose()
             raise failure
-    settings = ClientSettings(receipt_timeout, poll_interval, max_fee_per_gas_cap, deadline_seconds, api_key)
+    settings = ClientSettings(receipt_timeout, poll_interval, max_fee_per_gas_cap, deadline_seconds, api_key, max_priority_fee_per_gas)
     # The default HTTP API arrives in Task P9; until then "default" resolves to None.
     resolved_api: Any = None if isinstance(api, str) and api == "default" else api
     return AsyncClient(book, rpc, resolved_api, settings, warn, resolved_api_url)
