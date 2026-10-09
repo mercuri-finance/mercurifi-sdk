@@ -5,13 +5,17 @@ messages and tracebacks embed the full URL (often with a provider key in the pat
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
 
 from .codec import Contract, to_hex
 from .errors import MercurifiError
-from .redact import first_line, redact_url, redact_urls_in
+from .redact import first_line, install_log_redaction, redact_url, redact_urls_in
+
+
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class RpcError(Exception):
@@ -33,7 +37,12 @@ def _data_of(error: dict[str, Any]) -> str | None:
 
 
 class Rpc:
-    def __init__(self, url: str, *, transport: httpx.AsyncBaseTransport | None = None, timeout: float = 15.0) -> None:
+    def __init__(
+        self, url: str, *, transport: httpx.AsyncBaseTransport | None = None, timeout: float = 15.0,
+        max_response_bytes: int = MAX_RESPONSE_BYTES,
+    ) -> None:
+        install_log_redaction()
+        self._max_bytes = max_response_bytes
         self._url = url
         self._host = redact_url(url)
         self._http = httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False)
@@ -56,29 +65,53 @@ class Rpc:
     async def request(self, method: str, params: list[Any]) -> Any:
         self._id += 1
         failure: str | None = None
-        status, body = 0, None
+        status, raw = 0, b""
         try:
-            response = await self._http.post(self._url, json={"jsonrpc": "2.0", "id": self._id, "method": method, "params": params})
-            status = response.status_code
-            body = response.json() if status < 400 else None
-        except httpx.HTTPError as exc:
+            payload = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
+            async with self._http.stream("POST", self._url, json=payload) as response:
+                status = response.status_code
+                declared = response.headers.get("content-length", "")
+                if declared.isdigit() and int(declared) > self._max_bytes:
+                    failure = f"the response is larger than {self._max_bytes} bytes"
+                elif 200 <= status < 300:
+                    chunks: list[bytes] = []
+                    size = 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > self._max_bytes:
+                            failure = f"the response is larger than {self._max_bytes} bytes"
+                            break
+                        chunks.append(chunk)
+                    raw = b"".join(chunks)
+        except Exception as exc:  # transport, decoding or anything else: the text may embed the URL, so redact it
             failure = f"{type(exc).__name__}: {exc}"
-        except ValueError:
-            failure = "the response is not JSON"
         # Raised outside the except block so the original exception (which embeds the URL) is not kept as context.
         if failure is not None:
             raise self._fail(failure)
-        if status >= 400:
+        if not 200 <= status < 300:
             raise self._fail(f"HTTP {status}")
+        body: Any = None
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            failure = "the response is not JSON"
+        if failure is not None:
+            raise self._fail(failure)
         if not isinstance(body, dict):
             raise self._fail("the response is not a JSON-RPC object")
+        if body.get("jsonrpc") != "2.0":
+            raise self._fail("the response is not JSON-RPC 2.0")
+        if body.get("id") != self._id or isinstance(body.get("id"), bool):
+            raise self._fail("the response id does not match the request")
         error = body.get("error")
         if error:
             if not isinstance(error, dict):
                 raise self._fail("malformed JSON-RPC error")
             code = error.get("code", 0)
             raise RpcError(code if isinstance(code, int) else 0, str(error.get("message", "")), _data_of(error))
-        return body.get("result")
+        if "result" not in body:
+            raise self._fail("the response has neither result nor error")
+        return body["result"]
 
     async def chain_id(self) -> int:
         return self._int(await self.request("eth_chainId", []), "chain id")

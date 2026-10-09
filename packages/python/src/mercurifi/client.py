@@ -4,12 +4,11 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, NoReturn
-from urllib.parse import urlparse
 
 import httpx
 
 from .errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
-from .networks import LOCAL_CHAIN_ID, NETWORKS, AgentBook, NetworkBook, is_loopback_url
+from .networks import LOCAL_CHAIN_ID, NETWORKS, AgentBook, NetworkBook, is_loopback_url, url_host
 from .policy import MAX_DEADLINE_SECONDS
 from .redact import first_line, redact_url, redact_urls_in
 from .rpc import Rpc, RpcError
@@ -81,20 +80,25 @@ def _resolve_book(network: str | NetworkBook) -> NetworkBook:
         raise InvalidInputError("network", "network must be 'mainnet', 'testnet' or a local address book")
     if network.name != "local" or network.chain_id != LOCAL_CHAIN_ID:
         raise NetworkMismatchError(f"custom address books are accepted only for the local chain {LOCAL_CHAIN_ID}; use 'mainnet' or 'testnet' for Arc")
+    if network.api_base_url is not None:
+        _check_api_url("api_base_url", network.api_base_url)
+    if network.api_key_prefix not in (None, "mfk_live_", "mfk_test_"):
+        raise InvalidInputError("network", "the local address book has an unknown api_key_prefix")
     return network
 
 
 def _check_http_url(field: str, url: object) -> str:
     """http(s) with a host and a valid port, or InvalidInputError. Never echoes the value (it may carry a key)."""
-    try:
-        parts = urlparse(url) if isinstance(url, str) else None
-        ok = parts is not None and parts.scheme in ("http", "https") and bool(parts.hostname) and (parts.port or 1) > 0
-    except ValueError:
-        ok = False
-    if not ok:
+    if url_host(url) is None:
         raise InvalidInputError(field, f"{field} is not a valid URL; expected http(s)://host[:port][/path]")
     assert isinstance(url, str)
     return url
+
+
+def _check_api_url(field: str, url: str) -> None:
+    _check_http_url(field, url)
+    if not url.startswith("https://") and not is_loopback_url(url):
+        raise InvalidInputError(field, f"{field} must be https (or a loopback http URL)")
 
 
 def _positive(field: str, value: object, what: str) -> None:
@@ -142,9 +146,7 @@ async def create_client(
         raise InvalidInputError("max_fee_per_gas_cap", "max_fee_per_gas_cap must be a positive integer (wei per gas)")
     resolved_api_url = api_base_url if api_base_url is not None else book.api_base_url
     if api_base_url is not None:
-        _check_http_url("api_base_url", api_base_url)
-        if not api_base_url.startswith("https://") and not is_loopback_url(api_base_url):
-            raise InvalidInputError("api_base_url", "api_base_url must be https (or a loopback http URL)")
+        _check_api_url("api_base_url", api_base_url)
 
     def _warn(message: str) -> None:
         print(f"[mercurifi] {message}", file=sys.stderr)

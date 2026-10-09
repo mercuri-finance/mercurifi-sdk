@@ -1,3 +1,4 @@
+import logging
 import pickle
 import traceback
 from typing import Any
@@ -10,7 +11,7 @@ from mercurifi.abi import AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY
 from mercurifi.client import create_client
 from mercurifi.errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
 from mercurifi.networks import MAINNET, NETWORKS, TESTNET, is_loopback_url, local_network
-from mercurifi.redact import redact_url, redact_urls_in
+from mercurifi.redact import RedactingFilter, redact_url, redact_urls_in
 from mercurifi.rpc import Rpc, RpcError
 
 from .helpers import REGISTRY, A, MockRpc, local_client, local_json, local_rpc
@@ -237,3 +238,116 @@ async def test_loopback_urls_and_redaction_helpers() -> None:
 async def test_async_context_manager_closes() -> None:
     async with await local_client(local_rpc()) as mf:
         assert mf.network.name == "local"
+
+
+KEY_URL = "https://rpc.example.org/v2/SECRETKEY123"
+
+
+def _ok(request: httpx.Request) -> httpx.Response:
+    body = __import__("json").loads(request.content)
+    return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": "0x1"})
+
+
+async def test_httpx_and_httpcore_logs_never_show_the_key(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG)
+    before = {n: logging.getLogger(n).level for n in ("httpx", "httpcore")}
+    rpc = Rpc(KEY_URL, transport=httpx.MockTransport(_ok))
+    Rpc(KEY_URL, transport=httpx.MockTransport(_ok))  # a second client must not add a second filter
+    await rpc.request("eth_chainId", [])
+    # httpcore only logs on real sockets, so also push a record through its loggers the way it would.
+    logging.getLogger("httpcore.connection").debug("connect to %s", KEY_URL)
+    logging.getLogger("httpcore").debug("GET %s", KEY_URL)
+    await rpc.aclose()
+    assert any("rpc.example.org" in r.getMessage() for r in caplog.records)
+    assert "SECRETKEY123" not in caplog.text
+    assert "SECRETKEY123" not in "".join(r.getMessage() for r in caplog.records)
+    for name in ("httpx", "httpcore", "httpcore.connection"):
+        assert sum(isinstance(f, RedactingFilter) for f in logging.getLogger(name).filters) == 1
+    assert {n: logging.getLogger(n).level for n in before} == before
+
+
+async def test_rejects_loose_json_rpc_responses() -> None:
+    def respond(**over: object) -> httpx.MockTransport:
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = __import__("json").loads(request.content)
+            doc: dict[str, object] = {"jsonrpc": "2.0", "id": body["id"], "result": "0x1"}
+            doc.update(over)
+            return httpx.Response(200, json={k: v for k, v in doc.items() if v is not _MISSING})
+
+        return httpx.MockTransport(handler)
+
+    cases: list[dict[str, object]] = [
+        {"jsonrpc": "1.0"}, {"jsonrpc": _MISSING}, {"id": 999}, {"id": _MISSING}, {"id": True}, {"result": _MISSING},
+    ]
+    for over in cases:
+        rpc = Rpc(KEY_URL, transport=respond(**over))
+        with pytest.raises(MercurifiError) as info:
+            await rpc.request("eth_chainId", [])
+        assert info.value.code == "RPC_ERROR" and "SECRETKEY123" not in str(info.value), over
+        await rpc.aclose()
+    for status in (199, 300, 404, 500):
+        rpc = Rpc(KEY_URL, transport=httpx.MockTransport(lambda r, s=status: httpx.Response(s, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"})))
+        with pytest.raises(MercurifiError, match=f"HTTP {status}"):
+            await rpc.request("eth_chainId", [])
+        await rpc.aclose()
+    good = Rpc(KEY_URL, transport=respond())
+    assert await good.chain_id() == 1
+    await good.aclose()
+
+
+_MISSING = object()
+
+
+async def test_response_size_cap() -> None:
+    big = "0x" + "00" * 5_000
+    streamed = httpx.MockTransport(lambda r: httpx.Response(200, content=b'{"jsonrpc":"2.0","id":1,"result":"' + big.encode() + b'"}'))
+    small = Rpc(KEY_URL, transport=streamed, max_response_bytes=1_000)
+    with pytest.raises(MercurifiError, match="larger than 1000 bytes") as info:
+        await small.request("eth_getCode", [])
+    assert info.value.code == "RPC_ERROR"
+    await small.aclose()
+    declared = httpx.MockTransport(lambda r: httpx.Response(200, headers={"content-length": "999999999"}, content=b"{}"))
+    other = Rpc(KEY_URL, transport=declared, max_response_bytes=1_000)
+    with pytest.raises(MercurifiError, match="larger than"):
+        await other.request("eth_chainId", [])
+    await other.aclose()
+    roomy = Rpc(KEY_URL, transport=streamed)
+    assert await roomy.request("eth_getCode", []) == big
+    await roomy.aclose()
+
+
+async def test_unexpected_exceptions_are_redacted_after_startup_too() -> None:
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise RuntimeError(f"bug while calling {KEY_URL}")
+
+    rpc = Rpc(KEY_URL, transport=httpx.MockTransport(boom))
+    with pytest.raises(MercurifiError) as info:
+        await rpc.block_number()
+    text = "".join(traceback.format_exception(info.value)) + repr(info.value.__context__)
+    assert "SECRETKEY123" not in text and info.value.code == "RPC_ERROR"
+    await rpc.aclose()
+
+
+async def test_url_checks_reject_backslash_control_chars_and_port_zero() -> None:
+    transport = MockRpc(31337).transport()
+    assert not is_loopback_url("http://evil.com\\@127.0.0.1")
+    assert not is_loopback_url("http://127.0.0.1\n.evil.com") and not is_loopback_url("http://127.0.0.1:0")
+    with pytest.raises(InvalidInputError):
+        await create_client(local_network(local_json()), rpc_url="http://evil.com\\@127.0.0.1", rpc_transport=transport, api=None)
+    for url in ("http://evil.com\\@127.0.0.1", "https://host/a\tb", "http://host:0", "https://rpc.example.org/\x00"):
+        with pytest.raises(InvalidInputError):
+            await create_client("testnet", rpc_url=url, rpc_transport=transport, api=None)
+
+
+async def test_local_book_api_fields_are_validated() -> None:
+    from dataclasses import replace
+
+    transport = local_rpc().transport()
+    book = local_network(local_json())
+    for bad in (replace(book, api_base_url="http://api.example.org"), replace(book, api_base_url="nonsense")):
+        with pytest.raises(InvalidInputError):
+            await create_client(bad, rpc_url=LOCAL, rpc_transport=transport, api=None)
+    with pytest.raises(InvalidInputError):
+        await create_client(replace(book, api_key_prefix="x_"), rpc_url=LOCAL, rpc_transport=transport, api=None)
+    ok = await create_client(replace(book, api_base_url="http://127.0.0.1:9000"), rpc_url=LOCAL, rpc_transport=local_rpc().transport(), api=None)
+    await ok.aclose()

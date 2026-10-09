@@ -4,7 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
-from urllib.parse import urlparse
+
+import httpx
 
 from .errors import InvalidInputError, NetworkMismatchError
 
@@ -101,8 +102,23 @@ def local_network(book: Mapping[str, Any]) -> NetworkBook:
     )
 
 
-def is_loopback_url(url: str) -> bool:
+def _has_unsafe_chars(url: str) -> bool:
+    """Backslashes and control characters make parsers disagree on the host ("http://evil.com\\@127.0.0.1")."""
+    return "\\" in url or any(ord(c) < 0x21 or 0x7F <= ord(c) <= 0x9F for c in url)
+
+
+def url_host(url: object) -> str | None:
+    """The host as httpx will connect to it, or None for anything malformed or ambiguous."""
+    if not isinstance(url, str) or _has_unsafe_chars(url):
+        return None
     try:
-        return urlparse(url).hostname in ("127.0.0.1", "localhost", "::1")
-    except ValueError:
-        return False
+        parsed = httpx.URL(url)
+        if parsed.scheme not in ("http", "https") or (parsed.port is not None and not 0 < parsed.port <= 65535):
+            return None
+        return parsed.host or None
+    except (httpx.InvalidURL, ValueError):
+        return None
+
+
+def is_loopback_url(url: str) -> bool:
+    return url_host(url) in ("127.0.0.1", "localhost", "::1")

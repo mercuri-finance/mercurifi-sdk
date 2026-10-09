@@ -1,6 +1,7 @@
 """Credential-free error text: RPC URLs often carry an API key in the path, so only the host is ever shown."""
 from __future__ import annotations
 
+import logging
 import re
 from urllib.parse import urlsplit
 
@@ -32,3 +33,34 @@ def redact_urls_in(message: str) -> str:
 
 def first_line(message: str) -> str:
     return message.split("\n", 1)[0]
+
+
+class RedactingFilter(logging.Filter):
+    """Replaces URLs in log records with their host. httpx logs request URLs at INFO and httpcore at DEBUG, and a
+    provider key usually sits in the URL path. Levels and handlers are never touched."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = str(record.msg)
+        redacted = redact_urls_in(message)
+        if redacted != message or record.args:
+            record.msg = redacted
+            record.args = None
+        return True
+
+
+_LOG_ROOTS = ("httpx", "httpcore")
+
+
+def install_log_redaction() -> None:
+    """Adds one RedactingFilter to the httpx and httpcore loggers and their existing children (a logger's filters do
+    not run for its children's records). Idempotent."""
+    # httpcore creates its child loggers lazily under these names; naming them here attaches the filter first.
+    known = ["httpcore.connection", "httpcore.http11", "httpcore.http2", "httpcore.proxy", "httpcore.socks"]
+    names = [n for n in logging.root.manager.loggerDict if n.split(".")[0] in _LOG_ROOTS] + known + list(_LOG_ROOTS)
+    for name in names:
+        log = logging.getLogger(name)
+        if not any(isinstance(f, RedactingFilter) for f in log.filters):
+            log.addFilter(RedactingFilter())
