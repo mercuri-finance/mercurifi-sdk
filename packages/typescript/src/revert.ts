@@ -1,9 +1,10 @@
-import { decodeErrorResult, hexToString, size, slice, type Abi, type Hex } from 'viem';
+import { decodeErrorResult, hexToString, isHex, size, slice, type Abi, type Hex } from 'viem';
 
 import {
   agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi, feeManagerAbi, graduationManagerAbi,
   launchFactoryAbi, launchHookAbi, launchTokenAbi, universalRouterAbi, v4QuoterAbi,
 } from './abi/index.js';
+import { redactUrlsIn } from './client.js';
 import { MercurifiError } from './errors.js';
 import { POLICY_FIELDS } from './policy.js';
 import { formatUsdc6 } from './units.js';
@@ -124,6 +125,18 @@ export const ERROR_MESSAGES: Readonly<Record<string, (args: readonly unknown[]) 
   EmptyRevert: () => 'The call reverted without a reason (often out of gas, or a call to an address without code).',
 });
 
+const ERROR_SELECTOR = '0x08c379a0';
+const MAX_REASON = 200;
+
+/** Contract-supplied text is untrusted: no control characters, bounded length, no URLs. The raw string stays in `args`. */
+const untrustedReason = (raw: unknown): string => {
+  const text = typeof raw === 'string' ? raw : String(raw);
+  // eslint-disable-next-line no-control-regex
+  let clean = redactUrlsIn(text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')).trim();
+  if (clean.length > MAX_REASON) clean = `${clean.slice(0, MAX_REASON)}...`;
+  return `Reverted with a contract-supplied reason (untrusted text): "${clean}"`;
+};
+
 const emptySelector = '0x' as Hex;
 
 const decoded = (name: string, args: readonly unknown[], source: string, selector: Hex, data: Hex): DecodedRevert => {
@@ -138,28 +151,43 @@ const decoded = (name: string, args: readonly unknown[], source: string, selecto
  * @returns the decoded error with a readable message; never throws
  */
 export const decodeRevert = (data: Hex | undefined): DecodedRevert => {
-  if (data === undefined || data === '0x' || size(data) < 4) return decoded('EmptyRevert', [], 'EVM', emptySelector, data ?? '0x');
+  if (data === undefined || data === '0x') return decoded('EmptyRevert', [], 'EVM', emptySelector, '0x');
+  if (typeof data !== 'string' || !isHex(data, { strict: true }) || data.length % 2 !== 0) {
+    return { name: 'MalformedRevert', args: [], source: 'unknown', selector: emptySelector, data: '0x', message: 'The revert data is not valid hex, so it could not be decoded.' };
+  }
+  if (size(data) < 4) return { name: 'MalformedRevert', args: [], source: 'unknown', selector: emptySelector, data, message: 'The revert data is shorter than a 4-byte selector, so it could not be decoded.' };
   const selector = slice(data, 0, 4);
   for (const [source, abi] of SOURCES) {
+    let r: { errorName: string; args?: readonly unknown[] };
     try {
-      const r = decodeErrorResult({ abi, data });
-      if (r.errorName === 'Error') return { name: 'Error', args: r.args ?? [], source: 'Solidity', selector, data, message: `Reverted: ${String(r.args?.[0])}` };
-      if (r.errorName === 'Panic') return { name: 'Panic', args: r.args ?? [], source: 'Solidity', selector, data, message: `Panic 0x${Number(r.args?.[0]).toString(16)} (arithmetic or assertion failure).` };
+      r = decodeErrorResult({ abi, data });
+    } catch {
+      continue; // not in this ABI
+    }
+    if (r.errorName === 'Error') return { name: 'Error', args: r.args ?? [], source: 'Solidity', selector, data, message: untrustedReason(r.args?.[0]) };
+    if (r.errorName === 'Panic') return { name: 'Panic', args: r.args ?? [], source: 'Solidity', selector, data, message: `Panic 0x${BigInt(r.args?.[0] as bigint).toString(16)} (arithmetic or assertion failure).` };
+    try {
       return decoded(r.errorName, r.args ?? [], source, selector, data);
     } catch {
-      // not in this ABI
+      return { name: r.errorName, args: r.args ?? [], source, selector, data, message: `Reverted with ${r.errorName} (${source}).` };
     }
   }
+  if (selector === ERROR_SELECTOR) return { name: 'MalformedRevert', args: [], source: 'Solidity', selector, data, message: 'The revert carried a malformed Error(string).' };
   return { name: 'UnknownError', args: [], source: 'unknown', selector, data, message: `Reverted with an unknown error ${selector}.` };
 };
 
 /** Walks an error's cause chain for JSON-RPC revert data (`data` as hex, or `data.data`). */
 export const extractRevertData = (error: unknown): Hex | undefined => {
+  const asHex = (v: unknown): Hex | undefined => (typeof v === 'string' && isHex(v, { strict: true }) && v.length % 2 === 0 ? v : undefined);
+  const candidates = (o: unknown): (Hex | undefined)[] => {
+    const r = o as { data?: unknown; raw?: unknown; error?: { data?: unknown } } | null;
+    const d = r?.data as { data?: unknown; originalError?: { data?: unknown } } | undefined | null;
+    return [asHex(r?.data), asHex(d?.data), asHex(d?.originalError?.data), asHex(r?.raw), asHex(r?.error?.data)];
+  };
   let current: unknown = error;
-  for (let depth = 0; current !== null && current !== undefined && depth < 16; depth += 1) {
-    const data = (current as { data?: unknown }).data;
-    if (typeof data === 'string' && data.startsWith('0x')) return data as Hex;
-    if (data !== null && typeof data === 'object' && typeof (data as { data?: unknown }).data === 'string') return (data as { data: Hex }).data;
+  for (let depth = 0; current !== null && current !== undefined && typeof current === 'object' && depth < 16; depth += 1) {
+    const found = candidates(current).find((h) => h !== undefined);
+    if (found !== undefined) return found;
     current = (current as { cause?: unknown }).cause;
   }
   return undefined;
