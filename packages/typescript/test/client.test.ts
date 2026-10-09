@@ -2,7 +2,8 @@ import { keccak256 } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
-import { createClient, redactUrl, redactUrlsIn } from '../src/client.js';
+import { createClient } from '../src/client.js';
+import { redactUrl, redactUrlsIn } from '../src/redact.js';
 import { InvalidInputError, NetworkMismatchError, NotDeployedError } from '../src/errors.js';
 import { localNetwork, TESTNET } from '../src/networks.js';
 import { A, localJson, localRpc, REGISTRY } from './helpers/local.js';
@@ -96,6 +97,7 @@ describe('createClient hardening', () => {
   it('redacts URLs inside messages', () => {
     expect(redactUrlsIn('GET https://a.b/c/KEY failed, see http://x.y:8080/z?q=1')).toBe('GET a.b failed, see x.y:8080');
     expect(redactUrl('nonsense')).toBe('invalid URL');
+    expect(redactUrlsIn('a ftp://f.g/KEY b javascript:x')).toBe('a f.g b invalid URL');
   });
 });
 

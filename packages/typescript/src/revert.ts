@@ -4,7 +4,7 @@ import {
   agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi, feeManagerAbi, graduationManagerAbi,
   launchFactoryAbi, launchHookAbi, launchTokenAbi, universalRouterAbi, v4QuoterAbi,
 } from './abi/index.js';
-import { redactUrlsIn } from './client.js';
+import { redactUrlsIn } from './redact.js';
 import { MercurifiError } from './errors.js';
 import { POLICY_FIELDS } from './policy.js';
 import { formatUsdc6 } from './units.js';
@@ -128,12 +128,19 @@ export const ERROR_MESSAGES: Readonly<Record<string, (args: readonly unknown[]) 
 const ERROR_SELECTOR = '0x08c379a0';
 const MAX_REASON = 200;
 
-/** Contract-supplied text is untrusted: no control characters, bounded length, no URLs. The raw string stays in `args`. */
+/**
+ * Contract-supplied text is untrusted: no control or Unicode format characters (bidi overrides, zero-width), no double
+ * quotes, no URLs, bounded length without splitting a surrogate pair. The raw string stays in `args`.
+ */
 const untrustedReason = (raw: unknown): string => {
   const text = typeof raw === 'string' ? raw : String(raw);
-  // eslint-disable-next-line no-control-regex
-  let clean = redactUrlsIn(text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')).trim();
-  if (clean.length > MAX_REASON) clean = `${clean.slice(0, MAX_REASON)}...`;
+  const plain = text
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/\p{Cf}+/gu, '') // before URL redaction, so "ht\u200Btp://" cannot hide a URL
+    .replace(/"/g, "'");
+  const chars = Array.from(redactUrlsIn(plain).trim());
+  const clean = chars.length > MAX_REASON ? `${chars.slice(0, MAX_REASON).join('')}...` : chars.join('');
   return `Reverted with a contract-supplied reason (untrusted text): "${clean}"`;
 };
 

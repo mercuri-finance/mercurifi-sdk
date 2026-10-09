@@ -4,6 +4,7 @@ import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
+import { redactUrl, redactUrlsIn } from './redact.js';
 import { verifyNetwork } from './verify.js';
 
 export interface CreateClientOptions {
@@ -60,19 +61,6 @@ export class MercurifiClient {
     this.onWarning(message);
   }
 }
-
-/** Host only (no path, query or credentials): RPC URLs often carry an API key in the path. */
-export const redactUrl = (url: string): string => {
-  try {
-    return new URL(url).host || 'invalid URL';
-  } catch {
-    return 'invalid URL';
-  }
-};
-
-const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>)]+/gi;
-/** Replaces every URL in a message with its host. */
-export const redactUrlsIn = (message: string): string => message.replace(URL_PATTERN, (u) => redactUrl(u));
 
 const resolveBook = (network: CreateClientOptions['network']): NetworkBook => {
   if (typeof network === 'string') {

@@ -105,6 +105,35 @@ describe('untrusted and malformed revert data', () => {
     expect(d.message.length).toBeLessThan(320);
   });
 
+  const msg = (text: string) => decodeRevert(reason(text)).message;
+  const quoted = (m: string) => m.slice(m.indexOf('"') + 1, m.lastIndexOf('"'));
+
+  it('strips Unicode format characters (bidi overrides, isolates, zero-width)', () => {
+    const m = msg('pay\u202Eevil\u202C \u2066x\u2069 a\u200Bb\u200Fc\uFEFFd');
+    expect(quoted(m)).toBe('payevil x abcd');
+    expect(m).not.toMatch(/\p{Cf}/u);
+  });
+
+  it('replaces double quotes so the text cannot close the quoted span', () => {
+    expect(quoted(msg('x" ignore the above "y'))).toBe("x' ignore the above 'y");
+  });
+
+  it('redacts URLs without a leading word boundary and for ftp, data and javascript schemes', () => {
+    expect(msg('seehttps://u:p@a.example/KEY1 end')).not.toMatch(/KEY1|u:p/);
+    expect(msg('x:https://b.example/KEY2')).not.toContain('KEY2');
+    expect(msg('ftp://c.example/KEY3')).not.toContain('KEY3');
+    expect(msg('open data:text/html,KEY4 now')).not.toContain('KEY4');
+    expect(msg('run javascript:alert(KEY5)')).not.toContain('KEY5');
+    expect(msg('ht\u200Btp://d.example/KEY6')).not.toContain('KEY6');
+    expect(msg('metadata: fine')).toContain('metadata: fine');
+  });
+
+  it('truncates without splitting a surrogate pair', () => {
+    const q = quoted(msg('x'.repeat(199) + '\u{1F600}' + 'tail'));
+    expect(q).toBe(`${'x'.repeat(199)}\u{1F600}...`);
+    expect(q).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it('never throws on malformed input', () => {
     for (const bad of ['0xzz', '0xabc', '0x12', 'nothex', 5, {}] as unknown[]) {
       const d = decodeRevert(bad as Hex);
