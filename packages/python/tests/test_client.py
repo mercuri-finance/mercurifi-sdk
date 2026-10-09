@@ -383,3 +383,31 @@ def test_log_redaction_is_installed_at_package_import() -> None:
     )
     out = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "True"
+
+
+async def test_reads_the_head_block_fresh_every_time() -> None:
+    """Parity guard with the TypeScript client's viem setting (cacheTime 0): head reads pin later reads, so a cached head right after the
+    caller's own transaction would miss it (a just-launched token, a just-queued item). Every call must reach the node."""
+    head = 100
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal head
+        body = json.loads(request.content)
+        calls.append(body["method"])
+        head += 1  # the chain moves between any two reads
+        if body["method"] == "eth_blockNumber":
+            result: Any = hex(head)
+        else:
+            result = {"number": hex(head), "timestamp": hex(1_000 + head)}
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
+
+    rpc = Rpc(LOCAL, transport=httpx.MockTransport(handler))
+    numbers = [await rpc.block_number() for _ in range(3)]
+    blocks = [await rpc.latest_block() for _ in range(2)]
+    stamps = [await rpc.latest_timestamp() for _ in range(2)]
+    await rpc.aclose()
+    assert numbers == [101, 102, 103]
+    assert blocks == [(104, 1_104), (105, 1_105)]
+    assert stamps == [1_106, 1_107]
+    assert calls == ["eth_blockNumber"] * 3 + ["eth_getBlockByNumber"] * 4
