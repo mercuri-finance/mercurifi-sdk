@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { InvalidInputError } from '../src/errors.js';
 import { DEFAULT_POLICY, fieldDirection, mergePolicy, previewPolicyChange, validatePolicy, type ChainPolicy, type PolicyField } from '../src/policy.js';
 
 const v = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/policy.json', import.meta.url), 'utf8'));
@@ -44,5 +45,43 @@ describe('policy', () => {
     expect(pv.immediatePolicy.periodSpendCap).toBe(500_000_000n);
     expect(pv.changes.find((c) => c.field === 'periodSpendCap')).toEqual({ field: 'periodSpendCap', current: '500', next: '900', direction: 'widen' });
     expect(previewPolicyChange(DEFAULT_POLICY, DEFAULT_POLICY).outcome).toBe('none');
+  });
+});
+
+describe('policy edge cases', () => {
+  const U64 = (1n << 64n) - 1n;
+  it('treats minTokenAgeBlocks ceiling as a floor, like checkCeilings', () => {
+    const ceil = { ...CEILINGS, minTokenAgeBlocks: 5 };
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, minTokenAgeBlocks: 4 }, ceil)).toThrow(/minTokenAgeBlocks.*below the beta floor/);
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, minTokenAgeBlocks: 5 }, ceil)).not.toThrow();
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, minTokenAgeBlocks: 900 }, ceil)).not.toThrow();
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, allowlistOnly: false }, { ...CEILINGS, allowlistOnly: true })).not.toThrow();
+  });
+  it('enforces integer widths at the boundary and one past it', () => {
+    expect(mergePolicy(DEFAULT_POLICY, { maxTradeUsdc: '18446744073709.551615' }).maxTradeUsdc).toBe(U64);
+    expect(() => mergePolicy(DEFAULT_POLICY, { maxTradeUsdc: '18446744073709.551616' })).toThrow(/maxTradeUsdc/);
+    expect(mergePolicy(DEFAULT_POLICY, { launchesPerPeriod: 0xffff }).launchesPerPeriod).toBe(0xffff);
+    expect(() => mergePolicy(DEFAULT_POLICY, { launchesPerPeriod: 0x10000 })).toThrow(/launchesPerPeriod/);
+    expect(mergePolicy(DEFAULT_POLICY, { maxActionsPerPeriod: 0xffff_ffff }).maxActionsPerPeriod).toBe(0xffff_ffff);
+    expect(() => mergePolicy(DEFAULT_POLICY, { maxActionsPerPeriod: 0x1_0000_0000 })).toThrow(/maxActionsPerPeriod/);
+    expect(() => mergePolicy(DEFAULT_POLICY, { minTokenAgeBlocks: -1 })).toThrow(/minTokenAgeBlocks/);
+  });
+  it('validatePolicy applies the same width check to a hand-built policy', () => {
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, maxTradeUsdc: U64 + 1n })).toThrow(/maxTradeUsdc/);
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, launchesPerPeriod: 0x10000 })).toThrow(/launchesPerPeriod/);
+    expect(() => validatePolicy({ ...DEFAULT_POLICY, maxActionsPerPeriod: 1.5 })).toThrow(/maxActionsPerPeriod/);
+  });
+  it('reports shape errors in contract order: impact, snipe, deadline', () => {
+    const bad = { ...DEFAULT_POLICY, maxPriceImpactBps: 10_001, maxSnipeBps: 10_001, maxDeadlineSeconds: 0 };
+    expect(() => validatePolicy(bad)).toThrow(/maxPriceImpactBps/);
+    expect(() => validatePolicy({ ...bad, maxPriceImpactBps: 0 })).toThrow(/maxSnipeBps/);
+    expect(() => validatePolicy({ ...bad, maxPriceImpactBps: 0, maxSnipeBps: 0 })).toThrow(/maxDeadlineSeconds/);
+  });
+  it('throws a typed error on null or non-object input', () => {
+    for (const bad of [null, 5, 'x', []]) {
+      try { mergePolicy(DEFAULT_POLICY, bad as never); throw new Error('expected an error'); } catch (e) {
+        expect(e).toBeInstanceOf(InvalidInputError);
+      }
+    }
   });
 });

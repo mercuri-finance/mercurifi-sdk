@@ -1,12 +1,81 @@
 {
   "direction": [
-    { "field": "maxTradeUsdc", "current": "100000000", "next": "50000000", "out": "narrow" },
-    { "field": "maxTradeUsdc", "current": "100000000", "next": "200000000", "out": "widen" },
-    { "field": "minTokenAgeBlocks", "current": 0, "next": 10, "out": "narrow" },
-    { "field": "minTokenAgeBlocks", "current": 10, "next": 0, "out": "widen" },
-    { "field": "allowlistOnly", "current": false, "next": true, "out": "narrow" },
-    { "field": "allowlistOnly", "current": true, "next": false, "out": "widen" },
-    { "field": "maxDeadlineSeconds", "current": 120, "next": 60, "out": "narrow" },
-    { "field": "maxSnipeBps", "current": 0, "next": 0, "out": "same" }
+    {
+      "field": "maxTradeUsdc",
+      "current": "100000000",
+      "next": "50000000",
+      "out": "narrow"
+    },
+    {
+      "field": "maxTradeUsdc",
+      "current": "100000000",
+      "next": "200000000",
+      "out": "widen"
+    },
+    {
+      "field": "minTokenAgeBlocks",
+      "current": 0,
+      "next": 10,
+      "out": "narrow"
+    },
+    {
+      "field": "minTokenAgeBlocks",
+      "current": 10,
+      "next": 0,
+      "out": "widen"
+    },
+    {
+      "field": "allowlistOnly",
+      "current": false,
+      "next": true,
+      "out": "narrow"
+    },
+    {
+      "field": "allowlistOnly",
+      "current": true,
+      "next": false,
+      "out": "widen"
+    },
+    {
+      "field": "maxDeadlineSeconds",
+      "current": 120,
+      "next": 60,
+      "out": "narrow"
+    },
+    {
+      "field": "maxSnipeBps",
+      "current": 0,
+      "next": 0,
+      "out": "same"
+    }
+  ],
+  "permissionsDecode": [
+    {
+      "in": 0,
+      "out": []
+    },
+    {
+      "in": 63,
+      "out": [
+        "buy",
+        "sell",
+        "launch",
+        "swap",
+        "claim",
+        "sweep"
+      ]
+    },
+    {
+      "in": 64,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": -1,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": 1.5,
+      "error": "INVALID_INPUT"
+    }
   ]
 }

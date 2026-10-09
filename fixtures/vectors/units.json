@@ -1,42 +1,209 @@
 {
   "parseUsdc": [
-    { "in": "25", "out": "25000000" },
-    { "in": "0.000001", "out": "1" },
-    { "in": " 2.5 ", "out": "2500000" },
-    { "in": "0", "out": "0" },
-    { "in": "0.0000001", "error": "INVALID_INPUT" },
-    { "in": "1e3", "error": "INVALID_INPUT" },
-    { "in": "-1", "error": "INVALID_INPUT" },
-    { "in": "", "error": "INVALID_INPUT" },
-    { "in": "01", "error": "INVALID_INPUT" }
+    {
+      "in": "25",
+      "out": "25000000"
+    },
+    {
+      "in": "0.000001",
+      "out": "1"
+    },
+    {
+      "in": " 2.5 ",
+      "out": "2500000"
+    },
+    {
+      "in": "0",
+      "out": "0"
+    },
+    {
+      "in": "0.0000001",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1e3",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "-1",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "01",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": ".5",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1.",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "0x10",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1E3",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "+1",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1_0",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\u0661\u0662",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "\uff11\uff12",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1 2",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "1.5.2",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "Infinity",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "NaN",
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": "18446744073709.551615",
+      "out": "18446744073709551615"
+    }
   ],
   "parseTokens": [
-    { "in": "1", "out": "1000000000000000000" },
-    { "in": "1000.5", "out": "1000500000000000000000" }
+    {
+      "in": "1",
+      "out": "1000000000000000000"
+    },
+    {
+      "in": "1000.5",
+      "out": "1000500000000000000000"
+    }
   ],
   "formatUsdc6": [
-    { "in": "25000000", "out": "25" },
-    { "in": "1", "out": "0.000001" },
-    { "in": "0", "out": "0" },
-    { "in": "1234567", "out": "1.234567" }
+    {
+      "in": "25000000",
+      "out": "25"
+    },
+    {
+      "in": "1",
+      "out": "0.000001"
+    },
+    {
+      "in": "0",
+      "out": "0"
+    },
+    {
+      "in": "1234567",
+      "out": "1.234567"
+    }
   ],
   "slippageToBps": [
-    { "in": 0.02, "out": 200 },
-    { "in": 0, "out": 0 },
-    { "in": 0.0001, "out": 1 },
-    { "in": 0.5, "error": "INVALID_INPUT" },
-    { "in": 2, "error": "INVALID_INPUT" },
-    { "in": 0.00015, "error": "INVALID_INPUT" },
-    { "in": -0.01, "error": "INVALID_INPUT" }
+    {
+      "in": 0.02,
+      "out": 200
+    },
+    {
+      "in": 0,
+      "out": 0
+    },
+    {
+      "in": 0.0001,
+      "out": 1
+    },
+    {
+      "in": 0.5,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": 2,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": 0.00015,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "in": -0.01,
+      "error": "INVALID_INPUT"
+    }
   ],
   "applySlippageFloor": [
-    { "amount": "1000", "bps": 100, "out": "990" },
-    { "amount": "1", "bps": 200, "out": "0" }
+    {
+      "amount": "1000",
+      "bps": 100,
+      "out": "990"
+    },
+    {
+      "amount": "1",
+      "bps": 200,
+      "out": "0"
+    },
+    {
+      "amount": "1000",
+      "bps": 0,
+      "out": "1000"
+    },
+    {
+      "amount": "1000",
+      "bps": 10000,
+      "out": "0"
+    },
+    {
+      "amount": "1000",
+      "bps": -1,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "amount": "1000",
+      "bps": 10001,
+      "error": "INVALID_INPUT"
+    },
+    {
+      "amount": "1000",
+      "bps": 1.5,
+      "error": "INVALID_INPUT"
+    }
   ],
   "weiToUsdc6": [
-    { "wei": "1", "floor": "0", "ceil": "1" },
-    { "wei": "1000000000000", "floor": "1", "ceil": "1" },
-    { "wei": "1000000000001", "floor": "1", "ceil": "2" },
-    { "wei": "0", "floor": "0", "ceil": "0" }
+    {
+      "wei": "1",
+      "floor": "0",
+      "ceil": "1"
+    },
+    {
+      "wei": "1000000000000",
+      "floor": "1",
+      "ceil": "1"
+    },
+    {
+      "wei": "1000000000001",
+      "floor": "1",
+      "ceil": "2"
+    },
+    {
+      "wei": "0",
+      "floor": "0",
+      "ceil": "0"
+    }
   ]
 }

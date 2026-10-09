@@ -25,8 +25,10 @@ describe('units vectors', () => {
     if (c.error) expectCode(() => slippageToBps(c.in), c.error);
     else expect(slippageToBps(c.in)).toBe(c.out);
   });
-  it.each<{ amount: string; bps: number; out: string }>(v.applySlippageFloor)('applySlippageFloor %j', (c) =>
-    expect(applySlippageFloor(BigInt(c.amount), c.bps)).toBe(BigInt(c.out)));
+  it.each<{ amount: string; bps: number; out?: string; error?: string }>(v.applySlippageFloor)('applySlippageFloor %j', (c) => {
+    if (c.error) expectCode(() => applySlippageFloor(BigInt(c.amount), c.bps), c.error);
+    else expect(applySlippageFloor(BigInt(c.amount), c.bps)).toBe(BigInt(c.out!));
+  });
   it.each<{ wei: string; floor: string; ceil: string }>(v.weiToUsdc6)('wei→usdc6 %j', (c) => {
     expect(weiToUsdc6Floor(BigInt(c.wei))).toBe(BigInt(c.floor));
     expect(weiToUsdc6Ceil(BigInt(c.wei))).toBe(BigInt(c.ceil));
@@ -52,5 +54,22 @@ describe('amount forms', () => {
     expect(resolveTokenAmount({ amount: 'all' })).toBe('all');
     expect(resolveTokenAmount({ amount: '1' })).toBe(10n ** 18n);
     expect(resolveTokenAmount({ amountWei: 5n })).toBe(5n);
+  });
+});
+
+describe('edge cases', () => {
+  it('normalises negative zero slippage', () => {
+    expect(Object.is(slippageToBps(-0), 0)).toBe(true);
+  });
+  it('rejects null in either amount form', () => {
+    expectCode(() => resolveUsdc6({ usdc: null as unknown as string }), 'INVALID_INPUT');
+    expectCode(() => resolveUsdc6({ usdc6: null as unknown as bigint }), 'INVALID_INPUT');
+    expectCode(() => resolveTokenAmount({ amount: null as unknown as string }), 'INVALID_INPUT');
+    expectCode(() => resolveTokenAmount({ amountWei: null as unknown as bigint }), 'INVALID_INPUT');
+  });
+  it('names the real base-unit field in the error', () => {
+    expect(() => parseTokens(5 as unknown as string)).toThrow(/amountWei/);
+    expect(() => resolveTokenAmount({ amount: 5 as unknown as string })).toThrow(/amountWei/);
+    expect(() => parseUsdc(5, 'policy.maxTradeUsdc')).toThrow(/policy\.maxTradeUsdc6/);
   });
 });

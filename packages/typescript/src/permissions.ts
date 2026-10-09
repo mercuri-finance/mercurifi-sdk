@@ -14,15 +14,14 @@ export const encodePermissions = (list: readonly Permission[]): number => {
   if (list.length === 0) throw new InvalidInputError('permissions', 'grant at least one permission');
   let bits = 0;
   for (const p of list) {
-    const bit = (PERMISSIONS as Record<string, number>)[p];
-    if (bit === undefined) throw new InvalidInputError('permissions', `unknown permission ${String(p)}; expected one of ${ORDER.join(', ')}`);
-    bits |= bit;
+    if (typeof p !== 'string' || !Object.hasOwn(PERMISSIONS, p)) throw new InvalidInputError('permissions', `unknown permission ${String(p)}; expected one of ${ORDER.join(', ')}`);
+    bits |= PERMISSIONS[p];
   }
   return bits;
 };
 
 export const decodePermissions = (bits: number): Permission[] => {
-  if (bits & ~63) throw new InvalidInputError('permissions', `unknown permission bits in ${bits}`);
+  if (typeof bits !== 'number' || !Number.isInteger(bits) || bits < 0 || bits > 63) throw new InvalidInputError('permissions', `unknown permission bits in ${bits}`);
   return ORDER.filter((p) => (bits & PERMISSIONS[p]) !== 0);
 };
 

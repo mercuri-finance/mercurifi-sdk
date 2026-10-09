@@ -72,7 +72,26 @@ export const MAX_DEADLINE_SECONDS = 600;
 export const QUEUE_TTL_SECONDS = 604_800;
 
 /** Applies human input over a base policy, checking types and integer ranges. */
+/** Checks one field against its Solidity width (uint64 / uint32 / uint16 / bool). */
+const checkRange = (field: PolicyField, value: unknown): void => {
+  const name = `policy.${field}`;
+  if (USDC_FIELDS.has(field)) {
+    if (typeof value !== 'bigint' || value < 0n || value > UINT64_MAX) throw new InvalidInputError(name, `${name} must be a bigint in 0..${UINT64_MAX} (usdc6)`);
+  } else if (field === 'allowlistOnly') {
+    if (typeof value !== 'boolean') throw new InvalidInputError(name, `${name} must be a boolean`);
+  } else {
+    const max = INT_LIMITS[field] ?? 0;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > max) {
+      throw new InvalidInputError(name, `${name} must be an integer in 0..${max}`);
+    }
+  }
+};
+
+/** Applies human input over a base policy, checking types and integer ranges. */
 export const mergePolicy = (base: ChainPolicy, input: PolicyInput): ChainPolicy => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    throw new InvalidInputError('policy', 'policy must be an object of policy fields');
+  }
   const out: ChainPolicy = { ...base };
   const set = out as unknown as Record<PolicyField, unknown>;
   for (const [key, raw] of Object.entries(input) as [PolicyField, unknown][]) {
@@ -80,16 +99,10 @@ export const mergePolicy = (base: ChainPolicy, input: PolicyInput): ChainPolicy 
     if (!POLICY_FIELDS.includes(key)) throw new InvalidInputError(`policy.${key}`, `unknown policy field ${key}`);
     if (USDC_FIELDS.has(key)) {
       const v = parseUsdc(raw, `policy.${key}`);
-      if (v > UINT64_MAX) throw new InvalidInputError(`policy.${key}`, `policy.${key} is too large`);
+      checkRange(key, v);
       set[key] = v;
-    } else if (key === 'allowlistOnly') {
-      if (typeof raw !== 'boolean') throw new InvalidInputError('policy.allowlistOnly', 'policy.allowlistOnly must be a boolean');
-      out.allowlistOnly = raw;
     } else {
-      const max = INT_LIMITS[key] ?? 0;
-      if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > max) {
-        throw new InvalidInputError(`policy.${key}`, `policy.${key} must be an integer in 0..${max}`);
-      }
+      checkRange(key, raw);
       set[key] = raw;
     }
   }
@@ -104,15 +117,22 @@ const show = (field: PolicyField, value: ChainPolicy[PolicyField]): string =>
  * The contract stays authoritative; this only explains a failure before anything is signed.
  */
 export const validatePolicy = (p: ChainPolicy, ceilings?: ChainPolicy): void => {
+  for (const field of POLICY_FIELDS) checkRange(field, p[field]);
+  // Same order as AgentPolicyLib.checkShape: impact, snipe, deadline.
+  if (p.maxPriceImpactBps > 10_000) throw new InvalidInputError('policy.maxPriceImpactBps', 'policy.maxPriceImpactBps must be at most 10000');
+  if (p.maxSnipeBps > 10_000) throw new InvalidInputError('policy.maxSnipeBps', 'policy.maxSnipeBps must be at most 10000');
   if (p.maxDeadlineSeconds < 1 || p.maxDeadlineSeconds > MAX_DEADLINE_SECONDS) {
     throw new InvalidInputError('policy.maxDeadlineSeconds', `policy.maxDeadlineSeconds must be in 1..${MAX_DEADLINE_SECONDS}`);
   }
-  if (p.maxPriceImpactBps > 10_000) throw new InvalidInputError('policy.maxPriceImpactBps', 'policy.maxPriceImpactBps must be at most 10000');
-  if (p.maxSnipeBps > 10_000) throw new InvalidInputError('policy.maxSnipeBps', 'policy.maxSnipeBps must be at most 10000');
   if (ceilings === undefined) return;
   for (const field of POLICY_FIELDS) {
-    if (field === 'allowlistOnly' || field === 'minTokenAgeBlocks') continue;
-    if ((p[field] as bigint | number) > (ceilings[field] as bigint | number)) {
+    if (field === 'allowlistOnly') continue;
+    const value = p[field] as bigint | number;
+    const limit = ceilings[field] as bigint | number;
+    // minTokenAgeBlocks is a floor on-chain (AgentPolicyLib.checkCeilings); every other ceiling is an upper bound.
+    if (field === 'minTokenAgeBlocks') {
+      if (value < limit) throw new InvalidInputError(`policy.${field}`, `policy.${field} = ${show(field, p[field])} is below the beta floor of ${show(field, ceilings[field])}`);
+    } else if (value > limit) {
       throw new InvalidInputError(`policy.${field}`, `policy.${field} = ${show(field, p[field])} is above the beta ceiling of ${show(field, ceilings[field])}`);
     }
   }
