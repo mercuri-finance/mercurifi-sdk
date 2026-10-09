@@ -488,7 +488,8 @@ export class AccountManager {
   /**
    * Full balances of the listed tokens (any ERC-20; zero balances are skipped), then native USDC, to the owner. Native
    * goes in its own transaction, sent first, so a token that fails cannot block the USDC exit; tokens go in chunks of
-   * 100. Without `tokens`, Launch tokens are discovered from the API's action history or the account's own logs. Nothing
+   * 100. Without `tokens`, Launch tokens are discovered from the account's own AgentAction logs, merged with the API's
+   * action history when there is an API (the API alone is never trusted to list them). Nothing
    * is sent when there is nothing to move.
    */
   async withdrawMany(tokens?: readonly Address[], opts: { fromBlock?: bigint } = {}): Promise<{ txHashes: Hex[]; tokens: Address[] }> {
@@ -513,26 +514,30 @@ export class AccountManager {
     return { txHashes, tokens: held };
   }
 
+  /**
+   * Every token the account traded: the API's action history (when there is an API; a hint only) merged with the
+   * account's own AgentAction logs, which are always scanned, so an API that omits a token cannot hide it.
+   */
   private async tokensTouched(fromBlock?: bigint): Promise<Address[]> {
+    const out: Address[] = [];
     const api = this.mf.api;
     if (api !== null) {
       try {
-        const out: Address[] = [];
         let cursor: string | undefined;
         let pages = 0;
         do {
-          if (pages++ >= MAX_ACTION_PAGES) throw new Error('too many pages');
+          if (pages++ >= MAX_ACTION_PAGES) break;
           const page = await api.listActions(this.account, cursor);
           out.push(...page.items.map((a) => a.token).filter((t): t is Address => typeof t === 'string'));
           cursor = page.nextCursor ?? undefined;
         } while (cursor !== undefined);
-        return out;
       } catch {
-        // fall back to the chain
+        // the chain scan below still finds every token
       }
     }
     const logs = await scanLogs(this.mf.publicClient, { address: this.account, topics: [AGENT_ACTION_TOPIC] }, fromBlock ?? this.agents.deployBlock);
-    return (parseEventLogs({ abi: agentAccountAbi, eventName: 'AgentAction', logs } as never) as unknown as { args: { token: Address } }[]).map((l) => l.args.token);
+    out.push(...(parseEventLogs({ abi: agentAccountAbi, eventName: 'AgentAction', logs } as never) as unknown as { args: { token: Address } }[]).map((l) => l.args.token));
+    return out;
   }
 
   private async isLaunchToken(token: Address): Promise<boolean> {

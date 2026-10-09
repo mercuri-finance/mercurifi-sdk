@@ -6,6 +6,7 @@ import pytest
 from eth_abi.abi import encode
 
 from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, LAUNCH_TOKEN
+from mercurifi.abi import LAUNCH_FACTORY as LF
 from mercurifi.codec import to_hex
 from mercurifi.errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotOwnerError
 from mercurifi.owner import AccountManager, FirstAgent, OwnerClient
@@ -18,6 +19,7 @@ from .helpers import (
     ACCOUNT,
     AGENT_KEY,
     FACTORY,
+    LAUNCH_FACTORY,
     OWNER_KEY,
     REGISTRY,
     TOKEN,
@@ -680,6 +682,30 @@ async def test_withdraw_many_discovers_launch_tokens_only_from_the_account_logs(
     assert sent(t.rpc, 1)[2] == [[TOKEN]]
     flt = t.rpc.methods("eth_getLogs")[0][0]
     assert flt["address"].lower() == ACCOUNT.lower()
+
+
+class _OneTokenApi:
+    def __init__(self) -> None:
+        self.action_calls = 0
+
+    async def list_actions(self, account: str, cursor: str | None) -> dict[str, Any]:
+        self.action_calls += 1
+        return {"items": [{"token": TOKEN}], "nextCursor": None}
+
+
+async def test_withdraw_many_merges_the_api_list_with_the_chain_scan() -> None:
+    # An API that omits a token cannot hide it: the account's own logs are always scanned.
+    other = A(0xDE)
+    api = _OneTokenApi()
+    t, m = await mgr(api=api)
+    t.rpc.read(LAUNCH_FACTORY, LF, "curveOf", lambda a: A(0xCC))
+    t.rpc.read(TOKEN, LAUNCH_TOKEN, "balanceOf", 3)
+    t.rpc.read(other, LAUNCH_TOKEN, "balanceOf", 7)
+    t.rpc.logs = [agent_action_log(token=other)]
+    t.rpc.read(ACCOUNT, AGENT_ACCOUNT, "withdrawMany", None)
+    _, held = await m.withdraw_many()
+    assert api.action_calls == 1
+    assert sorted(h.lower() for h in held) == sorted([TOKEN.lower(), other.lower()])
 
 
 async def test_api_pagination_is_capped_at_50_pages_then_the_chain_is_read() -> None:

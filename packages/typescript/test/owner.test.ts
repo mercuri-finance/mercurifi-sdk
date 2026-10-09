@@ -1,14 +1,14 @@
 import { createPublicClient, decodeFunctionData, encodeAbiParameters, parseTransaction, toHex, zeroAddress, type Abi, type Hex, type PublicClient } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
-import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launchTokenAbi } from '../src/abi/index.js';
+import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launchFactoryAbi, launchTokenAbi } from '../src/abi/index.js';
 import { InvalidInputError, NotOwnerError } from '../src/errors.js';
 import { SELL_RISK_WARNING } from '../src/permissions.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
 import { listQueued, POLICY_TUPLE, scanLogs } from '../src/queue.js';
 import { localNetwork } from '../src/networks.js';
 import { localKey } from '../src/signers.js';
-import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, queueLog, registryLog, REGISTRY } from './helpers/account.js';
+import { agentActionLog, eventLog, FACTORY, LAUNCH_FACTORY, mockAccount, mockCurve, queueLog, registryLog, REGISTRY } from './helpers/account.js';
 import { A, ACCOUNT, AGENT_KEY, localClient, localJson, localRpc, OWNER_KEY, TOKEN } from './helpers/local.js';
 
 const owner = localKey(OWNER_KEY);
@@ -506,6 +506,20 @@ describe('withdraw rules', () => {
     const r = await m.withdrawMany([TOKEN]);
     expect(r.txHashes).toEqual([]);
     expect(rpc.sent).toHaveLength(0);
+  });
+
+  it('merges the API token list with the chain scan, so an API that omits a token cannot hide it', async () => {
+    const other = A(0xde);
+    const listActions = vi.fn(async () => ({ items: [{ token: TOKEN }], nextCursor: null }));
+    const { rpc, m } = await mgr({ api: { listActions } });
+    rpc.read(LAUNCH_FACTORY, launchFactoryAbi, 'curveOf', () => A(0xcc));
+    rpc.read(TOKEN, launchTokenAbi, 'balanceOf', 3n);
+    rpc.read(other, launchTokenAbi, 'balanceOf', 7n);
+    rpc.logs = [agentActionLog({ token: other })];
+    rpc.read(ACCOUNT, agentAccountAbi, 'withdrawMany', undefined);
+    const r = await m.withdrawMany();
+    expect(listActions).toHaveBeenCalledTimes(1);
+    expect(r.tokens.map((t) => t.toLowerCase()).sort()).toEqual([TOKEN, other].map((t) => t.toLowerCase()).sort());
   });
 
   it('caps API pagination at 50 pages, then reads the chain', async () => {

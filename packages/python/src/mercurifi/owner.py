@@ -536,8 +536,9 @@ class AccountManager:
     async def withdraw_many(self, tokens: Sequence[str] | None = None, from_block: int | None = None) -> tuple[list[str], list[str]]:
         """Full balances of the listed tokens (any ERC-20; zero balances are skipped), then native USDC, to the owner. Native
         goes in its own transaction, sent first, so a token that fails cannot block the USDC exit; tokens go in chunks of 100.
-        Without `tokens`, Launch tokens are discovered from the API's action history or the account's own logs. Nothing is sent
-        when there is nothing to move. Returns (transaction hashes, tokens moved)."""
+        Without `tokens`, Launch tokens are discovered from the account's own AgentAction logs, merged with the API's action
+        history when there is an API (the API alone is never trusted to list them). Nothing is sent when there is nothing to
+        move. Returns (transaction hashes, tokens moved)."""
         candidates = list(tokens) if tokens is not None else await self._launch_tokens_only(await self._tokens_touched(from_block))
         seen: set[str] = set()
         held: list[str] = []
@@ -561,23 +562,23 @@ class AccountManager:
         return hashes, held
 
     async def _tokens_touched(self, from_block: int | None) -> list[str]:
+        """Every token the account traded: the API's action history (when there is an API; a hint only) merged with the
+        account's own AgentAction logs, which are always scanned, so an API that omits a token cannot hide it."""
+        tokens: list[str] = []
         api = self._mf.api
         if api is not None:
             try:
-                out: list[str] = []
                 cursor: str | None = None
                 for _page in range(MAX_ACTION_PAGES):
                     page = await api.list_actions(self.account, cursor)
-                    out.extend(item["token"] for item in page["items"] if isinstance(item.get("token"), str))
+                    tokens.extend(item["token"] for item in page["items"] if isinstance(item.get("token"), str))
                     cursor = page.get("nextCursor")
                     if not cursor:
-                        return out
-                # more pages than the cap: fall back to the chain rather than loop on a hostile or broken cursor
-            except Exception:  # fall back to the chain
+                        break
+            except Exception:  # the chain scan below still finds every token
                 pass
         logs = await scan_logs(self._mf.rpc, self.account, from_block if from_block is not None else self._agents.deploy_block,
                                topics=[AGENT_ACTION_TOPIC])
-        tokens: list[str] = []
         for entry in logs:
             try:
                 decoded = AGENT_ACCOUNT.decode_log(entry["topics"], entry["data"])
