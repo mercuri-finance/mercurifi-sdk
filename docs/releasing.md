@@ -49,6 +49,7 @@ Hygiene notes (zizmor style):
 - `id-token: write` appears only on the publish job of each release workflow, and no job in a release workflow uses a dependency cache.
 - CI tools (`uv`, `zizmor`, `cyclonedx-bom`) install from `.github/ci-requirements.txt` with `--require-hashes --no-deps`. Regenerate it with the command in its header.
 - Run steps use no `${{ }}` expressions from event data.
+- Python lint is `ruff check` (CI and the release build). `ruff format` is deliberately **not** enforced: adopting it would reformat about 50 files (49 on 9 Oct) in one diff with no behaviour change, so it is left for a separate, owner-approved formatting commit. Do not add a `ruff format --check` step until that commit lands.
 
 Before the first run, once the repository exists (checklist for the owner):
 
