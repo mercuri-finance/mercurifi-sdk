@@ -5,7 +5,7 @@
 //   node scripts/gen-abis.mjs --verify-digest                      TS and Python copies agree with the digest (no contracts needed)
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +36,8 @@ const REQUIRED = {
     function: ['FACTORY', 'REGISTRY', 'owner', 'referrer', 'basis', 'buy', 'sell', 'launch', 'swapExactIn', 'claimFees',
       'sweepToOwner', 'withdraw', 'withdrawMany', 'isValidSignature'],
     event: ['AgentAction', 'AccountWithdrawn'],
+    error: ['TradeTooLarge', 'PriceImpactTooHigh', 'TokenNotRegistered', 'TokenNotAllowed', 'TokenTooNew', 'SnipeTaxTooHigh', 'ZeroMinOut',
+      'NotTrading', 'NotGraduated', 'ZeroOutput', 'AmountTooLarge'],
   },
   agentPolicyRegistry: {
     function: ['FACTORY', 'owner', 'policy', 'periodSeconds', 'increaseDelay', 'agent', 'activeAgentCount', 'retired',
@@ -45,6 +47,8 @@ const REQUIRED = {
     event: ['PolicyApplied', 'AgentActivated', 'AgentQueued', 'AgentRevoked', 'PolicyQueued', 'QueuedCancelled', 'QueuedExecuted',
       'TokenAllowed', 'TokenAllowQueued', 'AgentsPaused', 'IncreaseDelaySet', 'IncreaseDelayQueued', 'OwnershipQueued',
       'AccountOwnerChanged'],
+    error: ['PeriodSpendExceeded', 'PeriodSellExceeded', 'TokenCapExceeded', 'ActionLimit', 'LaunchLimit', 'NotAgent', 'AgentExpired',
+      'MissingPermission', 'Paused', 'DeadlineOutOfRange', 'StaleQueued'],
   },
   agentAccountFactory: {
     function: ['createAccount', 'predictAccount', 'isAccount', 'implementation', 'registry', 'ceilings', 'isPaused', 'pausedUntil'],
@@ -98,6 +102,31 @@ const loadAbi = (outDir, dir, contract) => {
   return abis[0];
 };
 
+/** Non-fatal: a Foundry artifact older than its Solidity source may predate a contract edit (run forge build). */
+const warnStale = (contractsDir, dir, contract) => {
+  const artifacts = ['', '.default', '.small', '.posm'].map((p) => join(contractsDir, 'out', dir, `${contract}${p}.json`)).filter((f) => existsSync(f));
+  const source = findSource(contractsDir, contract);
+  if (source === null) return;
+  const sourceTime = statSync(source).mtimeMs;
+  for (const f of artifacts) {
+    if (statSync(f).mtimeMs < sourceTime) console.warn(`warning: ${f} is older than ${source}; run forge build in the contracts worktree`);
+  }
+};
+
+const findSource = (root, contract) => {
+  const stack = [join(root, 'src'), join(root, 'lib')];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (!existsSync(dir)) continue;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.isDirectory()) {
+        if (e.name !== 'node_modules' && e.name !== 'test' && e.name !== '.git') stack.push(join(dir, e.name));
+      } else if (e.name === `${contract}.sol`) return join(dir, e.name);
+    }
+  }
+  return null;
+};
+
 const checkRequired = (name, abi) => {
   for (const [type, members] of Object.entries(REQUIRED[name])) {
     const have = new Set(abi.filter((i) => i.type === type).map((i) => i.name));
@@ -136,6 +165,7 @@ const generate = (contractsDir, allowDirty) => {
   const outDir = join(contractsDir, 'out');
   const entries = SOURCES.map(([name, dir, contract]) => {
     const abi = loadAbi(outDir, dir, contract);
+    warnStale(contractsDir, dir, contract);
     checkRequired(name, abi);
     checkShapes(name, abi);
     return [name, abi];
@@ -150,29 +180,40 @@ const readPythonEntries = () =>
     .filter((f) => f.endsWith('.json') && !f.startsWith('_'))
     .map((f) => [f.replace(/\.json$/, ''), JSON.parse(readFileSync(join(PY_DIR, f), 'utf8'))]);
 
+const verifyDigest = () => {
+  const shared = JSON.parse(readFileSync(DIGEST_FILE, 'utf8'));
+  const py = readPythonEntries();
+  const stems = py.map(([n]) => n).sort();
+  const expected = SOURCES.map(([n]) => n).sort();
+  if (JSON.stringify(stems) !== JSON.stringify(expected)) {
+    console.error(`Python abi/ files [${stems.join(', ')}] differ from SOURCES [${expected.join(', ')}]`);
+    process.exit(1);
+  }
+  const order = new Map(SOURCES.map(([n], i) => [n, i]));
+  py.sort(([a], [b]) => order.get(a) - order.get(b));
+  const problems = [];
+  if (digestOf(py) !== shared.digest) problems.push('Python ABIs do not match fixtures/abi-digest.json');
+  if (body(readFileSync(TS_OUT, 'utf8')) !== body(renderTs(py, shared.digest, shared.contractsCommit))) problems.push('TS generated.ts does not match the Python ABIs');
+  if (problems.length > 0) {
+    console.error(problems.join('\n'));
+    process.exit(1);
+  }
+  console.log(`ABIs consistent (${shared.digest.slice(0, 12)}, contracts ${shared.contractsCommit})`);
+};
+
 const main = () => {
   const args = process.argv.slice(2);
   const flag = (f) => args.includes(f);
   const contractsDir = args.includes('--contracts') ? resolve(args[args.indexOf('--contracts') + 1]) : DEFAULT_CONTRACTS;
 
   if (flag('--verify-digest')) {
-    const shared = JSON.parse(readFileSync(DIGEST_FILE, 'utf8'));
-    const py = readPythonEntries();
-    const order = new Map(SOURCES.map(([n], i) => [n, i]));
-    py.sort(([a], [b]) => order.get(a) - order.get(b));
-    const problems = [];
-    if (digestOf(py) !== shared.digest) problems.push('Python ABIs do not match fixtures/abi-digest.json');
-    if (body(readFileSync(TS_OUT, 'utf8')) !== body(renderTs(py, shared.digest, shared.contractsCommit))) problems.push('TS generated.ts does not match the Python ABIs');
-    if (problems.length > 0) {
-      console.error(problems.join('\n'));
-      process.exit(1);
-    }
-    console.log(`ABIs consistent (${shared.digest.slice(0, 12)}, contracts ${shared.contractsCommit})`);
+    verifyDigest();
     return;
   }
 
   const { entries, digest, commit, ts } = generate(contractsDir, flag('--allow-dirty'));
   if (flag('--check')) {
+    verifyDigest();
     const shared = JSON.parse(readFileSync(DIGEST_FILE, 'utf8'));
     if (shared.digest !== digest || body(readFileSync(TS_OUT, 'utf8')) !== body(ts)) {
       console.error(`ABIs are stale: committed ${shared.digest.slice(0, 12)}, contracts ${commit} give ${digest.slice(0, 12)}. Run npm run gen:abis.`);
