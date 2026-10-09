@@ -1,4 +1,4 @@
-import { createPublicClient, defineChain, http, type Address, type Chain, type PublicClient, type Transport } from 'viem';
+import { createPublicClient, defineChain, type Address, type Chain, type PublicClient, type Transport } from 'viem';
 
 import { AgentClient } from './agent.js';
 import { readTokenSafeView, type TokenSafeView } from './safeView.js';
@@ -15,6 +15,7 @@ import { redactUrl, redactUrlsIn } from './redact.js';
 import type { Signer } from './signers.js';
 import { TxSender } from './tx.js';
 import { isAgentAccount } from './reads.js';
+import { rpcCheckReason, rpcTransport } from './rpcFetch.js';
 import { slippageToBps } from './units.js';
 import { verifyNetwork } from './verify.js';
 
@@ -166,7 +167,7 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   }
   const publicClient = createPublicClient({
     chain: arcChain(book, rpcUrl),
-    transport: options.transport ?? http(rpcUrl, { retryCount: 2, timeout: 15_000 }),
+    transport: options.transport ?? rpcTransport(rpcUrl),
     // viem caches eth_blockNumber for its polling interval (4 s) by default. Reads pinned to that number would run
     // against a block from before the caller's own last transaction (a just-launched token "not registered", a
     // just-queued item missing), so the head is always read fresh.
@@ -183,7 +184,9 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
       // Transport failures carry the full RPC URL (often with a key); surface the host only and drop the cause.
-      const reason = error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error);
+      // The SDK's own response checks (rpcFetch.ts) name their reason; anything else keeps viem's short message.
+      const checked = rpcCheckReason(error);
+      const reason = checked ?? (error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error));
       throw new MercurifiError('RPC_ERROR', `RPC ${redactUrl(rpcUrl)} failed during start-up verification: ${redactUrlsIn(reason).split('\n')[0]}`);
     }
   }
