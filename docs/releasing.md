@@ -7,13 +7,14 @@ Each publish needs its own explicit owner approval. Publish only from the releas
 ## Steps
 
 1. The owner creates the GitHub repository under the `mercuri-finance` organisation and pushes as `mercurifinance`.
-2. The owner creates the npm org `mercurifi` and configures the trusted publisher for `@mercurifi/sdk` (repository, workflow `release-npm.yml`, environment `npm-release`).
-3. The owner configures the PyPI pending publisher for `mercurifi` (repository, workflow `release-pypi.yml`, environment `pypi-release`).
-4. Bump the versions in `package.json`, `src/version.ts`, `pyproject.toml` and `_version.py`.
-5. Record the factory addresses and code hashes in both address books, only from an owner-approved deployment record.
-6. Run CI.
-7. Dispatch the release workflows; the environment needs owner approval.
-8. Verify provenance per [verify-provenance.md](verify-provenance.md).
+2. **Before anything dispatches a release workflow**, the owner creates the `npm-release` and `pypi-release` environments with required reviewers (the owner) and a deployment branch rule limited to `main`. A workflow that references an environment which does not exist yet makes GitHub create it on the first run **with no protection rules**, so that first run would publish without approval.
+3. The owner creates the npm org `mercurifi` and configures the trusted publisher for `@mercurifi/sdk`: repository `mercuri-finance/<repo>`, workflow `release-npm.yml`, **environment `npm-release`**. Binding the environment means an OIDC token from any other job or environment is refused by npm.
+4. The owner configures the PyPI pending publisher for `mercurifi`: repository, workflow `release-pypi.yml`, **environment `pypi-release`**.
+5. Bump the versions in `package.json`, `src/version.ts`, `pyproject.toml` and `_version.py` (the smoke tests fail if they differ).
+6. Record the factory addresses and code hashes in both address books, only from an owner-approved deployment record.
+7. Run CI.
+8. Dispatch the release workflows. The `build` job runs without approval and without an OIDC token; the `publish` job waits for the environment's approval, then only downloads the build's artifact and publishes it.
+9. Verify provenance per [verify-provenance.md](verify-provenance.md).
 
 ## Open point
 
@@ -29,23 +30,31 @@ CI and the npm release workflow run `npm audit --omit=dev --audit-level=high`, s
 
 ## CI and release configuration (inert)
 
-The workflows under `.github/workflows/` are written but have never run: there is no remote, `release-npm.yml` and `release-pypi.yml` trigger only on `workflow_dispatch`, and each publish job sits behind a GitHub environment (`npm-release`, `pypi-release`) that must require owner approval, plus an organisation and actor guard. Publishing uses npm trusted publishing with provenance and PyPI Trusted Publishing with attestations, so no long-lived token is stored anywhere.
+The workflows under `.github/workflows/` are written but have never run: there is no remote, `release-npm.yml` and `release-pypi.yml` trigger only on `workflow_dispatch`, and each publish job sits behind a GitHub environment (`npm-release`, `pypi-release`) that must require owner approval, plus a guard on the organisation, `github.actor` and `github.triggering_actor`. Publishing uses npm trusted publishing with provenance and PyPI Trusted Publishing with attestations, so no long-lived token is stored anywhere.
 
-`node scripts/check-workflows.mjs` (also run in CI) fails on an action not pinned to a 40-hex commit SHA, `pull_request_target`, a top-level `permissions` that is not exactly `contents: read`, `id-token: write` outside a release workflow, a checkout that keeps credentials, attacker-controlled event text in an expression, and any release trigger other than `workflow_dispatch`. `zizmor` (hash-pinned in `.github/ci-requirements.txt`) runs in CI at medium severity and above.
+Each release workflow has two jobs:
+
+- `build` (`contents: read`, no environment, no OIDC token) installs, audits, checks, tests and builds, runs the smoke tests online, writes the SBOM, and uploads the exact artifact: the `npm pack` tarball, or the wheel and sdist (built with `--build-constraints build-constraints.txt --require-hashes`, then gated by `scripts/smoke_wheel.py <wheel> --sdist <sdist>`: RECORD may list only `mercurifi/**` and its dist-info, no `.pth` or `*.data/`, every hash must match, the sdist must rebuild into the identical wheel, and the installed `mercurifi.__version__` must equal `pyproject.toml`).
+- `publish` (`id-token: write` only, the environment, `needs: build`) downloads that artifact and runs `npm publish <tarball> --provenance` or the pinned PyPI publish action. No dev tooling, install step or cache ever runs while the OIDC token exists.
+
+`node scripts/check-workflows.mjs` (also run in CI) is a dependency-free backstop to `zizmor`, the primary audit. It fails on an action not pinned to a 40-hex commit SHA, `pull_request_target`, a top-level `permissions` block that is not exactly `contents: read`, any `write` scope other than `id-token`, `id-token: write` anywhere but a release workflow's publish job, a publish job that uses anything beyond checkout, download-artifact, setup-node (without a cache) and the publish step or runs any command but `npm publish`, a release environment on any other job, a publish job without `needs`, the environment or the full guard, a checkout that keeps credentials, untrusted event text, `head_ref` or inputs in an expression, and any release trigger other than `workflow_dispatch`. `zizmor` (hash-pinned in `.github/ci-requirements.txt`) runs in CI at medium severity and above; the pedantic persona reports nothing offline.
 
 Hygiene notes (zizmor style):
 
-- Third-party actions are pinned by SHA with the tag in a comment: `actions/checkout` v4, `actions/setup-node` v4 (both copied from the Launch web repository), `actions/upload-artifact` v4.6.2 and `pypa/gh-action-pypi-publish` v1.12.4 (dereferenced tag commits read with `git ls-remote`). Dependabot-style bumps are manual: re-resolve the SHA, then update the comment.
+- Third-party actions are pinned by SHA with the exact tag in a comment: `actions/checkout` v4.4.0, `actions/setup-node` v4.4.0 (both copied from the Launch web repository), `actions/upload-artifact` v4.6.2, `actions/download-artifact` v4.3.0 and `pypa/gh-action-pypi-publish` v1.12.4 (tag commits read with `git ls-remote`, dereferenced where the tag is annotated). Dependabot-style bumps are manual: re-resolve the SHA, then update the comment.
+- CI runs the TypeScript suite on Node 22 (`.nvmrc`) and 24. The npm publish job uses Node 24 because trusted publishing needs npm 11.5.1 or later.
+- The wheel smoke test is offline by default on a laptop (uv cache only) and online when `CI=true`; `MERCURIFI_SMOKE_ONLINE=1` or `0` overrides it, and the workflows set `1` explicitly. Every dependency it installs is hash-pinned either way.
+- Build-backend dependencies are hash-pinned in `packages/python/build-constraints.txt` (hatchling 1.27.0 and its tree); regenerate it with the command in its header when `[build-system]` changes.
 - Every checkout sets `persist-credentials: false`; no job needs write access to the repository.
-- `id-token: write` appears only on the publish job of each release workflow.
+- `id-token: write` appears only on the publish job of each release workflow, and no job in a release workflow uses a dependency cache.
 - CI tools (`uv`, `zizmor`, `cyclonedx-bom`) install from `.github/ci-requirements.txt` with `--require-hashes --no-deps`. Regenerate it with the command in its header.
 - Run steps use no `${{ }}` expressions from event data.
 
 Before the first run, once the repository exists (checklist for the owner):
 
-- [ ] Create the `npm-release` and `pypi-release` environments with required reviewers and a deployment branch rule.
-- [ ] Configure the npm trusted publisher and the PyPI pending publisher (see Steps above).
+- [ ] Create the `npm-release` and `pypi-release` environments with required reviewers and a deployment branch rule **before the first dispatch** (a referenced environment that does not exist is auto-created without protection).
+- [ ] Configure the npm trusted publisher (bound to environment `npm-release`) and the PyPI pending publisher (bound to `pypi-release`); see Steps above.
 - [ ] Re-resolve every pinned SHA against the new repository's allowed-actions policy; enable "require actions pinned to a full SHA".
 - [ ] Confirm the `if:` guard (`mercuri-finance` / `mercurifinance`) matches the real organisation and publishing account.
 - [ ] Run `zizmor` with a GitHub token (online audits such as impostor-commit and known-vulnerable-actions were skipped offline).
-- [ ] Run `smoke:dist` on a runner with an empty cache: the wheel smoke test then installs from PyPI with `--require-hashes` (set `MERCURIFI_SMOKE_ONLINE=1`).
+- [ ] Watch the first CI run: the wheel smoke test runs online there (`CI=true`) and installs every dependency from PyPI with hashes; it was exercised locally with an empty uv cache.
