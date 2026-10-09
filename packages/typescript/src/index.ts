@@ -6,4 +6,4 @@ export * from './permissions.js';
 export * from './networks.js';
 export { verifyNetwork } from './verify.js';
 export * from './api/types.js';
-export { createClient, MercurifiClient, type CreateClientOptions, type ClientSettings } from './client.js';
+export { createClient, redactUrl, redactUrlsIn, MercurifiClient, type CreateClientOptions, type ClientSettings } from './client.js';

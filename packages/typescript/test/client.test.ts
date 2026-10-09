@@ -2,7 +2,7 @@ import { keccak256 } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
-import { createClient } from '../src/client.js';
+import { createClient, redactUrl, redactUrlsIn } from '../src/client.js';
 import { InvalidInputError, NetworkMismatchError, NotDeployedError } from '../src/errors.js';
 import { localNetwork, TESTNET } from '../src/networks.js';
 import { A, localJson, localRpc, REGISTRY } from './helpers/local.js';
@@ -59,6 +59,43 @@ describe('createClient', () => {
   it('refuses an API key from the other network', async () => {
     const rpc = new MockRpc(TESTNET.chainId);
     await expect(createClient({ network: 'testnet', apiKey: 'mfk_live_abc', transport: rpc.transport() })).rejects.toThrow(/other network/);
+  });
+});
+
+describe('createClient hardening', () => {
+  it('does not resolve inherited names as networks', async () => {
+    for (const n of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      await expect(createClient({ network: n as never })).rejects.toThrow(InvalidInputError);
+    }
+  });
+
+  it('rejects a malformed rpcUrl with InvalidInputError', async () => {
+    const rpc = new MockRpc(TESTNET.chainId);
+    for (const rpcUrl of ['not a url', '', 'ftp://host']) {
+      await expect(createClient({ network: 'testnet', rpcUrl, transport: rpc.transport() })).rejects.toMatchObject({ name: 'InvalidInputError', field: 'rpcUrl' });
+    }
+  });
+
+  it('gives an empty apiKey its own message', async () => {
+    const rpc = new MockRpc(TESTNET.chainId);
+    await expect(createClient({ network: 'testnet', apiKey: '', transport: rpc.transport() })).rejects.toThrow(/apiKey is empty/);
+    await expect(createClient({ network: 'testnet', apiKey: '  ', transport: rpc.transport() })).rejects.toMatchObject({ field: 'apiKey' });
+  });
+
+  it('shows only the RPC host in surfaced errors', async () => {
+    const secret = 'https://user:pw@rpc.example.org/v2/SECRETKEY123?k=SECRETKEY123';
+    const failing = (() => ({ request: async () => { throw new Error(`fetch failed for ${secret}`); } })) as never;
+    const err = await createClient({ network: 'mainnet', rpcUrl: secret, transport: failing }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    const text = JSON.stringify([(err as Error).message, (err as Error).stack, String((err as Error).cause)]);
+    expect(text).not.toContain('SECRETKEY123');
+    expect(text).not.toContain('pw@');
+    expect((err as Error).message).toContain('rpc.example.org');
+  });
+
+  it('redacts URLs inside messages', () => {
+    expect(redactUrlsIn('GET https://a.b/c/KEY failed, see http://x.y:8080/z?q=1')).toBe('GET a.b failed, see x.y:8080');
+    expect(redactUrl('nonsense')).toBe('invalid URL');
   });
 });
 

@@ -1,7 +1,7 @@
 import { createPublicClient, defineChain, http, type Chain, type PublicClient, type Transport } from 'viem';
 
 import type { MercurifiApi } from './api/types.js';
-import { InvalidInputError, NetworkMismatchError, NotDeployedError } from './errors.js';
+import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
 import { verifyNetwork } from './verify.js';
@@ -61,9 +61,22 @@ export class MercurifiClient {
   }
 }
 
+/** Host only (no path, query or credentials): RPC URLs often carry an API key in the path. */
+export const redactUrl = (url: string): string => {
+  try {
+    return new URL(url).host || 'invalid URL';
+  } catch {
+    return 'invalid URL';
+  }
+};
+
+const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>)]+/gi;
+/** Replaces every URL in a message with its host. */
+export const redactUrlsIn = (message: string): string => message.replace(URL_PATTERN, (u) => redactUrl(u));
+
 const resolveBook = (network: CreateClientOptions['network']): NetworkBook => {
   if (typeof network === 'string') {
-    const book = (NETWORKS as Record<string, NetworkBook | undefined>)[network];
+    const book = Object.hasOwn(NETWORKS, network) ? (NETWORKS as Record<string, NetworkBook>)[network] : undefined;
     if (book === undefined) throw new InvalidInputError('network', "network must be 'mainnet', 'testnet' or a local address book");
     return book;
   }
@@ -83,7 +96,17 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   const book = resolveBook(options.network);
   const rpcUrl = options.rpcUrl ?? book.defaultRpcUrl;
   if (rpcUrl === null) throw new InvalidInputError('rpcUrl', `rpcUrl is required on ${book.name}`);
+  let parsed: URL;
+  try {
+    parsed = new URL(rpcUrl);
+  } catch {
+    throw new InvalidInputError('rpcUrl', 'rpcUrl is not a valid URL; expected http(s)://host[:port][/path]');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new InvalidInputError('rpcUrl', 'rpcUrl must start with http:// or https://');
   if (book.name === 'local' && !isLoopbackUrl(rpcUrl)) throw new NetworkMismatchError('a local address book needs a loopback RPC (127.0.0.1, localhost or [::1])');
+  if (options.apiKey !== undefined && options.apiKey.trim() === '') {
+    throw new InvalidInputError('apiKey', 'apiKey is empty; omit it for keyless use, or pass a key that starts with mfk_live_ or mfk_test_');
+  }
   if (options.apiKey !== undefined && book.apiKeyPrefix !== null && !options.apiKey.startsWith(book.apiKeyPrefix)) {
     throw new NetworkMismatchError(`This API key belongs to the other network; ${book.name} keys start with ${book.apiKeyPrefix}`);
   }
@@ -95,7 +118,16 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     chain: arcChain(book, rpcUrl),
     transport: options.transport ?? http(rpcUrl, { retryCount: 2, timeout: 15_000 }),
   }) as PublicClient;
-  if (options.verify !== false) await verifyNetwork(publicClient, book);
+  if (options.verify !== false) {
+    try {
+      await verifyNetwork(publicClient, book);
+    } catch (error) {
+      if (error instanceof MercurifiError) throw error;
+      // Transport failures carry the full RPC URL (often with a key); surface the host only and drop the cause.
+      const reason = error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error);
+      throw new MercurifiError('RPC_ERROR', `RPC ${redactUrl(rpcUrl)} failed during start-up verification: ${redactUrlsIn(reason).split('\n')[0]}`);
+    }
+  }
   const settings: ClientSettings = {
     receiptTimeoutMs: options.receiptTimeoutMs ?? 60_000,
     pollMs: options.pollMs ?? 250,
