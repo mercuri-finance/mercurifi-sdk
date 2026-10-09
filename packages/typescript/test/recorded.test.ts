@@ -16,6 +16,14 @@ describe('recorded Anvil fixtures', () => {
       'revert-launch-limit.json', 'revert-missing-permission.json', 'revert-snipe.json', 'revert-stale.json', 'revert-trade-too-large.json',
     ]));
   });
+  it('names the declaring contract in every recorded revert', () => {
+    const reverts = files.filter((f) => f.startsWith('revert-'));
+    expect(reverts.length).toBeGreaterThan(0);
+    for (const f of reverts) {
+      const source = JSON.parse(readFileSync(new URL(f, DIR), 'utf8')).expected?.source;
+      expect(['AgentAccount', 'AgentPolicyRegistry', 'AgentAccountFactory'], f).toContain(source);
+    }
+  });
   it.each(files)('%s decodes exactly as recorded', (f) => {
     const r = JSON.parse(readFileSync(new URL(f, DIR), 'utf8'));
     if (r.kind === 'fill') {
@@ -26,8 +34,9 @@ describe('recorded Anvil fixtures', () => {
       const { action, token, usdcSpent6, usdcReceived6, tokenDelta, basisValue6, launched } = fill;
       expect(str({ action, token, usdcSpent6, usdcReceived6, tokenDelta, basisValue6, launched })).toEqual(r.expected);
     } else {
+      expect(r.kind).toBe('revert');
       const d = decodeRevert(r.data as Hex);
-      expect({ name: d.name, message: d.message }).toEqual(r.expected);
+      expect({ name: d.name, message: d.message, source: d.source }).toEqual(r.expected);
     }
   });
 });

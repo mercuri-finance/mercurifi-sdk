@@ -1,4 +1,5 @@
-"""Loopback Anvil only (scripts/local-chain.sh). Run: uv run pytest -m integration (ANVIL_RPC overrides the port).
+"""Loopback Anvil only (scripts/local-chain.sh). Run: uv run pytest -m integration. ANVIL_PORT (default 8545) selects the
+chain and its book fixtures/local-book-<port>.json; ANVIL_RPC may override the URL, and its port then names the book.
 
 One ordered test: each block depends on the state the previous one left, as in the TypeScript tier's local.test.ts. Python does not
 record fixtures; the TS tier is the single recorder and test_recorded.py proves Python decodes its files identically.
@@ -8,6 +9,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -23,16 +25,23 @@ from mercurifi.signers import LocalKeySigner
 from mercurifi.tx import WriteRequest
 
 pytestmark = pytest.mark.integration
-RPC = os.environ.get("ANVIL_RPC", "http://127.0.0.1:8545")
-BOOK = Path(__file__).resolve().parents[3] / "fixtures" / "local-book.json"
+RPC = os.environ.get("ANVIL_RPC", f"http://127.0.0.1:{os.environ.get('ANVIL_PORT', '8545')}")
+BOOK = Path(__file__).resolve().parents[3] / "fixtures" / f"local-book-{urlsplit(RPC).port or 80}.json"
 WAD = 10**18
+DAY = 86_400
 ZERO = "0x" + "00" * 20
 ALL_BUT_SELL = ("buy", "launch", "swap", "claim", "sweep")
 ALL = ("buy", "sell", "launch", "swap", "claim", "sweep")
 
 
+def require_loopback() -> None:
+    # An explicit raise, not assert: the guard must hold under python -O too.
+    if not is_loopback_url(RPC):
+        raise RuntimeError("the integration tier runs only against a loopback Anvil")
+
+
 async def anvil(method: str, params: list[Any]) -> Any:
-    assert is_loopback_url(RPC), "the integration tier runs only against a loopback Anvil"
+    require_loopback()
     async with httpx.AsyncClient(trust_env=False) as http:
         body = (await http.post(RPC, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})).json()
     if "error" in body:
@@ -48,9 +57,27 @@ async def mine(blocks: int) -> None:
     await anvil("anvil_mine", [hex(blocks)])
 
 
+async def latest_ts() -> int:
+    return int((await anvil("eth_getBlockByNumber", ["latest", False]))["timestamp"], 16)
+
+
+DAY0 = {"day": 0}
+
+
+async def align_to_day_start() -> None:
+    """Periods are block.timestamp // 1 day. Start one minute into the next UTC day, so the run's warps (3 x 3,601 s plus
+    mined blocks) cannot cross midnight and reset the period-bound counters (the launch limit) mid-run."""
+    DAY0["day"] = await latest_ts() // DAY + 1
+    await anvil("evm_setNextBlockTimestamp", [hex(DAY0["day"] * DAY + 60)])
+    await mine(1)
+    assert await latest_ts() // DAY == DAY0["day"]
+
+
 async def warp(seconds: int) -> None:
+    """Moves chain time forward; every warp must stay inside the aligned day, or period-bound cases would flake."""
     await anvil("evm_increaseTime", [hex(seconds)])
     await mine(1)
+    assert await latest_ts() // DAY == DAY0["day"]
 
 
 def new_key() -> LocalKeySigner:
@@ -70,7 +97,8 @@ async def chain_revert(mf: AsyncClient, sender: str, to: str, data: str) -> Deco
 
 
 async def test_end_to_end() -> None:
-    assert is_loopback_url(RPC), "the integration tier runs only against a loopback Anvil"
+    require_loopback()
+    await align_to_day_start()
     book = local_network(json.loads(BOOK.read_text()))
     assert book.agents is not None and book.agents.registry != ZERO
     # create_client verifies the factory, implementation and registry code hashes, factory.registry() and registry.FACTORY().
@@ -127,6 +155,9 @@ async def _run(mf: AsyncClient) -> None:
     # Concurrent buys from one key go out in nonce order.
     fills = await asyncio.gather(*(agent.buy(token, usdc="1") for _ in range(3)))
     assert len({f.tx_hash for f in fills}) == 3
+    txs = [await mf.rpc.request("eth_getTransactionByHash", [f.tx_hash]) for f in fills]
+    nonces = sorted(int(t["nonce"], 16) for t in txs)
+    assert nonces == [nonces[0], nonces[0] + 1, nonces[0] + 2]
 
     # Sell needs the permission (a registry error), granted through the queue.
     with pytest.raises(ContractRevertError) as missing:
@@ -142,15 +173,35 @@ async def _run(mf: AsyncClient) -> None:
     await manager.execute_queued(grant.queued_id)
     assert (await agent.sell(token, amount="1000000")).action == "sell"
 
-    # The sell is valued at the high-water cost, exactly as basis.py computes it before signing.
+    # The sell is valued at the high-water cost, exactly as basis.py computes it before signing. Make the high-water term
+    # win: a wallet pumps the price, the agent buys high (raising its high-water average), the wallet dumps, the agent
+    # buys cheap (the average falls, the high-water stays), then the agent sells.
+    first_curve = (await mf.token(token)).curve
+    pumper = new_key()
+    await fund(pumper.address, 10_000)
+    deadline = await mf.rpc.latest_timestamp() + 600
+    pump = BONDING_CURVE.encode("buy", 1, ZERO, deadline)
+    await mf.sender.send(pumper, WriteRequest(to=first_curve, data=pump, label="pump", value=2_000 * WAD))
+    await agent.buy(token, usdc="40")
+    held = int(await mf.rpc.read(LAUNCH_TOKEN, token, "balanceOf", pumper.address))
+    approve = LAUNCH_TOKEN.encode("approve", first_curve, held)
+    await mf.sender.send(pumper, WriteRequest(to=token, data=approve, label="approve"))
+    deadline = await mf.rpc.latest_timestamp() + 600
+    dump = BONDING_CURVE.encode("sell", held, 1, ZERO, deadline)
+    await mf.sender.send(pumper, WriteRequest(to=first_curve, data=dump, label="dump"))
+    await agent.buy(token, usdc="20")
+
     before = await agent.position(token)
     basis = Basis(before.cost_usdc6, before.basis_tokens, before.high_water)
-    tokens_in = 500_000 * WAD
-    assert tokens_in <= basis.tokens  # every token was bought by the account: nothing is unrecorded
+    tokens_in = basis.tokens // 10
+    assert tokens_in <= before.balance_wei  # every token was bought by the account: nothing is unrecorded
     recorded, value6 = recorded_sell_value6(basis, tokens_in)
     assert recorded == tokens_in
     assert curve_sell_value6(basis, tokens_in, 0) == value6
-    assert value6 >= (tokens_in * basis.cost_usdc6 + basis.tokens - 1) // basis.tokens  # never under the rounded-up average
+    ceil_avg = (tokens_in * basis.cost_usdc6 + basis.tokens - 1) // basis.tokens
+    high_water = tokens_in * basis.high_water // 10**36
+    assert value6 == high_water  # the high-water branch decides ...
+    assert high_water > ceil_avg  # ... strictly above the rounded-up average
     assert (await agent.sell(token, amount_wei=tokens_in)).basis_value6 == value6
 
     # A curve-completing buy goes out with at least 1.8M gas. It runs on a second token: completing the first one would
@@ -185,13 +236,17 @@ async def _run(mf: AsyncClient) -> None:
     # The launch limit is checked before the trade size (registry preamble), on chain.
     await agent.launch("PyLocal Three", "PYL3", metadata_uri="ipfs://py-3")  # third of three this period
     config_hash = str(await mf.rpc.read(LAUNCH_FACTORY, mf.network.launch.factory, "configHash"))
+    initial_buy6 = 150_000_000
     request = {
         "name": "PyLocal Four", "symbol": "PYL4", "metadataURI": "ipfs://py-4", "salt": "0x" + "00" * 31 + "04",
-        "expectedConfigHash": config_hash, "initialBuyUsdc": 150_000_000, "minTokensOut": 1,
+        "expectedConfigHash": config_hash, "initialBuyUsdc": initial_buy6, "minTokensOut": 1,
         "deadline": await mf.rpc.latest_timestamp() + 60,
     }
     on_chain = await chain_revert(mf, agent_signer.address, account, AGENT_ACCOUNT.encode("launch", request))
     assert (on_chain.name, on_chain.source) == ("LaunchLimit", "AgentPolicyRegistry")
+    # The multi-failure: out of launches and an initial buy above maxTradeUsdc at once; LaunchLimit wins.
+    assert (await agent.headroom()).launches == 0
+    assert initial_buy6 > (await manager.state()).policy.max_trade_usdc
 
     # A tightening applies at once; the older widening keeps the field written after it (superseded).
     first = await manager.set_policy({"max_trade_usdc": "50", "period_spend_cap": "900"})
@@ -244,3 +299,4 @@ async def _run(mf: AsyncClient) -> None:
     await manager.withdraw_many()
     assert await mf.rpc.get_balance(account) == 0
     assert await mf.rpc.read(LAUNCH_TOKEN, token, "balanceOf", account) == 0
+    assert await latest_ts() // DAY == DAY0["day"]  # the whole run stayed in one period

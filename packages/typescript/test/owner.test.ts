@@ -1,14 +1,15 @@
-import { decodeFunctionData, encodeAbiParameters, parseTransaction, zeroAddress, type Abi, type Hex } from 'viem';
+import { createPublicClient, decodeFunctionData, encodeAbiParameters, parseTransaction, toHex, zeroAddress, type Abi, type Hex, type PublicClient } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import { agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, launchTokenAbi } from '../src/abi/index.js';
 import { InvalidInputError, NotOwnerError } from '../src/errors.js';
 import { SELL_RISK_WARNING } from '../src/permissions.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
-import { POLICY_TUPLE } from '../src/queue.js';
+import { listQueued, POLICY_TUPLE } from '../src/queue.js';
+import { localNetwork } from '../src/networks.js';
 import { localKey } from '../src/signers.js';
 import { agentActionLog, eventLog, FACTORY, mockAccount, mockCurve, queueLog, registryLog, REGISTRY } from './helpers/account.js';
-import { A, ACCOUNT, AGENT_KEY, localClient, localRpc, OWNER_KEY, TOKEN } from './helpers/local.js';
+import { A, ACCOUNT, AGENT_KEY, localClient, localJson, localRpc, OWNER_KEY, TOKEN } from './helpers/local.js';
 
 const owner = localKey(OWNER_KEY);
 const agent = localKey(AGENT_KEY);
@@ -553,5 +554,20 @@ describe('owner client polish', () => {
     await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
     rpc.receiptLogs = [registryLog('QueuedExecuted', { id: 3n, account: A(0x88) })];
     await expect(o.acceptOwnership(ACCOUNT, 3n)).rejects.toMatchObject({ code: 'MISSING_EVENT' });
+  });
+});
+
+describe('listQueued with a caller-supplied client', () => {
+  it('scans up to the current head even when the client caches the block number', async () => {
+    const rpc = localRpc();
+    mockAccount(rpc, { owner: owner.address, agent: agent.address });
+    const cached = createPublicClient({ transport: rpc.transport() }) as PublicClient; // viem default: block number cached
+    await cached.getBlockNumber(); // warms the cache at the old head
+    rpc.block.number += 7n;
+    const from = rpc.calls.length;
+    await listQueued(cached, localNetwork(localJson()).agents!, ACCOUNT);
+    const scans = rpc.calls.slice(from).filter((c) => c.method === 'eth_getLogs').map((c) => (c.params[0] as { toBlock: Hex }).toBlock);
+    expect(scans.length).toBeGreaterThan(0);
+    expect(scans.at(-1)).toBe(toHex(rpc.block.number));
   });
 });

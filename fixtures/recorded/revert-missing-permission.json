@@ -3,6 +3,7 @@
   "data": "0x3f904dc0",
   "expected": {
     "name": "MissingPermission",
-    "message": "This agent key does not have the permission this action needs."
+    "message": "This agent key does not have the permission this action needs.",
+    "source": "AgentPolicyRegistry"
   }
 }

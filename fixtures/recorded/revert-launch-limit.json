@@ -1,8 +1,15 @@
 {
   "kind": "revert",
   "data": "0x174221dc",
+  "context": {
+    "initialBuyUsdc6": "150000000",
+    "maxTradeUsdc6": "100000000",
+    "launchesUsed": 3,
+    "launchesPerPeriod": 3
+  },
   "expected": {
     "name": "LaunchLimit",
-    "message": "The account has used all its launches for this period (launchesPerPeriod)."
+    "message": "The account has used all its launches for this period (launchesPerPeriod).",
+    "source": "AgentPolicyRegistry"
   }
 }

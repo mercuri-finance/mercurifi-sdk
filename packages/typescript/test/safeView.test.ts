@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createPublicClient, toHex, type PublicClient } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { feeManagerAbi, launchTokenAbi } from '../src/abi/index.js';
@@ -6,7 +7,8 @@ import type { MercurifiApi } from '../src/api/types.js';
 import { UnexpectedChainStateError } from '../src/errors.js';
 import { neutralizeUntrusted } from '../src/redact.js';
 import { untrustedReason } from '../src/revert.js';
-import { wrapUntrusted } from '../src/safeView.js';
+import type { MercurifiClient } from '../src/client.js';
+import { readTokenSafeView, wrapUntrusted } from '../src/safeView.js';
 import { mockAccount, mockCurve } from './helpers/account.js';
 import { A, ACCOUNT, CURVE, localClient, localRpc, TOKEN } from './helpers/local.js';
 
@@ -169,5 +171,24 @@ describe('token safe view links and API answers', () => {
     const mf = await setup(null, { phase: 7 });
     await expect(mf.token(TOKEN)).rejects.toBeInstanceOf(UnexpectedChainStateError);
     await expect(mf.token(TOKEN)).rejects.toMatchObject({ code: 'UNEXPECTED_CHAIN_STATE' });
+  });
+});
+
+describe('fresh head reads with a caller-supplied client', () => {
+  it('pins the token reads to the current head even when the client caches the block number', async () => {
+    const rpc = localRpc();
+    mockAccount(rpc, { owner: A(0x99), agent: A(0x98) });
+    mockCurve(rpc);
+    rpc.read(A(2), feeManagerAbi, 'tokenInfo', { curve: CURVE, creator: ACCOUNT, tradeFeeBps: 100, creatorShareBps: 5_000, referrerShareBps: 2_000 });
+    const mf = await localClient(rpc, { api: null });
+    const cached = createPublicClient({ transport: rpc.transport() }) as PublicClient; // viem default: block number cached
+    await cached.getBlockNumber(); // warms the cache at the old head
+    rpc.block.number += 7n;
+    const shim = { publicClient: cached, network: mf.network, api: null } as unknown as MercurifiClient;
+    const from = rpc.calls.length;
+    await readTokenSafeView(shim, TOKEN);
+    const pinned = rpc.calls.slice(from).filter((c) => c.method === 'eth_call').map((c) => c.params[1]);
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(new Set(pinned)).toEqual(new Set([toHex(rpc.block.number)]));
   });
 });

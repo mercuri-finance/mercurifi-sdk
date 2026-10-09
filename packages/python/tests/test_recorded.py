@@ -15,14 +15,8 @@ EXPECTED_FILES = {
     "revert-launch-limit.json", "revert-missing-permission.json", "revert-snipe.json", "revert-stale.json",
     "revert-trade-too-large.json",
 }
-# Which agent contract declares each recorded revert: one call can revert from either ABI (plan "Interface dependencies").
-SOURCES = {
-    "revert-launch-limit.json": "AgentPolicyRegistry",
-    "revert-missing-permission.json": "AgentPolicyRegistry",
-    "revert-stale.json": "AgentPolicyRegistry",
-    "revert-trade-too-large.json": "AgentAccount",
-    "revert-snipe.json": "AgentAccount",
-}
+REVERTS = [p for p in FILES if p.name.startswith("revert-")]
+DECLARING = {"AgentAccount", "AgentPolicyRegistry", "AgentAccountFactory"}
 
 
 def test_fixtures_exist() -> None:
@@ -50,10 +44,11 @@ def test_decodes_exactly_as_typescript(path: Path) -> None:
     else:
         assert r["kind"] == "revert"
         d = decode_revert(r["data"])
-        assert {"name": d.name, "message": d.message} == r["expected"]
+        assert {"name": d.name, "message": d.message, "source": d.source} == r["expected"]
 
 
-@pytest.mark.parametrize("name", sorted(SOURCES))
-def test_recorded_reverts_name_their_declaring_contract(name: str) -> None:
-    d = decode_revert(json.loads((DIR / name).read_text())["data"])
-    assert d.source == SOURCES[name]
+def test_every_recorded_revert_names_its_declaring_contract() -> None:
+    # One call can revert from either agent ABI (plan "Interface dependencies"); the fixture records which one declared it.
+    assert REVERTS
+    for path in REVERTS:
+        assert json.loads(path.read_text())["expected"].get("source") in DECLARING, path.name

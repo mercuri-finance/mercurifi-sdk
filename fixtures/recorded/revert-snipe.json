@@ -3,6 +3,7 @@
   "data": "0x4cc775c800000000000000000000000000000000000000000000000000000000000026ac",
   "expected": {
     "name": "SnipeTaxTooHigh",
-    "message": "The launch snipe tax is 9900 bps, above this account limit (maxSnipeBps). Wait for it to decay."
+    "message": "The launch snipe tax is 9900 bps, above this account limit (maxSnipeBps). Wait for it to decay.",
+    "source": "AgentAccount"
   }
 }

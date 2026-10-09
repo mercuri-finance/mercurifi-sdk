@@ -64,8 +64,10 @@ Every error carries a stable `code` and a readable message. A call the account w
 
 ## Local development
 
-- `scripts/local-chain.sh` starts a loopback Anvil (chain 31337) with the agent contracts.
-- `cd packages/typescript && npm test && npm run typecheck`; `npm run test:integration` runs the Anvil tier.
+- Prerequisites for the Anvil tier: Foundry's `anvil` and `forge` on the PATH, and a checkout of the agent contracts. The scripts look for it at `../../agent-contracts` relative to this repository; set `MERCURIFI_CONTRACTS_DIR` to use another path.
+- `scripts/local-chain.sh` starts a loopback Anvil (chain 31337) on `127.0.0.1:$ANVIL_PORT` (default 8545), deploys the Launch and agent contracts, and writes `fixtures/local-book-<port>.json`. `scripts/stop-local-chain.sh [port]` stops it.
+- The test tiers find the chain from the same `ANVIL_PORT`. `ANVIL_RPC` may override the URL; its port then names the book, so keep the two consistent.
+- `cd packages/typescript && npm test && npm run typecheck`; `npm run test:integration` runs the Anvil tier (`RECORD=1` rewrites `fixtures/recorded`).
 - `cd packages/python && uv run pytest`; `uv run pytest -m integration` runs the Anvil tier.
 
 Nothing here broadcasts to a real network.

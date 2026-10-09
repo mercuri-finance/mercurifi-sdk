@@ -10,9 +10,13 @@ import {
   type AgentClient, type Fill, type MercurifiClient, type Signer,
 } from '../../src/index.js';
 
-const RPC = process.env.ANVIL_RPC ?? 'http://127.0.0.1:8545';
+// ANVIL_PORT selects the chain started by `scripts/local-chain.sh` (default 8545) and its book fixtures/local-book-<port>.json.
+// ANVIL_RPC may override the URL; its port then names the book. Both must point at the same loopback Anvil.
+const RPC = process.env.ANVIL_RPC ?? `http://127.0.0.1:${process.env.ANVIL_PORT ?? '8545'}`;
 if (!isLoopbackUrl(RPC)) throw new Error('the integration tier runs only against a loopback Anvil');
+const PORT = new URL(RPC).port || '80';
 const ROOT = new URL('../../../../', import.meta.url);
+const DAY = 86_400n;
 const RECORD = process.env.RECORD === '1';
 const WAD = 10n ** 18n;
 
@@ -24,7 +28,15 @@ const rpc = async (method: string, params: unknown[]): Promise<unknown> => {
 };
 const fund = (a: Address, usdc: bigint) => rpc('anvil_setBalance', [a, toHex(usdc * WAD)]);
 const mine = (blocks: number) => rpc('anvil_mine', [toHex(blocks)]);
-const warp = async (seconds: number) => { await rpc('evm_increaseTime', [toHex(seconds)]); await mine(1); };
+const latestTs = async () => BigInt(((await rpc('eth_getBlockByNumber', ['latest', false])) as { timestamp: Hex }).timestamp);
+/** The UTC day (= the account's one-day period) the run was aligned to in beforeAll. */
+let day0 = 0n;
+/** Moves chain time forward; every warp must stay inside the aligned day, or period-bound cases would flake. */
+const warp = async (seconds: number) => {
+  await rpc('evm_increaseTime', [toHex(seconds)]);
+  await mine(1);
+  expect((await latestTs()) / DAY).toBe(day0);
+};
 const json = (v: unknown) => `${JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x), 2)}\n`;
 const record = (name: string, value: unknown) => {
   if (!RECORD) return;
@@ -53,10 +65,10 @@ describe('local Anvil end to end', () => {
       expected: { action: fill.action, token: fill.token, usdcSpent6: fill.usdcSpent6, usdcReceived6: fill.usdcReceived6, tokenDelta: fill.tokenDelta, basisValue6: fill.basisValue6, launched: fill.launched },
     });
   };
-  const recordRevert = (name: string, d: DecodedRevert) => {
+  const recordRevert = (name: string, d: DecodedRevert, context?: Record<string, unknown>) => {
     expect(d.source).not.toBe('local check'); // real revert data from the node
     expect(d.data.length).toBeGreaterThanOrEqual(10);
-    record(`revert-${name}`, { kind: 'revert', data: d.data, expected: { name: d.name, message: d.message } });
+    record(`revert-${name}`, { kind: 'revert', data: d.data, ...(context === undefined ? {} : { context }), expected: { name: d.name, message: d.message, source: d.source } });
   };
   /**
    * The SDK refuses most failing trades locally, before signing, so their ContractRevertError carries no node data. The
@@ -74,7 +86,13 @@ describe('local Anvil end to end', () => {
   };
 
   beforeAll(async () => {
-    const book = localNetwork(JSON.parse(readFileSync(new URL('fixtures/local-book.json', ROOT), 'utf8')));
+    // Periods are block.timestamp / 1 day. Start one minute into the next UTC day, so the run's warps (3 x 3,601 s plus
+    // mined blocks) cannot cross midnight and reset the period-bound counters (the launch limit) mid-run.
+    day0 = (await latestTs()) / DAY + 1n;
+    await rpc('evm_setNextBlockTimestamp', [toHex(day0 * DAY + 60n)]);
+    await mine(1);
+    expect((await latestTs()) / DAY).toBe(day0);
+    const book = localNetwork(JSON.parse(readFileSync(new URL(`fixtures/local-book-${PORT}.json`, ROOT), 'utf8')));
     mf = await createClient({ network: book, rpcUrl: RPC, onWarning: () => undefined });
     owner = localKey(generateAgentKey().privateKey);
     agentSigner = localKey(generateAgentKey().privateKey);
@@ -131,6 +149,8 @@ describe('local Anvil end to end', () => {
   it('sends concurrent buys from one key in nonce order', async () => {
     const fills = await Promise.all([1, 2, 3].map(() => agent.buy({ token, usdc: '1' })));
     expect(new Set(fills.map((f) => f.txHash)).size).toBe(3);
+    const nonces = (await Promise.all(fills.map((f) => mf.publicClient.getTransaction({ hash: f.txHash })))).map((t) => t.nonce).sort((a, b) => a - b);
+    expect(nonces).toEqual([nonces[0], nonces[0]! + 1, nonces[0]! + 2]);
   });
 
   it('needs the sell permission, which is queued behind the delay', async () => {
@@ -151,15 +171,32 @@ describe('local Anvil end to end', () => {
   });
 
   it('values a sell at the high-water cost, exactly as the SDK computes it before signing', async () => {
+    // Make the high-water term win: a wallet pumps the price, the agent buys high (raising its high-water average), the
+    // wallet dumps, the agent buys cheap (the average falls, the high-water stays), then the agent sells.
+    const curve = (await mf.token(token)).curve;
+    const whale = localKey(generateAgentKey().privateKey);
+    await fund(whale.address, 10_000n);
+    const deadline = async () => (await mf.publicClient.getBlock()).timestamp + 600n;
+    const curveTx = async (functionName: 'buy' | 'sell', args: readonly unknown[], value = 0n) =>
+      mf.sender.send(whale, { to: curve, data: encodeFunctionData({ abi: bondingCurveAbi, functionName, args } as never), value, label: `whale ${functionName}` });
+    await curveTx('buy', [1n, zeroAddress, await deadline()], 2_000n * WAD);
+    await agent.buy({ token, usdc: '40' });
+    const whaleTokens = (await mf.publicClient.readContract({ address: token, abi: launchTokenAbi, functionName: 'balanceOf', args: [whale.address] } as never)) as bigint;
+    await mf.sender.send(whale, { to: token, data: encodeFunctionData({ abi: launchTokenAbi, functionName: 'approve', args: [curve, whaleTokens] } as never), label: 'whale approve' });
+    await curveTx('sell', [whaleTokens, 1n, zeroAddress, await deadline()]);
+    await agent.buy({ token, usdc: '20' });
+
     const before = await agent.position(token);
     const basis: Basis = { costUsdc6: before.costUsdc6, tokens: before.basisTokens, highWater: before.highWater };
-    const tokensIn = 500_000n * WAD;
-    expect(tokensIn <= basis.tokens).toBe(true); // every token was bought by the account, so nothing is unrecorded
+    const tokensIn = basis.tokens / 10n;
+    expect(tokensIn <= before.balanceWei).toBe(true); // every token was bought by the account, so nothing is unrecorded
     const { recorded, value6 } = recordedSellValue6(basis, tokensIn);
     expect(recorded).toBe(tokensIn);
     expect(curveSellValue6(basis, tokensIn, 0n)).toBe(value6);
-    // the high-water value never undercuts the rounded-up average
-    expect(value6 >= (tokensIn * basis.costUsdc6 + basis.tokens - 1n) / basis.tokens).toBe(true);
+    const ceilAvg = (tokensIn * basis.costUsdc6 + basis.tokens - 1n) / basis.tokens;
+    const highWater = (tokensIn * basis.highWater) / 10n ** 36n;
+    expect(value6).toBe(highWater); // the high-water branch decides ...
+    expect(highWater > ceilAvg).toBe(true); // ... strictly above the rounded-up average
     const fill = await agent.sell({ token, amountWei: tokensIn });
     expect(fill.basisValue6).toBe(value6);
     await recordFill('sell-high-water', fill);
@@ -196,7 +233,15 @@ describe('local Anvil end to end', () => {
     // over the launch limit and over maxTradeUsdc at once: the launch limit is reported
     const onChain = await chainRevert(agentSigner.address, account, encodeFunctionData({ abi: agentAccountAbi, functionName: 'launch', args: [request] } as never));
     expect([onChain.name, onChain.source]).toEqual(['LaunchLimit', 'AgentPolicyRegistry']);
-    recordRevert('launch-limit', onChain);
+    const room = await agent.headroom();
+    const { policy } = await (await mf.owner(owner).manage(account)).state();
+    expect(room.launches).toBe(0);
+    expect(request.initialBuyUsdc > policy.maxTradeUsdc).toBe(true);
+    // The context shows the multi-failure: out of launches AND an initial buy above maxTradeUsdc; LaunchLimit wins.
+    recordRevert('launch-limit', onChain, {
+      initialBuyUsdc6: request.initialBuyUsdc, maxTradeUsdc6: policy.maxTradeUsdc,
+      launchesUsed: policy.launchesPerPeriod - room.launches, launchesPerPeriod: policy.launchesPerPeriod,
+    });
   });
 
   it('applies a tightening at once and merges an older queued widening field by field', async () => {
@@ -254,5 +299,6 @@ describe('local Anvil end to end', () => {
     await m.withdrawMany();
     expect(await mf.publicClient.getBalance({ address: account })).toBe(0n);
     expect(await mf.publicClient.readContract({ address: token, abi: launchTokenAbi, functionName: 'balanceOf', args: [account] } as never)).toBe(0n);
+    expect((await latestTs()) / DAY).toBe(day0); // the whole run stayed in one period
   });
 });
