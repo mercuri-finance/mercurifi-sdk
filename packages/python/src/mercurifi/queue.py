@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any
 
 from eth_abi.abi import decode
@@ -11,6 +12,7 @@ from eth_utils.address import to_checksum_address
 
 from .abi import AGENT_POLICY_REGISTRY
 from .codec import from_hex
+from .errors import MercurifiError
 from .networks import AgentBook
 from .permissions import decode_permissions
 from .policy import POLICY_FIELDS, QUEUE_TTL_SECONDS, ChainPolicy
@@ -113,7 +115,7 @@ async def _ids_from_api(api: Any, account: str) -> set[int] | None:
         acc = await api.get_account(account)
         pending = acc["pending"] if isinstance(acc, dict) else acc.pending
         ids: set[int] = set()
-        for item in list(pending)[:MAX_API_IDS]:
+        for item in islice(pending, MAX_API_IDS):
             raw = item.get("id") if isinstance(item, dict) else getattr(item, "id", None)
             if isinstance(raw, str) and _ID.fullmatch(raw):
                 ids.add(int(raw))
@@ -135,7 +137,10 @@ async def list_queued(rpc: Rpc, agents: AgentBook, account: str, from_block: int
         head = await rpc.block_number()
         start = from_block if from_block is not None else max(head - QUEUE_WINDOW_BLOCKS, agents.deploy_block, 0)
         for entry in await scan_logs(rpc, agents.registry, start, head, topics=[None, account_topic(account)]):
-            decoded = AGENT_POLICY_REGISTRY.decode_log(entry["topics"], entry["data"])
+            try:
+                decoded = AGENT_POLICY_REGISTRY.decode_log(entry["topics"], entry["data"])
+            except MercurifiError:
+                continue  # a malformed log from the registry address is skipped, not fatal
             if decoded is None or decoded[0] not in QUEUE_EVENTS:
                 continue
             args = decoded[1]

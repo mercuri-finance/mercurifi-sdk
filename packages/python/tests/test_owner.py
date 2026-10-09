@@ -192,6 +192,16 @@ async def test_list_queued_from_registry_logs() -> None:
     assert flt["topics"] == [None, "0x" + "0" * 24 + ACCOUNT[2:].lower()]
 
 
+async def test_list_queued_skips_malformed_logs() -> None:
+    t, m = await mgr()
+    rpc = t.rpc
+    now = rpc.block["timestamp"]
+    bad = {**queue_log(7), "data": "0x01"}  # right topics, truncated data
+    rpc.logs = [bad, queue_log(1)]
+    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", lambda a: (1, now - 10, 1, 1, add_payload(AGENT.address, now + 86_400)))
+    assert [q.id for q in await m.list_queued()] == [1]
+
+
 async def test_stale_items_and_superseded_policy_fields() -> None:
     t, m = await mgr()
     rpc = t.rpc
@@ -552,6 +562,20 @@ async def test_withdraw_native_from_the_account() -> None:
         await m.withdraw(token=USDC, amount="1")
     await m.withdraw(all=True)
     assert sent(t.rpc, 1)[2] == [ZERO, 1_000 * WAD]
+
+
+async def test_withdraw_amount_all_string_is_a_token_amount_not_the_all_flag() -> None:
+    t, m = await mgr()
+    t.rpc.read(DD, LAUNCH_TOKEN, "balanceOf", 7)
+    t.rpc.read(TOKEN, LAUNCH_TOKEN, "balanceOf", 3)
+    t.rpc.read(ACCOUNT, AGENT_ACCOUNT, "withdraw", None)
+    with pytest.raises(InvalidInputError, match="amount is for a token"):
+        await m.withdraw(amount="all")
+    with pytest.raises(InvalidInputError, match="amount assumes 18 decimals"):
+        await m.withdraw(token=DD, amount="all")
+    assert t.rpc.sent == []
+    await m.withdraw(token=TOKEN, amount="all")  # a Launch token may use it
+    assert sent(t.rpc)[2] == [TOKEN, 3]
 
 
 async def test_withdraw_has_no_recipient_parameter() -> None:

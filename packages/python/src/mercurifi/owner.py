@@ -483,8 +483,6 @@ class AccountManager:
             raise InvalidInputError("amount", "Say how much to withdraw: usdc, usdc6 or all (native), or amount_wei, amount or all (token)."
                                     if not given else f"Use exactly one amount field; got {', '.join(given)}.")
         name = given[0]
-        if name == "amount" and amount == "all":
-            name = "all"
         if native and name in ("amount", "amount_wei"):
             raise InvalidInputError(name, f"{name} is for a token; for native USDC use usdc, usdc6 or all.")
         if not native and name in ("usdc", "usdc6"):
