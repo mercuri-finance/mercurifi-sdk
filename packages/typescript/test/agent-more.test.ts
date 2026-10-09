@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { decodeFunctionData, encodeFunctionData, parseTransaction, type Hex } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
+import { metadataUriProblem } from '../src/agent.js';
 import { estimatePoolImpactBps } from '../src/pool.js';
 import { agentAccountAbi, agentAccountFactoryAbi, graduationManagerAbi, launchFactoryAbi, v4QuoterAbi } from '../src/abi/index.js';
 import type { MercurifiApi } from '../src/api/types.js';
@@ -304,7 +306,7 @@ describe('AgentClient claims and sweeps', () => {
 });
 
 describe('metadata URI validation, expiry margin, ordering and balances', () => {
-  const bad = ['', 'javascript:alert(1)', 'data:text/plain;base64,AAAA', 'http://insecure.example/m', 'https://exa\u202Emple/m', 'https://a b/m', `https://${'x'.repeat(249)}`, 'https://user:pass@example.com/m.json', 'ipfs://tok@host/m', `https://${'é'.repeat(125)}`];
+  const bad = ['', 'javascript:alert(1)', 'data:text/plain;base64,AAAA', 'http://insecure.example/m', 'https://exa\u202Emple/m', 'https://a b/m', `https://${'x'.repeat(249)}`, 'https://user:pass@example.com/m.json', 'ipfs://tok@host/m', `https://x.example/${'é'.repeat(120)}`];
   const launchWith = async (uri: unknown) => {
     const upload = vi.fn(async () => ({ metadataURI: uri as string, imageStatus: null }));
     const t = await setup({}, { uploadLaunchMetadata: upload } as unknown as MercurifiApi);
@@ -321,12 +323,12 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
   });
 
   it('counts bytes, not characters, at the 256-byte boundary', async () => {
-    expect(new TextEncoder().encode(`https://${'é'.repeat(124)}`).length).toBe(256);
-    expect(new TextEncoder().encode(`https://${'é'.repeat(125)}`).length).toBe(258);
+    expect(new TextEncoder().encode(`https://x.example/${'é'.repeat(119)}`).length).toBe(256);
+    expect(new TextEncoder().encode(`https://x.example/${'é'.repeat(120)}`).length).toBe(258);
     const { agent, rpc } = await setup();
-    await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://${'é'.repeat(124)}` });
+    await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://x.example/${'é'.repeat(119)}` });
     expect(rpc.sent).toHaveLength(1);
-    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://${'é'.repeat(125)}` })).rejects.toThrow(/longer than 256 bytes/);
+    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://x.example/${'é'.repeat(120)}` })).rejects.toThrow(/longer than 256 bytes/);
   });
 
   it('warns when the user supplies an empty metadataURI', async () => {
@@ -353,7 +355,7 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     await ok.run;
     expect(ok.rpc.sent).toHaveLength(1);
     const { agent, rpc } = await setup();
-    for (const uri of bad.slice(1).filter((u) => u !== `https://${'é'.repeat(125)}`)) await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: uri })).rejects.toThrow(InvalidInputError);
+    for (const uri of bad.slice(1).filter((u) => u !== `https://x.example/${'é'.repeat(120)}`)) await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: uri })).rejects.toThrow(InvalidInputError);
     await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: 'https://example.com/m.json' });
     expect(rpc.sent).toHaveLength(1);
   });
@@ -496,5 +498,12 @@ describe('AgentClient.sendBuilt', () => {
     (agent as unknown as { deadlineSeconds: number }).deadlineSeconds = 0;
     await expect(agent.sendBuilt(tx(claim), { functionName: 'claimFees' })).rejects.toThrow(InvalidInputError);
     expect(rpc.sent).toHaveLength(0);
+  });
+});
+
+describe('metadataUriProblem: shared metadata vectors', () => {
+  const mv = JSON.parse(readFileSync(new URL('../../../fixtures/vectors/metadata.json', import.meta.url), 'utf8')) as { cases: { uri: string; problem: string | null }[] };
+  it.each(mv.cases)('%j', (c) => {
+    expect(metadataUriProblem(c.uri)).toBe(c.problem);
   });
 });

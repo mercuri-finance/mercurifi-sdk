@@ -46,6 +46,11 @@ export const metadataUriProblem = (uri: unknown): string | null => {
   if (typeof uri !== 'string' || uri === '') return 'it is empty or not a string';
   if (!/^(https|ipfs):\/\/./.test(uri)) return 'it must start with https:// or ipfs://';
   if (/[\s\p{Cc}\p{Cf}]/u.test(uri)) return 'it contains whitespace or control characters';
+  // Decoded by every reader: a %0d%0a or %00 would become a raw control character there.
+  if (/%(?:[01][0-9A-Fa-f]|7[Ff])/.test(uri)) return 'it contains a percent-encoded control character';
+  // A non-ASCII host can imitate another (homoglyphs); internationalised names must use the punycode xn-- form.
+  const host = /^(?:https|ipfs):\/\/([^/?#]*)/.exec(uri)?.[1] ?? '';
+  if (!/^[\x21-\x7e]*$/.test(host)) return 'its host must be ASCII (the punycode xn-- form)';
   // Credentials in a URI would be published on chain and sent to every reader's browser.
   if (/^(?:https|ipfs):\/\/[^/?#]*@/.test(uri)) return 'it contains embedded credentials';
   if (utf8Length(uri) > 256) return 'it is longer than 256 bytes';

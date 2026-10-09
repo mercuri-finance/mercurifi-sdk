@@ -1,0 +1,117 @@
+{
+  "_note": "metadataUriProblem / metadata_uri_problem: each uri and the exact problem string (null = usable). Checks run in this order: empty, scheme, whitespace or control characters, percent-encoded controls (%00-%1f, %7f), a non-ASCII host (use punycode), credentials, length.",
+  "cases": [
+    {
+      "uri": "https://example.com/m.json",
+      "problem": null
+    },
+    {
+      "uri": "ipfs://bafybeigdyrzt/m.json",
+      "problem": null
+    },
+    {
+      "uri": "https://xn--mnchen-3ya.example/m.json",
+      "problem": null
+    },
+    {
+      "uri": "https://example.com:8443/m%20x.json",
+      "problem": null
+    },
+    {
+      "uri": "https://example.com/a%7Eb%2F",
+      "problem": null
+    },
+    {
+      "uri": "https://example.com/a%2520",
+      "problem": null
+    },
+    {
+      "uri": "",
+      "problem": "it is empty or not a string"
+    },
+    {
+      "uri": "http://example.com/m.json",
+      "problem": "it must start with https:// or ipfs://"
+    },
+    {
+      "uri": "HTTPS://example.com/m.json",
+      "problem": "it must start with https:// or ipfs://"
+    },
+    {
+      "uri": "ftp://example.com/m.json",
+      "problem": "it must start with https:// or ipfs://"
+    },
+    {
+      "uri": "https://",
+      "problem": "it must start with https:// or ipfs://"
+    },
+    {
+      "uri": "https://example.com/a b",
+      "problem": "it contains whitespace or control characters"
+    },
+    {
+      "uri": "https://example.com/a\u0007",
+      "problem": "it contains whitespace or control characters"
+    },
+    {
+      "uri": "https://example.com/a\u200b",
+      "problem": "it contains whitespace or control characters"
+    },
+    {
+      "uri": "https://example.com/m%00.json",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://example.com/m%0a.json",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://example.com/m%0D%0Aset-cookie",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://example.com/m%1F",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://example.com/m%1f",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://example.com/m%7f",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "ipfs://bafy/%09",
+      "problem": "it contains a percent-encoded control character"
+    },
+    {
+      "uri": "https://m\u00fcnchen.example/m.json",
+      "problem": "its host must be ASCII (the punycode xn-- form)"
+    },
+    {
+      "uri": "https://ex\u0430mple.com/m.json",
+      "problem": "its host must be ASCII (the punycode xn-- form)"
+    },
+    {
+      "uri": "ipfs://bafy\u00e9/m.json",
+      "problem": "its host must be ASCII (the punycode xn-- form)"
+    },
+    {
+      "uri": "https://user:pass@example.com/m.json",
+      "problem": "it contains embedded credentials"
+    },
+    {
+      "uri": "https://example.com@evil.example/m.json",
+      "problem": "it contains embedded credentials"
+    },
+    {
+      "uri": "https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "problem": "it is longer than 256 bytes"
+    },
+    {
+      "uri": "https://example.com/\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9",
+      "problem": "it is longer than 256 bytes"
+    }
+  ]
+}

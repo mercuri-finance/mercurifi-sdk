@@ -63,13 +63,20 @@ def _utf8_len(value: str) -> int:
 
 def metadata_uri_problem(uri: object) -> str | None:
     """Why a metadata URI cannot be used, or None: https:// or ipfs://, no credentials, whitespace, control or format
-    characters, at most 256 UTF-8 bytes. The value is never echoed."""
+    characters (raw or percent-encoded), an ASCII (punycode) host, at most 256 UTF-8 bytes. The value is never echoed."""
     if not isinstance(uri, str) or uri == "":
         return "it is empty or not a string"
     if re.match(r"(?:https|ipfs)://.", uri) is None:
         return "it must start with https:// or ipfs://"
     if any(c.isspace() or unicodedata.category(c) in ("Cc", "Cf", "Cs") for c in uri):
         return "it contains whitespace or control characters"
+    # Decoded by every reader: a %0d%0a or %00 would become a raw control character there.
+    if re.search(r"%(?:[01][0-9A-Fa-f]|7[Ff])", uri) is not None:
+        return "it contains a percent-encoded control character"
+    # A non-ASCII host can imitate another (homoglyphs); internationalised names must use the punycode xn-- form.
+    host = re.match(r"(?:https|ipfs)://([^/?#]*)", uri)
+    if host is not None and re.fullmatch(r"[\x21-\x7e]*", host.group(1)) is None:
+        return "its host must be ASCII (the punycode xn-- form)"
     # Credentials in a URI would be published on chain and sent to every reader's browser.
     if re.match(r"(?:https|ipfs)://[^/?#]*@", uri) is not None:
         return "it contains embedded credentials"

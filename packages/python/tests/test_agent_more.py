@@ -1,4 +1,6 @@
+import json
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -221,7 +223,7 @@ async def test_launch_fill_needs_token_created_by_this_account_for_this_token() 
 # ---------------------------------------------------------------- metadata URI rules
 
 BAD = ["", "javascript:alert(1)", "data:text/plain;base64,AAAA", "http://insecure.example/m", "https://exa‮mple/m", "https://a b/m",
-       "https://" + "x" * 249, "https://user:pass@example.com/m.json", "ipfs://tok@host/m", "https://" + "é" * 125]
+       "https://" + "x" * 249, "https://user:pass@example.com/m.json", "ipfs://tok@host/m", "https://x.example/" + "é" * 120]
 
 
 @pytest.mark.parametrize("uri", [None, 5, *BAD])
@@ -237,16 +239,16 @@ async def test_an_uploaded_uri_is_untrusted(uri: Any) -> None:
 
 
 async def test_uri_byte_limit_counts_bytes_not_characters() -> None:
-    assert len(("https://" + "é" * 124).encode()) == 256
-    assert len(("https://" + "é" * 125).encode()) == 258
+    assert len(("https://x.example/" + "é" * 119).encode()) == 256
+    assert len(("https://x.example/" + "é" * 120).encode()) == 258
     rpc, agent = await setup()
-    await agent.launch("Ok", "OK", metadata_uri="https://" + "é" * 124)
+    await agent.launch("Ok", "OK", metadata_uri="https://x.example/" + "é" * 119)
     assert len(rpc.sent) == 1
     with pytest.raises(InvalidInputError, match="longer than 256 bytes"):
-        await agent.launch("Ok", "OK", metadata_uri="https://" + "é" * 125)
+        await agent.launch("Ok", "OK", metadata_uri="https://x.example/" + "é" * 120)
 
 
-@pytest.mark.parametrize("uri", [u for u in BAD[1:] if u != "https://" + "é" * 125])
+@pytest.mark.parametrize("uri", [u for u in BAD[1:] if u != "https://x.example/" + "é" * 120])
 async def test_bad_user_supplied_uris_are_invalid_input(uri: str) -> None:
     rpc, agent = await setup()
     with pytest.raises(InvalidInputError):
@@ -671,3 +673,11 @@ async def test_send_built_signs_the_exact_str_it_verified_and_refuses_a_str_subc
     with pytest.raises(BuildMismatchError):
         await agent.send_built(tx(Sneaky(CLAIM)), function_name="claimFees")
     assert rpc.sent == []
+
+
+_META = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "metadata.json").read_text())
+
+
+@pytest.mark.parametrize("case", _META["cases"], ids=[c["uri"][:40] for c in _META["cases"]])
+def test_metadata_uri_vectors(case: dict[str, Any]) -> None:
+    assert metadata_uri_problem(case["uri"]) == case["problem"]
