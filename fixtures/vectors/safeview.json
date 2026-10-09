@@ -84,6 +84,16 @@
       "field": "link.x",
       "raw": "https://x.com/a",
       "text": "https://x.com/a"
+    },
+    {
+      "field": "description",
+      "raw": "see https://m\u00fcnchen.example/p?k=SECRET now",
+      "text": "see xn--mnchen-3ya.example now"
+    },
+    {
+      "field": "description",
+      "raw": "rpc https://B\u00dcCHER.example:8443/v2/KEY",
+      "text": "rpc xn--bcher-kva.example:8443"
     }
   ],
   "truncate": {

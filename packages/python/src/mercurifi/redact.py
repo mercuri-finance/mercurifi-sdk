@@ -23,6 +23,12 @@ def redact_url(url: str) -> str:
         host = parts.hostname
         if not host:
             return "invalid URL"
+        if not host.isascii():
+            # As the WHATWG URL parser shows it (TS redactUrl): an internationalised name in its punycode form.
+            try:
+                host = host.encode("idna").decode("ascii").lower()
+            except UnicodeError:
+                return "invalid URL"
         shown = f"[{host}]" if ":" in host else host
         return f"{shown}:{parts.port}" if parts.port is not None else shown
     except ValueError:
