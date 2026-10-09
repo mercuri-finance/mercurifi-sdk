@@ -1,6 +1,7 @@
 import { createPublicClient, defineChain, http, type Address, type Chain, type PublicClient, type Transport } from 'viem';
 
 import { AgentClient } from './agent.js';
+import { openStream, validateTopics, type StreamEvent, type StreamOptions } from './stream.js';
 import { HttpApi } from './api/http.js';
 import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
@@ -95,6 +96,12 @@ export class MercurifiClient {
     }
     const deadlineSeconds = o.deadlineSeconds ?? this.settings.deadlineSeconds;
     return new AgentClient(this, agents, o.account, o.signer, slippageToBps(o.slippage ?? 0.01), deadlineSeconds);
+  }
+
+  /** Live events (spec 6.1): `launches`, `trades`, `token:0x…`, `trader:0x…`, `agent-account:0x…`. Needs the API. */
+  stream(topics: readonly string[], o: StreamOptions = {}): AsyncGenerator<StreamEvent> {
+    if (this.api === null) throw new InvalidInputError('api', 'Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.');
+    return openStream(this.api.streamRequest(validateTopics(topics)), o);
   }
 
   warn(message: string): void {
