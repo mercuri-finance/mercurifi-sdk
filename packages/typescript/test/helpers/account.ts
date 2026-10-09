@@ -108,6 +108,10 @@ export interface CurveMockOptions {
   curveSupply?: bigint;
   usdcOut?: bigint;
   balance?: bigint;
+  /** Marginal price, native wei per whole token. The default sits just above the mocked buy's average price (zero impact). */
+  price?: bigint;
+  snipe?: bigint;
+  launchBlock?: bigint;
 }
 
 export const mockCurve = (rpc: MockRpc, o: CurveMockOptions = {}): void => {
@@ -120,9 +124,9 @@ export const mockCurve = (rpc: MockRpc, o: CurveMockOptions = {}): void => {
   rpc.read(CURVE, bondingCurveAbi, 'quoteSell', () => [o.usdcOut ?? 9_900_000_000_000_000_000n, 100_000_000_000_000_000n]);
   rpc.read(CURVE, bondingCurveAbi, 'sold', o.sold ?? 100_000_000n * WAD);
   rpc.read(CURVE, bondingCurveAbi, 'curveSupply', o.curveSupply ?? 800_000_000n * WAD);
-  rpc.read(CURVE, bondingCurveAbi, 'price', 6_000_000_000_000n);
-  rpc.read(CURVE, bondingCurveAbi, 'currentSnipeBps', 0n);
-  rpc.read(CURVE, bondingCurveAbi, 'launchBlock', 100n);
+  rpc.read(CURVE, bondingCurveAbi, 'price', o.price ?? 25_000_000_000_000n);
+  rpc.read(CURVE, bondingCurveAbi, 'currentSnipeBps', o.snipe ?? 0n);
+  rpc.read(CURVE, bondingCurveAbi, 'launchBlock', o.launchBlock ?? 100n);
   rpc.read(CURVE, bondingCurveAbi, 'progressBps', 1_250n);
   rpc.read(CURVE, bondingCurveAbi, 'token', TOKEN);
   rpc.read(TOKEN, launchTokenAbi, 'balanceOf', o.balance ?? 0n);

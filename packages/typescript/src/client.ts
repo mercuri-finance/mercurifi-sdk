@@ -1,5 +1,6 @@
-import { createPublicClient, defineChain, http, type Chain, type PublicClient, type Transport } from 'viem';
+import { createPublicClient, defineChain, http, type Address, type Chain, type PublicClient, type Transport } from 'viem';
 
+import { AgentClient } from './agent.js';
 import type { MercurifiApi } from './api/types.js';
 import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
 import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
@@ -10,6 +11,8 @@ import { OwnerClient } from './owner.js';
 import { redactUrl, redactUrlsIn } from './redact.js';
 import type { Signer } from './signers.js';
 import { TxSender } from './tx.js';
+import { isAgentAccount } from './reads.js';
+import { slippageToBps } from './units.js';
 import { verifyNetwork } from './verify.js';
 
 export interface CreateClientOptions {
@@ -78,6 +81,16 @@ export class MercurifiClient {
   /** Owner-side client for the main wallet. */
   owner(signer: Signer): OwnerClient {
     return new OwnerClient(this, signer);
+  }
+
+  /** Agent-side client. Refuses an address that is not an account of this network's factory. */
+  async agent(o: { account: Address; signer: Signer; slippage?: number; deadlineSeconds?: number }): Promise<AgentClient> {
+    const agents = this.requireAgents();
+    if (!(await isAgentAccount(this.publicClient, agents, o.account))) {
+      throw new InvalidInputError('account', `${o.account} is not a Mercurifi agent account on ${this.network.name}`);
+    }
+    const deadlineSeconds = o.deadlineSeconds ?? this.settings.deadlineSeconds;
+    return new AgentClient(this, agents, o.account, o.signer, slippageToBps(o.slippage ?? 0.01), deadlineSeconds);
   }
 
   warn(message: string): void {

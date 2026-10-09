@@ -1,0 +1,22 @@
+{
+  "config": {
+    "virtualUsdc": "6000000000000000000000",
+    "virtualTokens": "1066666666666666666666666666",
+    "curveSupply": "800000000000000000000000000",
+    "poolSupply": "200000000000000000000000000",
+    "launchFee": "1000000000000000000",
+    "maxInitialBuyTokens": "50000000000000000000000000",
+    "tradeFeeBps": 100, "creatorShareBps": 5000, "referrerShareBps": 2000, "snipeStartBps": 9900, "snipeBlocks": 120
+  },
+  "freshBuy": [
+    { "valueWei": "1000000000000000000", "tokensOut": "175970964790809516429789", "usdcUsed": "1000000000000000000", "fee": "10000000000000000" },
+    { "valueWei": "10000000000000000000", "tokensOut": "1757100783706883641990715", "usdcUsed": "10000000000000000000", "fee": "100000000000000000" },
+    { "valueWei": "25000000000000000000", "tokensOut": "4381924561185111415411427", "usdcUsed": "25000000000000000000", "fee": "250000000000000000" },
+    { "valueWei": "100000000000000000000", "tokensOut": "17314313821938022626660108", "usdcUsed": "100000000000000000000", "fee": "1000000000000000000" }
+  ],
+  "sellOut": [
+    { "usdcIn": "100", "usdcUsed": "99", "tokensOut": "5", "tokensRemaining": "10", "out": true },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "10", "tokensRemaining": "10", "out": true },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "9", "tokensRemaining": "10", "out": false }
+  ]
+}

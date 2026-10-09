@@ -1,0 +1,20 @@
+{
+  "recorded": [
+    { "name": "single lot, full exit is charged exactly its cost", "costUsdc": "25000000", "tokens": "4381924561185111415411427", "highWater": "5705255681818181819", "tokensIn": "4381924561185111415411427", "recorded": "4381924561185111415411427", "value6": "25000000" },
+    { "name": "single lot, half", "costUsdc": "25000000", "tokens": "4381924561185111415411427", "highWater": "5705255681818181819", "tokensIn": "2190962280592555707705713", "recorded": "2190962280592555707705713", "value6": "12500000" },
+    { "name": "crash buy cannot stretch the sell cap", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "tokensIn": "1000000000000000000000", "recorded": "1000000000000000000000", "value6": "100000000" },
+    { "name": "crash buy, whole position", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "tokensIn": "11000000000000000000000", "recorded": "11000000000000000000000", "value6": "1100000000" },
+    { "name": "more than recorded values only the recorded part here", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "tokensIn": "12000000000000000000000", "recorded": "11000000000000000000000", "value6": "1100000000" },
+    { "name": "no position", "costUsdc": "0", "tokens": "0", "highWater": "0", "tokensIn": "5000000000000000000", "recorded": "0", "value6": "0" },
+    { "name": "ceil average wins on a tiny lot", "costUsdc": "1", "tokens": "3000000000000000000", "highWater": "333333333333333334", "tokensIn": "1000000000000000000", "recorded": "1000000000000000000", "value6": "1" }
+  ],
+  "curveExcess": [
+    { "name": "excess output rounds up to usdc6", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "tokensIn": "12000000000000000000000", "excessOutWei": "9900000000000000001", "value6": "1109900001" },
+    { "name": "no position, all excess", "costUsdc": "0", "tokens": "0", "highWater": "0", "tokensIn": "5000000000000000000", "excessOutWei": "5000000000000", "value6": "5" }
+  ],
+  "poolExcess": [
+    { "name": "excess share of the quoted output, rounded up", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOut6": "1200000000", "value6": "1200000000" },
+    { "name": "a tiny excess share still costs one usdc6", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "12000000000000000000000", "quotedOut6": "7", "value6": "1100000001" },
+    { "name": "fully recorded sell adds nothing", "costUsdc": "110000000", "tokens": "11000000000000000000000", "highWater": "100000000000000000000000", "amountIn": "1000000000000000000000", "quotedOut6": "5000000", "value6": "100000000" }
+  ]
+}
