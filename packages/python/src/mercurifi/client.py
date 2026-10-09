@@ -18,6 +18,7 @@ from .tx import TxSender
 from .verify import verify_network
 
 if TYPE_CHECKING:
+    from .agent import AgentClient
     from .owner import OwnerClient
     from .signers import Signer
 
@@ -77,6 +78,18 @@ class AsyncClient:
         from .owner import OwnerClient
 
         return OwnerClient(self, signer)
+
+    async def agent(self, account: str, signer: Signer, *, slippage: float = 0.01, deadline_seconds: int | None = None) -> AgentClient:
+        """Agent-side client. Refuses an address that is not an account of this network's factory."""
+        from .agent import AgentClient
+        from .reads import is_agent_account
+        from .units import slippage_to_bps
+
+        agents = self.require_agents()
+        if not await is_agent_account(self.rpc, agents, account):
+            raise InvalidInputError("account", f"{account} is not a Mercurifi agent account on {self.network.name}")
+        wanted = self.settings.deadline_seconds if deadline_seconds is None else deadline_seconds
+        return AgentClient(self, agents, account, signer, slippage_to_bps(slippage), wanted)
 
     async def aclose(self) -> None:
         await self.rpc.aclose()

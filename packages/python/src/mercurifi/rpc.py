@@ -190,8 +190,10 @@ class Rpc:
             raise self._fail("unexpected logs result")
         return logs
 
-    async def read(self, contract: Contract, address: str, fn: str, *args: object) -> Any:
-        return contract.decode_output(fn, await self.call(address, contract.encode(fn, *args)))
+    async def read(self, contract: Contract, address: str, fn: str, *args: object, at: int | None = None) -> Any:
+        """A view call; `at` pins it to a block number (default: latest)."""
+        data = await self.call(address, contract.encode(fn, *args), block="latest" if at is None else at)
+        return contract.decode_output(fn, data)
 
     async def aclose(self) -> None:
         await self._http.aclose()

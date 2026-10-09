@@ -12,18 +12,27 @@ from .policy import ChainPolicy
 from .rpc import Rpc
 
 
-async def read_account(rpc: Rpc, account: str, fn: str, *args: object) -> Any:
-    """A read of the account itself (funds, basis, owner, referrer)."""
-    return await rpc.read(AGENT_ACCOUNT, account, fn, *args)
+async def read_account(rpc: Rpc, account: str, fn: str, *args: object, at: int | None = None) -> Any:
+    """A read of the account itself (funds, basis, owner, referrer); `at` pins it to a block."""
+    return await rpc.read(AGENT_ACCOUNT, account, fn, *args, at=at)
 
 
-async def read_registry(rpc: Rpc, registry: str, fn: str, *args: object) -> Any:
-    """A read of the policy registry. Every registry view takes the account as its first argument."""
-    return await rpc.read(AGENT_POLICY_REGISTRY, registry, fn, *args)
+async def read_registry(rpc: Rpc, registry: str, fn: str, *args: object, at: int | None = None) -> Any:
+    """A read of the policy registry. Every registry view takes the account as its first argument; `at` pins it to a block."""
+    return await rpc.read(AGENT_POLICY_REGISTRY, registry, fn, *args, at=at)
 
 
-async def read_policy(rpc: Rpc, agents: AgentBook, account: str) -> ChainPolicy:
-    return ChainPolicy.from_abi(await read_registry(rpc, agents.registry, "policy", account))
+async def read_policy(rpc: Rpc, agents: AgentBook, account: str, *, at: int | None = None) -> ChainPolicy:
+    return ChainPolicy.from_abi(await read_registry(rpc, agents.registry, "policy", account, at=at))
+
+
+async def read_paused(rpc: Rpc, agents: AgentBook, account: str, *, at: int | None = None) -> bool:
+    """The account owner's pause or the platform pause (the registry's authorize() checks both, first)."""
+    owner, platform = await asyncio.gather(
+        read_registry(rpc, agents.registry, "ownerPaused", account, at=at),
+        rpc.read(AGENT_ACCOUNT_FACTORY, agents.factory, "isPaused", at=at),
+    )
+    return bool(owner) or bool(platform)
 
 
 async def latest_timestamp(rpc: Rpc) -> int:
@@ -81,10 +90,10 @@ class AgentInfo:
     permission_bits: int
 
 
-async def read_agent(rpc: Rpc, agents: AgentBook, account: str, agent: str, now: int) -> AgentInfo:
+async def read_agent(rpc: Rpc, agents: AgentBook, account: str, agent: str, now: int, *, at: int | None = None) -> AgentInfo:
     a, retired = await asyncio.gather(
-        read_registry(rpc, agents.registry, "agent", account, agent),
-        read_registry(rpc, agents.registry, "retired", account, agent),
+        read_registry(rpc, agents.registry, "agent", account, agent, at=at),
+        read_registry(rpc, agents.registry, "retired", account, agent, at=at),
     )
     expires_at = int(a["expiresAt"])
     bits = int(a["permissions"])

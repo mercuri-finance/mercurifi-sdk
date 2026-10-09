@@ -255,12 +255,13 @@ def mock_account(rpc: MockRpc, *, owner: str, agent: str, agent_active: bool = T
 
 
 def mock_curve(rpc: MockRpc, *, phase: int = 0, tokens_out: int = 1_000_000 * WAD, used: Callable[[int], int] | None = None,
-               sold: int = 100_000_000 * WAD, curve_supply: int = 800_000_000 * WAD, usdc_out: int = 9_900_000_000_000_000_000, balance: int = 0) -> None:
+               sold: int = 100_000_000 * WAD, curve_supply: int = 800_000_000 * WAD, usdc_out: int = 9_900_000_000_000_000_000, balance: int = 0, price: int = 25_000_000_000_000,
+               snipe: int = 0) -> None:
     rpc.read(LAUNCH_FACTORY, LAUNCH_FACTORY_ABI, "curveOf", lambda a: CURVE if a[0].lower() == TOKEN.lower() else ZERO)
     rpc.read(CURVE, BONDING_CURVE, "phase", phase)
     rpc.read(CURVE, BONDING_CURVE, "quoteBuy", lambda a: (tokens_out, used(a[0]) if used else a[0], a[0] // 100, 0))
     rpc.read(CURVE, BONDING_CURVE, "quoteSell", lambda a: (usdc_out, 10**17))
-    for fn, value in (("sold", sold), ("curveSupply", curve_supply), ("price", 6_000_000_000_000), ("currentSnipeBps", 0),
+    for fn, value in (("sold", sold), ("curveSupply", curve_supply), ("price", price), ("currentSnipeBps", snipe),
                       ("launchBlock", 100), ("progressBps", 1_250), ("token", TOKEN)):
         rpc.read(CURVE, BONDING_CURVE, fn, value)
     rpc.read(TOKEN, LAUNCH_TOKEN, "balanceOf", balance)
