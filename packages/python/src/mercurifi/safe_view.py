@@ -11,7 +11,6 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
-from urllib.parse import urlsplit
 
 from .abi import BONDING_CURVE, FEE_MANAGER, LAUNCH_FACTORY, LAUNCH_TOKEN
 from .curve import PHASE_GRADUATED
@@ -59,25 +58,62 @@ def _frame(field: str, text: str, unsafe: bool) -> UntrustedText:
     return UntrustedText(field, text, f"<<untrusted:{field}>>{text}<</untrusted:{field}>>", True, unsafe)
 
 
-def _is_plain_link(text: str) -> bool:
-    """http(s)/ipfs only, no credentials (`https://x.com@evil/` shows a decoy host), no spaces. `text` is already NFKC,
-    so full-width forms of the forbidden characters are ASCII here. Backslashes are refused: browsers read them as
-    slashes, so `https://x.com\\@evil/` would hide a host."""
-    if text == "" or _LINK_BAD.search(text) is not None:
-        return False
+_LINK_HEAD = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]*)")
+_PCT_CONTROL = re.compile(r"%(?:[01][0-9A-Fa-f]|7[Ff])")
+_AUTHORITY = re.compile(r"([^:]*)(?::([0-9]{0,5}))?")
+_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+_NUMERIC_TAIL = re.compile(r"[0-9]+|0[xX][0-9A-Fa-f]*")
+_IPV4_PART = re.compile(r"0|[1-9][0-9]{0,2}")
+
+
+def _punycode_label_ok(label: str) -> bool:
+    """A punycode label must decode to letters, marks, digits and hyphens with at least one non-ASCII character."""
+    if label[:4].lower() != "xn--":
+        return True
     try:
-        parts = urlsplit(text)
-        if parts.scheme.lower() not in _LINK_SCHEMES or "@" in parts.netloc:
-            return False
-        _ = parts.port  # raises ValueError for a malformed port
-        if parts.scheme.lower() == "ipfs":
-            if not parts.netloc:  # ipfs://<cid>/...: a bare "ipfs:" or "ipfs:/x" names nothing
-                return False
-        elif not parts.hostname:  # "https:x.com" and "https:/x.com" have no authority
-            return False
-    except ValueError:
+        decoded = label[4:].encode("ascii").decode("punycode")
+    except (UnicodeError, ValueError, IndexError, OverflowError):
         return False
-    return True
+    return (
+        decoded != "" and any(ord(c) > 0x7F for c in decoded) and unicodedata.normalize("NFC", decoded) == decoded
+        and all(c == "-" or unicodedata.category(c)[0] in "LMN" for c in decoded)
+    )
+
+
+def _host_ok(authority: str) -> bool:
+    """`host[:port]` of a link (TS hostname.ts linkAuthorityOk): DNS labels of letters, digits and inner hyphens (63
+    each, 253 in all, optional final dot), valid punycode for xn-- labels, a dotted-quad IPv4 (no leading zeros) when
+    the last label is numeric, a port of at most 65535. No IPv6 literal, percent sign or non-ASCII character."""
+    m = _AUTHORITY.fullmatch(authority)
+    if m is None:
+        return False
+    host, port = m.group(1), m.group(2)
+    if port and int(port) > 65535:
+        return False
+    if host == "" or len(host) > 254:
+        return False
+    bare = host[:-1] if host.endswith(".") else host
+    if bare == "" or len(bare) > 253:
+        return False
+    labels = bare.split(".")
+    if not all(_LABEL.fullmatch(lb) for lb in labels):
+        return False
+    if _NUMERIC_TAIL.fullmatch(labels[-1]):
+        return len(labels) == 4 and all(_IPV4_PART.fullmatch(lb) and int(lb) <= 255 for lb in labels)
+    return all(_punycode_label_ok(lb) for lb in labels)
+
+
+def _is_plain_link(text: str) -> bool:
+    """http(s)/ipfs only, no credentials (`https://x.com@evil/` shows a decoy host), no spaces, an authority right after
+    `scheme://`, no backslash (browsers read it as a slash, so `https://x.com\\@evil/` would hide a host), no
+    percent-encoded control character, and an ASCII host (punycode xn-- for internationalised names) that is a valid DNS
+    name, dotted-quad IPv4 or IPFS CID. Same rules as TypeScript's isPlainLink; the shared `links` vectors decide."""
+    if text == "" or _LINK_BAD.search(text) is not None or _PCT_CONTROL.search(text) is not None:
+        return False
+    m = _LINK_HEAD.match(text)
+    if m is None or m.group(1).lower() not in _LINK_SCHEMES:
+        return False
+    return _host_ok(m.group(2))
 
 
 def wrap_untrusted(field: str, raw: str, max_chars: int = DEFAULT_MAX_CHARS) -> UntrustedText:

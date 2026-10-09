@@ -66,7 +66,7 @@ def metadata_uri_problem(uri: object) -> str | None:
     characters (raw or percent-encoded), an ASCII (punycode) host, at most 256 UTF-8 bytes. The value is never echoed."""
     if not isinstance(uri, str) or uri == "":
         return "it is empty or not a string"
-    if re.match(r"(?:https|ipfs)://.", uri) is None:
+    if re.match(r"(?:https|ipfs)://.", uri, re.DOTALL) is None:
         return "it must start with https:// or ipfs://"
     if any(c.isspace() or unicodedata.category(c) in ("Cc", "Cf", "Cs") for c in uri):
         return "it contains whitespace or control characters"

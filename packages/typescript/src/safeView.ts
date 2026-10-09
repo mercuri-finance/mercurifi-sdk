@@ -5,6 +5,7 @@ import type { MercurifiClient } from './client.js';
 import { PHASE } from './curve.js';
 import { UnexpectedChainStateError } from './errors.js';
 import { neutralizeUntrusted, preBound, truncateChars } from './redact.js';
+import { linkAuthorityOk } from './hostname.js';
 import { isAgentAccount, latestBlockNumber } from './reads.js';
 import { localRevert } from './revert.js';
 import { formatDecimal } from './units.js';
@@ -20,25 +21,28 @@ export interface UntrustedText { readonly untrusted: true; readonly field: strin
 const MAX_LINKS = 20;
 const DEFAULT_MAX_CHARS = 280;
 const LINK_PROTOCOLS = new Set(['http:', 'https:', 'ipfs:']);
+const LINK_SCHEMES = new Set(['http', 'https', 'ipfs']);
 
 const frame = (field: string, text: string, unsafe: boolean): UntrustedText =>
   Object.freeze({ untrusted: true as const, field, text, wrapped: `<<untrusted:${field}>>${text}<</untrusted:${field}>>`, ...(unsafe ? { unsafe: true as const } : {}) });
 
 /**
  * A link is kept only as a plain http(s)/ipfs URL: no credentials (`https://x.com@evil/` shows a decoy host), no spaces,
- * an authority right after `scheme://` (`https:x.com` and `https:/x.com` are refused, not repaired) and no backslash
- * (browsers read it as a slash, so `https://x.com\@evil/` would hide a host). Same rules as Python's `_is_plain_link`.
+ * an authority right after `scheme://` (`https:x.com` and `https:/x.com` are refused, not repaired), no backslash
+ * (browsers read it as a slash, so `https://x.com\@evil/` would hide a host), no percent-encoded control character, and
+ * an ASCII host (punycode `xn--` for internationalised names) that is a valid DNS name, dotted-quad IPv4 or IPFS CID.
+ * Same rules as Python's `_is_plain_link`; the shared `links` vectors decide.
  */
 const isPlainLink = (text: string): boolean => {
   // `text` is already NFKC, so full-width forms of these characters have become ASCII here. `<` and `>` would let a link
   // close its own wrapper; quotes and backticks break out of the strings and code spans a caller may embed it in.
   if (text === '' || /[\s\uFEFF<>"`\\]/.test(text)) return false;
+  if (/%(?:[01][0-9A-Fa-f]|7[Ff])/.test(text)) return false;
   const m = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)/.exec(text);
-  if (m === null || m[2] === '' || m[2]!.includes('@')) return false;
+  if (m === null || !LINK_SCHEMES.has(m[1]!.toLowerCase()) || !linkAuthorityOk(m[2]!)) return false;
   try {
     const u = new URL(text);
-    if (!LINK_PROTOCOLS.has(u.protocol) || u.username !== '' || u.password !== '') return false;
-    return u.protocol === 'ipfs:' || u.hostname !== '';
+    return LINK_PROTOCOLS.has(u.protocol) && u.username === '' && u.password === '';
   } catch {
     return false;
   }

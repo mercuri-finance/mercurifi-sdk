@@ -227,6 +227,131 @@
       "raw": "https://x.com:8443/a",
       "text": "https://x.com:8443/a",
       "unsafe": false
+    },
+    {
+      "raw": "https://xn--'",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "http://XII%0aevil.example/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://xn--mnchen-3ya.example/x",
+      "text": "https://xn--mnchen-3ya.example/x",
+      "unsafe": false
+    },
+    {
+      "raw": "https://xn--abc/x",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://xn--/x",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://m\u00fcnchen.example/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "http://999.1.1.1/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "http://1.2.3.4:8080/x",
+      "text": "http://1.2.3.4:8080/x",
+      "unsafe": false
+    },
+    {
+      "raw": "http://010.1.1.1/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "http://1.2.3/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x.com:65536/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x.com:65535/",
+      "text": "https://x.com:65535/",
+      "unsafe": false
+    },
+    {
+      "raw": "https://-x.com/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x-.com/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/x",
+      "text": "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/x",
+      "unsafe": false
+    },
+    {
+      "raw": "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+      "text": "ipfs://QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+      "unsafe": false
+    },
+    {
+      "raw": "https://ex%41mple.com/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://[::1]/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x.com/a%0d%0aSet-Cookie",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://x.com./a",
+      "text": "https://x.com./a",
+      "unsafe": false
+    },
+    {
+      "raw": "https://x.com:/a",
+      "text": "https://x.com:/a",
+      "unsafe": false
+    },
+    {
+      "raw": "https://x..com/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "http://0x7f.1/",
+      "text": "invalid link",
+      "unsafe": true
+    },
+    {
+      "raw": "https://xn--80ak6aa92e.com/",
+      "text": "https://xn--80ak6aa92e.com/",
+      "unsafe": false
+    },
+    {
+      "raw": "https://xn--ls8h.la/",
+      "text": "invalid link",
+      "unsafe": true
     }
   ],
   "linkKeys": [
