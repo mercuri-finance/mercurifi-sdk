@@ -713,3 +713,16 @@ async def test_reads_and_payload_decoding() -> None:
     assert decode_queued_payload(99, "0x1234") == ("unknown", {"raw": "0x1234"})
     assert decode_queued_payload(5, "0x12") == ("unknown", {"raw": "0x12"})
     assert callable(list_queued)
+
+
+async def test_list_queued_scans_to_the_head_after_it_moves() -> None:
+    # Chain-only listing (no API) reads the head on every call: blocks mined since the last listing are scanned.
+    t, m = await mgr()
+    rpc = t.rpc
+    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", lambda a: (0, 0, 0, 0, "0x"))
+    await m.list_queued()
+    rpc.block["number"] += 7
+    before = len(rpc.calls)
+    await m.list_queued()
+    scans = [p[0]["toBlock"] for meth, p in rpc.calls[before:] if meth == "eth_getLogs"]
+    assert scans and scans[-1] == hex(rpc.block["number"])

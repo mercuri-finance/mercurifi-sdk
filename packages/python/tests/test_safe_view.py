@@ -214,3 +214,14 @@ def test_untrusted_text_is_frozen() -> None:
     assert isinstance(w, UntrustedText)
     with pytest.raises(AttributeError):
         w.text = "y"  # type: ignore[misc]
+
+
+async def test_token_reads_follow_the_head_after_it_moves() -> None:
+    # The head is read fresh for each view: a second read after new blocks pins to the new head, never a remembered one.
+    mf, rpc = await setup(FakeApi())
+    await mf.token(TOKEN)
+    rpc.block["number"] += 7
+    before = len(rpc.calls)
+    await mf.token(TOKEN)
+    blocks = {p[1] for m, p in rpc.calls[before:] if m == "eth_call" and p[0]["to"].lower() != A(9).lower()}
+    assert blocks == {hex(rpc.block["number"])}
