@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { estimatePoolImpactBps } from '../src/pool.js';
 import { agentAccountAbi, agentAccountFactoryAbi, graduationManagerAbi, launchFactoryAbi, v4QuoterAbi } from '../src/abi/index.js';
 import type { MercurifiApi } from '../src/api/types.js';
-import { InvalidInputError } from '../src/errors.js';
+import { InvalidInputError, MercurifiError } from '../src/errors.js';
 import { DEFAULT_POLICY } from '../src/policy.js';
-import { MercurifiError } from '../src/errors.js';
 import { ContractRevertError } from '../src/revert.js';
 import { localKey } from '../src/signers.js';
 import { agentActionLog, eventLog, FACTORY, LAUNCH_FACTORY, mockAccount, mockCurve, type AccountMockOptions, type CurveMockOptions } from './helpers/account.js';
@@ -290,7 +289,7 @@ describe('AgentClient claims and sweeps', () => {
 });
 
 describe('metadata URI validation, expiry margin, ordering and balances', () => {
-  const bad = ['', 'javascript:alert(1)', 'data:text/plain;base64,AAAA', 'http://insecure.example/m', 'https://exa\u202Emple/m', 'https://a b/m', `https://${'x'.repeat(249)}`];
+  const bad = ['', 'javascript:alert(1)', 'data:text/plain;base64,AAAA', 'http://insecure.example/m', 'https://exa\u202Emple/m', 'https://a b/m', `https://${'x'.repeat(249)}`, 'https://user:pass@example.com/m.json', 'ipfs://tok@host/m', `https://${'é'.repeat(125)}`];
   const launchWith = async (uri: unknown) => {
     const upload = vi.fn(async () => ({ metadataURI: uri as string, imageStatus: null }));
     const t = await setup({}, { uploadLaunchMetadata: upload } as unknown as MercurifiApi);
@@ -302,8 +301,36 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     const err = await t.run.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(MercurifiError);
     expect((err as MercurifiError).code).toBe('API_BAD_RESPONSE');
-    expect(String((err as Error).message)).not.toContain('javascript');
+    for (const secret of ['javascript', 'alert', 'insecure', 'user:pass', 'pass@', 'tok@', 'exa', 'x'.repeat(20), 'é']) expect(String((err as Error).message)).not.toContain(secret);
     expect(t.rpc.sent).toHaveLength(0);
+  });
+
+  it('counts bytes, not characters, at the 256-byte boundary', async () => {
+    expect(new TextEncoder().encode(`https://${'é'.repeat(124)}`).length).toBe(256);
+    expect(new TextEncoder().encode(`https://${'é'.repeat(125)}`).length).toBe(258);
+    const { agent, rpc } = await setup();
+    await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://${'é'.repeat(124)}` });
+    expect(rpc.sent).toHaveLength(1);
+    await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: `https://${'é'.repeat(125)}` })).rejects.toThrow(/longer than 256 bytes/);
+  });
+
+  it('warns when the user supplies an empty metadataURI', async () => {
+    const rpc = localRpc();
+    mockAccount(rpc, { owner: A(0x99), agent: signer.address });
+    mockCurve(rpc, {});
+    rpc.read(LAUNCH_FACTORY, launchFactoryAbi, 'config', CONFIG);
+    rpc.read(LAUNCH_FACTORY, launchFactoryAbi, 'configHash', HASH);
+    rpc.read(LAUNCH_FACTORY, launchFactoryAbi, 'paused', false);
+    rpc.read(ACCOUNT, agentAccountAbi, 'launch', [TOKEN, CURVE]);
+    rpc.receiptLogs = [
+      agentActionLog({ agent: signer.address, action: 3, token: TOKEN, usdcSpent: 11_000_000n, tokenDelta: 1n * WAD, periodId: 19_637n }),
+      eventLog(launchFactoryAbi, LAUNCH_FACTORY, 'TokenCreated', { token: TOKEN, curve: CURVE, creator: ACCOUNT }),
+    ];
+    const seen: string[] = [];
+    const mf = await localClient(rpc, { onWarning: (m) => seen.push(m) });
+    const agent = await mf.agent({ account: ACCOUNT, signer });
+    await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: '' });
+    expect(seen.some((m) => /hidden from the .*board/.test(m))).toBe(true);
   });
 
   it('accepts https and ipfs URIs at the byte limit, and rejects bad user-supplied ones', async () => {
@@ -311,7 +338,7 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     await ok.run;
     expect(ok.rpc.sent).toHaveLength(1);
     const { agent, rpc } = await setup();
-    for (const uri of bad.slice(1)) await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: uri })).rejects.toThrow(InvalidInputError);
+    for (const uri of bad.slice(1).filter((u) => u !== `https://${'é'.repeat(125)}`)) await expect(agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: uri })).rejects.toThrow(InvalidInputError);
     await agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: 'https://example.com/m.json' });
     expect(rpc.sent).toHaveLength(1);
   });

@@ -43,6 +43,8 @@ export const metadataUriProblem = (uri: unknown): string | null => {
   if (typeof uri !== 'string' || uri === '') return 'it is empty or not a string';
   if (!/^(https|ipfs):\/\/./.test(uri)) return 'it must start with https:// or ipfs://';
   if (/[\s\p{Cc}\p{Cf}]/u.test(uri)) return 'it contains whitespace or control characters';
+  // Credentials in a URI would be published on chain and sent to every reader's browser.
+  if (/^(?:https|ipfs):\/\/[^/?#]*@/.test(uri)) return 'it contains embedded credentials';
   if (utf8Length(uri) > 256) return 'it is longer than 256 bytes';
   return null;
 };
@@ -219,6 +221,9 @@ export class AgentClient {
     if (typeof p.symbol !== 'string' || utf8Length(p.symbol) < 1 || utf8Length(p.symbol) > 10) throw new InvalidInputError('symbol', 'symbol must be 1–10 bytes (UTF-8)');
     const hasMetadata = p.description !== undefined || p.links !== undefined || p.image !== undefined;
     if (p.metadataURI !== undefined && hasMetadata) throw new InvalidInputError('metadataURI', 'pass either metadataURI or description, links and image, not both');
+    if (p.metadataURI === '') {
+      this.mf.warn('metadataURI is empty: the launch is valid, but tokens without Mercurifi-hosted metadata are hidden from the Mercurifi board.');
+    }
     if (p.metadataURI !== undefined && p.metadataURI !== '') {
       const problem = metadataUriProblem(p.metadataURI);
       if (problem !== null) throw new InvalidInputError('metadataURI', `metadataURI is not usable: ${problem}`);
