@@ -21,6 +21,8 @@ const ASCII_EDGE_WHITESPACE = /^[ \t\n\r]+|[ \t\n\r]+$/g;
  * @returns the amount in base units
  * @throws {InvalidInputError} for anything that is not a plain non-negative decimal string with at most `decimals` places
  */
+const MAX_DECIMAL_TEXT = 80;
+
 export const parseDecimal = (value: unknown, decimals: number, field: string, baseUnitHint = `${field}6`): bigint => {
   if (typeof value !== 'string') {
     throw new InvalidInputError(
@@ -29,6 +31,8 @@ export const parseDecimal = (value: unknown, decimals: number, field: string, ba
     );
   }
   const text = value.replace(ASCII_EDGE_WHITESPACE, '');
+  // Same bound as Python (units._MAX_TEXT): no real amount needs more, and BigInt work stays small.
+  if (text.length > MAX_DECIMAL_TEXT) throw new InvalidInputError(field, `${field} is too long`);
   if (!DECIMAL.test(text)) throw new InvalidInputError(field, `${field} must be a plain decimal string such as "25" or "0.5"`);
   const [whole = '0', frac = ''] = text.split('.');
   if (frac.length > decimals) throw new InvalidInputError(field, `${field} has more than ${decimals} decimal places`);
