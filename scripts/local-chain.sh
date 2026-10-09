@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # LOCAL ONLY: starts a loopback Anvil (chain 31337) and deploys Launch + Agent Accounts with the contracts checkout's
-# script/local/DeployAgentLocal.s.sol, then copies the address book to fixtures/local-book-<port>.json.
+# script/local/DeployAgentLocal.s.sol (MERCURIFI_CONTRACTS_DIR, required), then copies the address book to fixtures/local-book-<port>.json.
 # Port: ANVIL_PORT (default 8545). The test tiers read the same ANVIL_PORT (or ANVIL_RPC, whose port names the book).
 # Stop it with: scripts/stop-local-chain.sh [port]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONTRACTS="${MERCURIFI_CONTRACTS_DIR:-$ROOT/../../agent-contracts}"
+if [ -z "${MERCURIFI_CONTRACTS_DIR:-}" ]; then
+  echo "set MERCURIFI_CONTRACTS_DIR to the agent contracts checkout (the one with script/local/DeployAgentLocal.s.sol)" >&2
+  exit 2
+fi
+CONTRACTS="$MERCURIFI_CONTRACTS_DIR"
 PORT="${ANVIL_PORT:-8545}"
 RPC="http://127.0.0.1:${PORT}"
 PIDFILE="$ROOT/.anvil-${PORT}.pid"

@@ -1,17 +1,28 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { canonical, digestOf, SOURCES } from '../../../scripts/gen-abis.mjs';
 import { ABI_DIGEST, agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
+
+const GEN = fileURLToPath(new URL('../../../scripts/gen-abis.mjs', import.meta.url));
 
 const names = (abi: readonly { type: string; name?: string }[], type: string): string[] =>
   abi.filter((i) => i.type === type).map((i) => i.name ?? '');
 
 describe('generated ABIs', () => {
   it('agree with the digest and with the Python copies', () => {
-    expect(() => execFileSync('node', ['../../scripts/gen-abis.mjs', '--verify-digest'], { stdio: 'pipe' })).not.toThrow();
+    expect(() => execFileSync(process.execPath, [GEN, '--verify-digest'], { stdio: 'pipe' })).not.toThrow();
     expect(ABI_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     expect(SOURCES).toHaveLength(11);
+  });
+
+  it('has no default contracts path: generation without MERCURIFI_CONTRACTS_DIR or --contracts stops clearly', () => {
+    const env = { ...process.env };
+    delete env.MERCURIFI_CONTRACTS_DIR;
+    const r = spawnSync(process.execPath, [GEN, '--check'], { env, encoding: 'utf8' });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/set MERCURIFI_CONTRACTS_DIR/);
   });
 
   it('carry the account members the SDK relies on', () => {

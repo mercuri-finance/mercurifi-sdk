@@ -2,6 +2,7 @@
 // Generates the SDK ABIs from the Foundry artifacts of an agent contracts checkout (MERCURIFI_CONTRACTS_DIR).
 //   node scripts/gen-abis.mjs [--contracts DIR] [--allow-dirty]   generate
 //   node scripts/gen-abis.mjs --check [--contracts DIR]           committed output must equal a regeneration
+// The contracts checkout comes from --contracts or MERCURIFI_CONTRACTS_DIR; there is no default path.
 //   node scripts/gen-abis.mjs --verify-digest                      TS and Python copies agree with the digest (no contracts needed)
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -13,7 +14,6 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TS_OUT = join(ROOT, 'packages/typescript/src/abi/generated.ts');
 const PY_DIR = join(ROOT, 'packages/python/src/mercurifi/abi');
 const DIGEST_FILE = join(ROOT, 'fixtures/abi-digest.json');
-const DEFAULT_CONTRACTS = resolve(ROOT, '../../agent-contracts');
 
 // [SDK name, artifact directory under out/, contract name]
 export const SOURCES = [
@@ -204,12 +204,16 @@ const verifyDigest = () => {
 const main = () => {
   const args = process.argv.slice(2);
   const flag = (f) => args.includes(f);
-  const contractsDir = args.includes('--contracts') ? resolve(args[args.indexOf('--contracts') + 1]) : DEFAULT_CONTRACTS;
-
   if (flag('--verify-digest')) {
     verifyDigest();
     return;
   }
+  const given = args.includes('--contracts') ? args[args.indexOf('--contracts') + 1] : process.env.MERCURIFI_CONTRACTS_DIR;
+  if (given === undefined || given === '') {
+    console.error('gen-abis: set MERCURIFI_CONTRACTS_DIR (or pass --contracts DIR) to the agent contracts checkout with a forge build in out/');
+    process.exit(2);
+  }
+  const contractsDir = resolve(given);
 
   const { entries, digest, commit, ts } = generate(contractsDir, flag('--allow-dirty'));
   if (flag('--check')) {

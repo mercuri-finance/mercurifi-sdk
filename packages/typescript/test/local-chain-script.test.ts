@@ -138,6 +138,14 @@ describe.skipIf(process.platform === 'win32')('scripts/local-chain.sh', () => {
     expect(existsSync(pidFile(t))).toBe(false);
   });
 
+  it('needs MERCURIFI_CONTRACTS_DIR: there is no default contracts path', () => {
+    const t = setup();
+    const r = run(t, { MERCURIFI_CONTRACTS_DIR: '' });
+    expect(r.code).toBe(2);
+    expect(r.err).toMatch(/set MERCURIFI_CONTRACTS_DIR/);
+    expect(existsSync(pidFile(t))).toBe(false);
+  });
+
   it('refuses to deploy when the node does not name itself anvil', () => {
     const t = setup();
     const r = run(t, { STUB_CLIENT: 'Geth/v1.14.0' });
