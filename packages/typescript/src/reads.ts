@@ -77,8 +77,8 @@ export const readAccountState = async (client: PublicClient, agents: AgentBook, 
 export const readCeilings = async (client: PublicClient, agents: AgentBook): Promise<ChainPolicy> =>
   toChainPolicy((await client.readContract({ address: agents.factory, abi: agentAccountFactoryAbi, functionName: 'ceilings' } as never)) as ChainPolicy);
 
-export const isAgentAccount = (client: PublicClient, agents: AgentBook, account: Address): Promise<boolean> =>
-  client.readContract({ address: agents.factory, abi: agentAccountFactoryAbi, functionName: 'isAccount', args: [account] } as never) as Promise<boolean>;
+export const isAgentAccount = (client: PublicClient, agents: AgentBook, account: Address, blockNumber?: bigint): Promise<boolean> =>
+  client.readContract({ address: agents.factory, abi: agentAccountFactoryAbi, functionName: 'isAccount', args: [account], ...(blockNumber === undefined ? {} : { blockNumber }) } as never) as Promise<boolean>;
 
 export interface AgentInfo {
   address: Address;

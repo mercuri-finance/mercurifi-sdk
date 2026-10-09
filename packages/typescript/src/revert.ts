@@ -4,7 +4,7 @@ import {
   agentAccountAbi, agentAccountFactoryAbi, agentPolicyRegistryAbi, bondingCurveAbi, feeManagerAbi, graduationManagerAbi,
   launchFactoryAbi, launchHookAbi, launchTokenAbi, universalRouterAbi, v4QuoterAbi,
 } from './abi/index.js';
-import { neutralizeUntrusted, truncateChars } from './redact.js';
+import { neutralizeUntrusted, preBound, truncateChars } from './redact.js';
 import { MercurifiError } from './errors.js';
 import { POLICY_FIELDS } from './policy.js';
 import { formatUsdc6 } from './units.js';
@@ -132,8 +132,8 @@ const MAX_REASON = 200;
  * Contract-supplied text is untrusted: no control or Unicode format characters (bidi overrides, zero-width), no double
  * quotes, no URLs, bounded length without splitting a surrogate pair. The raw string stays in `args`.
  */
-const untrustedReason = (raw: unknown): string => {
-  const text = typeof raw === 'string' ? raw : String(raw);
+export const untrustedReason = (raw: unknown): string => {
+  const text = preBound(typeof raw === 'string' ? raw : String(raw), MAX_REASON).normalize('NFKC');
   const clean = truncateChars(neutralizeUntrusted(text.replace(/"/g, "'")).trim(), MAX_REASON, '...');
   return `Reverted with a contract-supplied reason (untrusted text): "${clean}"`;
 };

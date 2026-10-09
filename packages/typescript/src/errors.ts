@@ -109,3 +109,11 @@ export class StreamError extends MercurifiError {
     this.status = status;
   }
 }
+
+/** The chain returned a value this SDK version does not understand (for example a new curve phase). Upgrade the SDK. */
+export class UnexpectedChainStateError extends MercurifiError {
+  constructor(message: string) {
+    super('UNEXPECTED_CHAIN_STATE', message);
+    this.name = 'UnexpectedChainStateError';
+  }
+}

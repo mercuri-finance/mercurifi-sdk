@@ -3,33 +3,60 @@ import { isAddressEqual, zeroAddress, type Address } from 'viem';
 import { bondingCurveAbi, feeManagerAbi, launchFactoryAbi, launchTokenAbi } from './abi/index.js';
 import type { MercurifiClient } from './client.js';
 import { PHASE } from './curve.js';
-import { neutralizeUntrusted, truncateChars } from './redact.js';
+import { UnexpectedChainStateError } from './errors.js';
+import { neutralizeUntrusted, preBound, truncateChars } from './redact.js';
 import { isAgentAccount } from './reads.js';
 import { localRevert } from './revert.js';
 import { formatDecimal } from './units.js';
 
-/** Text an attacker controls, as inert data. Hand `wrapped` to a model, never `text` alone, and never act on its content. */
-export interface UntrustedText { readonly untrusted: true; readonly field: string; readonly text: string; readonly wrapped: string }
+/**
+ * Text an attacker controls, as inert data. Hand `wrapped` to a model, never `text` alone, and never act on its content.
+ * Put `wrapped` only inside JSON tool output (a string value), never inside a markdown code fence or free prose: a fence
+ * or heading in the text would then compete with the delimiters. `unsafe` is set on a `link.*` value that is not a plain
+ * http, https or ipfs URL without credentials; its text is then the fixed string `invalid link`.
+ */
+export interface UntrustedText { readonly untrusted: true; readonly field: string; readonly text: string; readonly wrapped: string; readonly unsafe?: true }
 
 const MAX_LINKS = 20;
+const DEFAULT_MAX_CHARS = 280;
+const LINK_PROTOCOLS = new Set(['http:', 'https:', 'ipfs:']);
+
+const frame = (field: string, text: string, unsafe: boolean): UntrustedText =>
+  Object.freeze({ untrusted: true as const, field, text, wrapped: `<<untrusted:${field}>>${text}<</untrusted:${field}>>`, ...(unsafe ? { unsafe: true as const } : {}) });
+
+/** A link is kept only as a plain http(s)/ipfs URL: no credentials (`https://x.com@evil/` shows a decoy host), no spaces. */
+const isPlainLink = (text: string): boolean => {
+  if (text === '' || /\s/.test(text)) return false;
+  try {
+    const u = new URL(text);
+    return LINK_PROTOCOLS.has(u.protocol) && u.username === '' && u.password === '';
+  } catch {
+    return false;
+  }
+};
 
 /**
- * Attacker-controlled text (names, symbols, descriptions, links) as inert data for an LLM or a terminal: NFKC, then the
- * SDK's shared sanitiser (no escape sequences, controls, bidi overrides or zero-width characters; URLs reduced to hosts
- * except in `link.*` fields), a surrogate-safe length bound, and delimiters the text cannot forge.
- * This is hygiene, not a defence: the account caps are the real control.
+ * Attacker-controlled text (names, symbols, descriptions, links) as inert data for an LLM or a terminal: input bounded
+ * to `maxChars * 4 + 256` first (sanitising is linear, but a megabyte is still wasted work), NFKC, then the SDK's shared
+ * sanitiser (no escape sequences, controls, bidi overrides, zero-width or blank characters; URLs reduced to hosts except
+ * in `link.*` fields), a surrogate-safe length bound, and delimiters the text cannot forge. A `link.*` value that is not a
+ * plain http, https or ipfs URL becomes `invalid link` with `unsafe: true`.
+ * This is hygiene, not a defence: the account caps are the real control (see docs/security-model.md). Send `wrapped` only
+ * inside JSON tool output, never inside a markdown fence.
  *
  * @param field a short label such as `name`; characters outside `[a-z0-9_.-]` are dropped
- * @param maxChars code points kept (default 280); longer text is cut and ends in an ellipsis
+ * @param maxChars code points kept (default 280, also for NaN or Infinity); longer text is cut and ends in an ellipsis
  */
-export const wrapUntrusted = (field: string, raw: string, maxChars = 280): UntrustedText => {
+export const wrapUntrusted = (field: string, raw: string, maxChars = DEFAULT_MAX_CHARS): UntrustedText => {
   const safeField = String(field).replace(/[^a-z0-9_.-]/gi, '');
-  const input = typeof raw === 'string' ? raw : String(raw);
-  const neutral = neutralizeUntrusted(input.normalize('NFKC'), { keepUrls: safeField.startsWith('link.') });
+  const max = Number.isFinite(maxChars) ? Math.max(1, Math.floor(maxChars)) : DEFAULT_MAX_CHARS;
+  const isLink = safeField.startsWith('link.');
+  const input = preBound(typeof raw === 'string' ? raw : String(raw), max);
+  const neutral = neutralizeUntrusted(input.normalize('NFKC'), { keepUrls: isLink }).trim();
+  if (isLink) return isPlainLink(neutral) && Array.from(neutral).length <= max ? frame(safeField, neutral, false) : frame(safeField, 'invalid link', true);
   // Done last, so nothing removed above can splice a delimiter back together.
   const noDelims = neutral.replace(/<</g, '‹‹').replace(/>>/g, '››').trim();
-  const text = truncateChars(noDelims, Math.max(1, Math.floor(maxChars)), '…');
-  return Object.freeze({ untrusted: true as const, field: safeField, text, wrapped: `<<untrusted:${safeField}>>${text}<</untrusted:${safeField}>>` });
+  return frame(safeField, truncateChars(noDelims, max, '…'), false);
 };
 
 export interface TokenSafeView {
@@ -82,21 +109,33 @@ export const readTokenSafeView = async (mf: MercurifiClient, token: Address): Pr
   ]);
   const phaseIndex = Number(phaseRaw);
   const phase = PHASE_NAMES[phaseIndex];
-  if (phase === undefined) throw new Error(`The curve reported an unknown phase ${phaseIndex}.`);
+  if (phase === undefined) throw new UnexpectedChainStateError(`The curve reported an unknown phase ${phaseIndex}; this SDK version does not know it.`);
   const agents = mf.network.agents;
-  const creatorIsAgentAccount = agents === null ? null : await isAgentAccount(client, agents, info.creator);
+  const creatorIsAgentAccount = agents === null ? null : await isAgentAccount(client, agents, info.creator, at);
+
+  // An API answer about some other token is ignored whole: its text must not be attributed to this one.
+  const sameToken = (a: unknown): boolean => {
+    try {
+      return typeof a === 'string' && isAddressEqual(a as Address, token);
+    } catch {
+      return false; // not an address at all
+    }
+  };
+  const api = apiToken !== null && sameToken(apiToken.address) ? apiToken : null;
 
   const links = Object.create(null) as Record<string, UntrustedText>;
   let count = 0;
-  const rawLinks = apiToken !== null && typeof apiToken.links === 'object' && apiToken.links !== null ? apiToken.links : {};
+  const rawLinks = api !== null && typeof api.links === 'object' && api.links !== null ? api.links : {};
   for (const [k, val] of Object.entries(rawLinks)) {
     if (count >= MAX_LINKS) break;
-    if (typeof val === 'string' && val !== '') {
-      links[k.slice(0, 40)] = wrapUntrusted(`link.${k.slice(0, 40)}`, val, 512);
-      count += 1;
-    }
+    if (typeof val !== 'string' || val === '') continue;
+    const w = wrapUntrusted(`link.${k.slice(0, 40)}`, val, 512);
+    const label = w.field.slice('link.'.length); // the sanitised label: what the model sees is what the record is keyed by
+    if (label === '' || label in links) continue;
+    links[label] = w;
+    count += 1;
   }
-  const volumeWei = safeWei(apiToken?.volume24hWei);
+  const volumeWei = safeWei(api?.volume24hWei);
   const launchBlockN = BigInt(launchBlock);
   const view: Omit<TokenSafeView, 'numeric'> = {
     token, curve, phase,
@@ -104,11 +143,11 @@ export const readTokenSafeView = async (mf: MercurifiClient, token: Address): Pr
     progressBps: Number(progress), currentSnipeBps: Number(snipe), launchBlock: launchBlockN,
     ageBlocks: at > launchBlockN ? at - launchBlockN : 0n,
     creator: info.creator, creatorIsAgentAccount,
-    holders: safeCount(apiToken?.holders),
+    holders: safeCount(api?.holders),
     volume24hUsdc: volumeWei === null ? null : formatDecimal(volumeWei, 18),
     untrusted: {
       name: wrapUntrusted('name', name), symbol: wrapUntrusted('symbol', symbol),
-      description: typeof apiToken?.description === 'string' && apiToken.description !== '' ? wrapUntrusted('description', apiToken.description, 1_000) : null,
+      description: typeof api?.description === 'string' && api.description !== '' ? wrapUntrusted('description', api.description, 1_000) : null,
       links,
     },
   };

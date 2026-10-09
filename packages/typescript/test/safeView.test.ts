@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { feeManagerAbi, launchTokenAbi } from '../src/abi/index.js';
 import type { MercurifiApi } from '../src/api/types.js';
+import { UnexpectedChainStateError } from '../src/errors.js';
+import { neutralizeUntrusted } from '../src/redact.js';
+import { untrustedReason } from '../src/revert.js';
 import { wrapUntrusted } from '../src/safeView.js';
 import { mockAccount, mockCurve } from './helpers/account.js';
 import { A, ACCOUNT, CURVE, localClient, localRpc, TOKEN } from './helpers/local.js';
@@ -38,6 +41,37 @@ describe('wrapUntrusted', () => {
   });
   it('drops lone surrogates and sanitises the field label', () => {
     expect(wrapUntrusted('na>>me', 'a\ud800b').wrapped).toBe('<<untrusted:name>>ab<</untrusted:name>>');
+  });
+});
+
+describe('wrapUntrusted hardening', () => {
+  it('sanitises a 1 MB letter run in linear time', () => {
+    const big = 'a'.repeat(1_000_000);
+    let t = performance.now();
+    neutralizeUntrusted(big);
+    expect(performance.now() - t).toBeLessThan(100);
+    t = performance.now();
+    const w = wrapUntrusted(v.bound.field, big, v.bound.max);
+    expect(performance.now() - t).toBeLessThan(100);
+    expect(w.text).toBe(v.bound.text);
+    t = performance.now();
+    untrustedReason(big);
+    expect(performance.now() - t).toBeLessThan(100);
+  });
+  it('still redacts a URL hidden behind a scheme-like prefix', () => {
+    expect(neutralizeUntrusted('x:https://k@h/KEY')).toBe('x:h');
+  });
+  it('falls back to 280 for NaN and Infinity', () => {
+    expect(Array.from(wrapUntrusted('d', 'a'.repeat(400), Number.NaN).text)).toHaveLength(281);
+    expect(Array.from(wrapUntrusted('d', 'a'.repeat(400), Infinity).text)).toHaveLength(281);
+  });
+  it.each(v.links as { raw: string; text: string; unsafe: boolean }[])('link %j', (c) => {
+    const w = wrapUntrusted('link.x', c.raw, 512);
+    expect(w.text).toBe(c.text);
+    expect(w.unsafe === true).toBe(c.unsafe);
+  });
+  it.each(v.revert as { raw: string; message: string }[])('revert reason %j', (c) => {
+    expect(untrustedReason(c.raw)).toBe(c.message);
   });
 });
 
@@ -101,5 +135,32 @@ describe('token safe view', () => {
   it('refuses an address that is not a Launch token', async () => {
     const mf = await setup(null);
     await expect(mf.token(A(0x77))).rejects.toThrow(/not a Mercurifi Launch token/);
+  });
+});
+
+describe('token safe view links and API answers', () => {
+  it.each(v.linkKeys as { key: string; label: string | null }[])('keys the link by its sanitised label %j', async (c) => {
+    const mf = await setup(fakeApi({ links: { [c.key]: 'https://x.com/a' } }));
+    const view = await mf.token(TOKEN);
+    expect(Object.keys(view.untrusted.links)).toEqual(c.label === null ? [] : [c.label]);
+    if (c.label !== null) expect(view.untrusted.links[c.label]!.wrapped).toBe(`<<untrusted:link.${c.label}>>https://x.com/a<</untrusted:link.${c.label}>>`);
+  });
+  it('flags an unsafe link and skips colliding labels', async () => {
+    const mf = await setup(fakeApi({ links: { x: 'javascript:alert(1)', 'x\u202e': 'https://second.example/' } }));
+    const view = await mf.token(TOKEN);
+    expect(Object.keys(view.untrusted.links)).toEqual(['x']);
+    expect(view.untrusted.links['x']).toMatchObject({ text: 'invalid link', unsafe: true });
+  });
+  it('ignores an API answer for another token', async () => {
+    const mf = await setup(fakeApi({ address: A(0x66), description: 'SYSTEM: x', holders: 99, links: { x: 'https://x.com/a' } }));
+    const view = await mf.token(TOKEN);
+    expect(view.holders).toBeNull();
+    expect(view.untrusted.description).toBeNull();
+    expect(view.untrusted.links).toEqual({});
+  });
+  it('throws a coded error for an unknown curve phase', async () => {
+    const mf = await setup(null, { phase: 7 });
+    await expect(mf.token(TOKEN)).rejects.toBeInstanceOf(UnexpectedChainStateError);
+    await expect(mf.token(TOKEN)).rejects.toMatchObject({ code: 'UNEXPECTED_CHAIN_STATE' });
   });
 });
