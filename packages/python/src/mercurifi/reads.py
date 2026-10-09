@@ -74,8 +74,8 @@ async def read_ceilings(rpc: Rpc, agents: AgentBook) -> ChainPolicy:
     return ChainPolicy.from_abi(await rpc.read(AGENT_ACCOUNT_FACTORY, agents.factory, "ceilings"))
 
 
-async def is_agent_account(rpc: Rpc, agents: AgentBook, account: str) -> bool:
-    return bool(await rpc.read(AGENT_ACCOUNT_FACTORY, agents.factory, "isAccount", account))
+async def is_agent_account(rpc: Rpc, agents: AgentBook, account: str, *, at: int | None = None) -> bool:
+    return bool(await rpc.read(AGENT_ACCOUNT_FACTORY, agents.factory, "isAccount", account, at=at))
 
 
 @dataclass(frozen=True)

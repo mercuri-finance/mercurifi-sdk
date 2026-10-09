@@ -113,3 +113,9 @@ class StreamError(MercurifiError):
     def __init__(self, message: str, status: int | None) -> None:
         super().__init__(message)
         self.status = status
+
+
+class UnexpectedChainStateError(MercurifiError):
+    """The chain returned a value this SDK version does not understand (for example a new curve phase). Upgrade the SDK."""
+
+    code = "UNEXPECTED_CHAIN_STATE"

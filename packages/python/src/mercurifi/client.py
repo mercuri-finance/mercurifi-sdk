@@ -21,6 +21,7 @@ from .verify import verify_network
 if TYPE_CHECKING:
     from .agent import AgentClient
     from .owner import OwnerClient
+    from .safe_view import TokenSafeView
     from .signers import Signer
     from .stream import StreamEvent
 
@@ -92,6 +93,12 @@ class AsyncClient:
             raise InvalidInputError("account", f"{account} is not a Mercurifi agent account on {self.network.name}")
         wanted = self.settings.deadline_seconds if deadline_seconds is None else deadline_seconds
         return AgentClient(self, agents, account, signer, slippage_to_bps(slippage), wanted)
+
+    async def token(self, address: str) -> TokenSafeView:
+        """Agent-safe view of a Launch token: numbers to act on, attacker-written text wrapped as inert data."""
+        from .safe_view import read_token_safe_view
+
+        return await read_token_safe_view(self, address)
 
     def stream(self, topics: list[str], **options: Any) -> AsyncIterator[StreamEvent]:
         """Live events: `launches`, `trades`, `token:0x…`, `trader:0x…`, `agent-account:0x…`. Needs the API.
