@@ -34,3 +34,19 @@ def test_impact_roundings_mirror_agent_policy_lib() -> None:
     assert sell_impact_bps(10 * 10**18, 5 * 10**18, 4 * 10**18) == 5_000
     assert sell_impact_bps(10 * 10**18, 5 * 10**18, 2 * 10**18) == 0
     assert sell_impact_bps(10 * 10**18 - 1, 5 * 10**18, 2 * 10**18) == 1
+
+
+@pytest.mark.parametrize("case", V["impact"]["buy"])
+def test_buy_impact_vectors(case: dict[str, str]) -> None:
+    assert buy_impact_bps(int(case["net"]), int(case["tokensOut"]), int(case["price"])) == int(case["bps"])
+
+
+@pytest.mark.parametrize("case", V["impact"]["sell"])
+def test_sell_impact_vectors(case: dict[str, str]) -> None:
+    assert sell_impact_bps(int(case["gross"]), int(case["tokensIn"]), int(case["price"])) == int(case["bps"])
+
+
+@pytest.mark.parametrize("case", V["mayGraduate"])
+def test_may_graduate_vectors(case: dict[str, object]) -> None:
+    got = may_graduate_buy(int(str(case["usdcIn"])), int(str(case["usdcUsed"])), int(str(case["tokensOut"])), int(str(case["tokensRemaining"])))
+    assert got is case["may"]

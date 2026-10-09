@@ -8,7 +8,13 @@ import pytest
 from mercurifi.errors import InvalidInputError
 from mercurifi.permissions import DEFAULT_AGENT_PERMISSIONS, decode_permissions, encode_permissions
 from mercurifi.policy import (
-    ABI_NAMES, DEFAULT_POLICY, ChainPolicy, field_direction, merge_policy, preview_policy_change, validate_policy,
+    ABI_NAMES,
+    DEFAULT_POLICY,
+    ChainPolicy,
+    field_direction,
+    merge_policy,
+    preview_policy_change,
+    validate_policy,
 )
 
 V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "policy.json").read_text())

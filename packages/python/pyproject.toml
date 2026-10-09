@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest==8.3.5", "pytest-asyncio==0.26.0", "mypy==1.15.0"]
+dev = ["pytest==8.3.5", "pytest-asyncio==0.26.0", "mypy==1.15.0", "ruff==0.11.13"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mercurifi"]
@@ -32,3 +32,12 @@ addopts = "-m 'not integration'"
 [tool.mypy]
 strict = true
 files = ["src/mercurifi", "tests"]
+
+[tool.ruff]
+line-length = 210
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["UP038"]

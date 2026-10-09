@@ -14,7 +14,6 @@ from .codec import Contract, to_hex
 from .errors import MercurifiError
 from .redact import first_line, install_log_redaction, redact_url, redact_urls_in
 
-
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
@@ -126,6 +125,11 @@ class Rpc:
             raise self._fail("no such block")
         return block
 
+    async def latest_block(self) -> tuple[int, int]:
+        """(number, timestamp) of the latest block; a malformed answer is an RPC_ERROR, never a KeyError or ValueError."""
+        block = await self.get_block()
+        return self._int(block.get("number"), "block number"), self._int(block.get("timestamp"), "block timestamp")
+
     async def latest_timestamp(self) -> int:
         return self._int((await self.get_block()).get("timestamp"), "block timestamp")
 
@@ -135,8 +139,8 @@ class Rpc:
             raise self._fail("unexpected code result")
         return code
 
-    async def get_balance(self, address: str) -> int:
-        return self._int(await self.request("eth_getBalance", [address, "latest"]), "balance")
+    async def get_balance(self, address: str, *, at: int | None = None) -> int:
+        return self._int(await self.request("eth_getBalance", [address, "latest" if at is None else hex(at)]), "balance")
 
     async def get_transaction_count(self, address: str, tag: str = "pending") -> int:
         return self._int(await self.request("eth_getTransactionCount", [address, tag]), "nonce")

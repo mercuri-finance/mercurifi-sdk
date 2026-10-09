@@ -39,3 +39,12 @@ describe('mayGraduateBuy', () => {
     expect(mayGraduateBuy({ ...base, usdcUsed: 99n })).toBe(true);
   });
 });
+
+describe('shared impact and graduation vectors', () => {
+  it.each(v.impact.buy as never[])('buy impact %j', (x: { net: string; tokensOut: string; price: string; bps: string }) =>
+    expect(buyImpactBps(BigInt(x.net), BigInt(x.tokensOut), BigInt(x.price))).toBe(BigInt(x.bps)));
+  it.each(v.impact.sell as never[])('sell impact %j', (x: { gross: string; tokensIn: string; price: string; bps: string }) =>
+    expect(sellImpactBps(BigInt(x.gross), BigInt(x.tokensIn), BigInt(x.price))).toBe(BigInt(x.bps)));
+  it.each(v.mayGraduate as never[])('may graduate %j', (x: { usdcIn: string; usdcUsed: string; tokensOut: string; tokensRemaining: string; may: boolean }) =>
+    expect(mayGraduateBuy({ usdcIn: BigInt(x.usdcIn), usdcUsed: BigInt(x.usdcUsed), tokensOut: BigInt(x.tokensOut), tokensRemaining: BigInt(x.tokensRemaining) })).toBe(x.may));
+});

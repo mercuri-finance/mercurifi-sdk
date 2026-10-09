@@ -20,8 +20,15 @@ from .signers import Signer
 from .time import chain_deadline
 from .tx import WriteRequest
 from .units import (
-    SCALE, apply_slippage_floor, format_usdc6, resolve_token_amount, resolve_usdc6, slippage_to_bps, usdc6_to_wei,
-    wei_to_usdc6_ceil, wei_to_usdc6_floor,
+    SCALE,
+    apply_slippage_floor,
+    format_usdc6,
+    resolve_token_amount,
+    resolve_usdc6,
+    slippage_to_bps,
+    usdc6_to_wei,
+    wei_to_usdc6_ceil,
+    wei_to_usdc6_floor,
 )
 
 if TYPE_CHECKING:
@@ -86,7 +93,7 @@ class AgentClient:
     async def headroom(self) -> Headroom:
         """Period limits left, read from the policy registry (authoritative; no API needed), all at one block."""
         rpc, registry = self._mf.rpc, self._agents.registry
-        at = _block_number(await rpc.get_block())
+        at, _ = await rpc.latest_block()
         room, usage, policy, period = await asyncio.gather(
             read_registry(rpc, registry, "headroom", self.account, at=at), read_registry(rpc, registry, "usage", self.account, at=at),
             self._policy(at), read_registry(rpc, registry, "periodSeconds", self.account, at=at),
@@ -98,7 +105,7 @@ class AgentClient:
 
     async def position(self, token: str) -> Position:
         rpc = self._mf.rpc
-        at = _block_number(await rpc.get_block())
+        at, _ = await rpc.latest_block()
         balance, basis, spent = await asyncio.gather(
             self._balance_of(token, at), read_basis(rpc, self.account, token, at=at),
             read_registry(rpc, self._agents.registry, "tokenSpent", self.account, token, at=at),
@@ -175,12 +182,12 @@ class AgentClient:
             raise InvalidInputError("amount", "The account holds none of this token." if resolved == "all" else "The sell amount must be above zero.")
         if tokens_in > balance:
             raise InvalidInputError("amount", "The account holds less of this token than the amount to sell.")
-        phase, price, quote, basis = await asyncio.gather(
-            self._curve_read(curve, "phase", at=at), self._curve_read(curve, "price", at=at),
-            self._curve_read(curve, "quoteSell", tokens_in, at=at), read_basis(rpc, self.account, token, at=at),
-        )
-        if int(phase) == PHASE_GRADUATED:
+        # Phase first: quoteSell on a graduated curve would revert with the curve's own error instead of NotTrading.
+        if int(await self._curve_read(curve, "phase", at=at)) == PHASE_GRADUATED:
             raise local_revert("NotTrading")
+        price, quote, basis = await asyncio.gather(
+            self._curve_read(curve, "price", at=at), self._curve_read(curve, "quoteSell", tokens_in, at=at), read_basis(rpc, self.account, token, at=at),
+        )
         if min_usdc_out6 is not None and min_usdc_out6 > MAX_UINT256 // SCALE:
             raise local_revert("AmountTooLarge")
         recorded, _ = recorded_sell_value6(basis, tokens_in)
@@ -208,8 +215,7 @@ class AgentClient:
         """The registry's authorize() preamble against one pinned block: Paused first (the account owner's pause or the
         platform pause), then the agent, then the policy and headroom."""
         rpc = self._mf.rpc
-        block = await rpc.get_block()
-        at, now = _block_number(block), _block_timestamp(block)
+        at, now = await rpc.latest_block()
         paused, agent, policy, room = await asyncio.gather(
             read_paused(rpc, self._agents, self.account, at=at),
             read_agent(rpc, self._agents, self.account, self.signer.address, now, at=at),
@@ -257,10 +263,3 @@ def _check_agent(agent: AgentInfo, permission: str, actions_left: int, now: int)
     if actions_left == 0:
         raise local_revert("ActionLimit")
 
-
-def _block_number(block: dict[str, Any]) -> int:
-    return int(block["number"], 16)
-
-
-def _block_timestamp(block: dict[str, Any]) -> int:
-    return int(block["timestamp"], 16)

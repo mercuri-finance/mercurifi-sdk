@@ -6,7 +6,7 @@ import pytest
 from eth_utils.address import to_checksum_address
 from eth_utils.crypto import keccak
 
-from mercurifi.abi import REVERT_DECODER, REVERT_ORDER, UNIVERSAL_ROUTER, V4_QUOTER, ALL, AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, LAUNCH_FACTORY
+from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, ALL, LAUNCH_FACTORY, REVERT_DECODER, REVERT_ORDER, UNIVERSAL_ROUTER, V4_QUOTER
 from mercurifi.codec import AbiDecodeError, AbiEncodeError, AbiUnknownSelectorError, Contract, ErrorDecoder
 from mercurifi.policy import DEFAULT_POLICY
 
@@ -235,14 +235,14 @@ def _revive(param: dict[str, Any], x: Any) -> Any:
     if t == "tuple":
         if isinstance(x, dict):
             return {c["name"]: _revive(c, x[c["name"]]) for c in param["components"]}
-        return [_revive(c, i) for c, i in zip(param["components"], x)]
+        return [_revive(c, i) for c, i in zip(param["components"], x, strict=False)]
     if t.startswith(("uint", "int")):
         return int(x)
     return x
 
 
 def _revive_all(params: list[dict[str, Any]], xs: list[Any]) -> list[Any]:
-    return [_revive(p, x) for p, x in zip(params, xs)]
+    return [_revive(p, x) for p, x in zip(params, xs, strict=False)]
 
 
 @pytest.mark.parametrize("vec", VECTORS["calls"], ids=lambda v: v["fn"])

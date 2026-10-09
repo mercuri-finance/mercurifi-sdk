@@ -166,7 +166,7 @@ async def list_queued(rpc: Rpc, agents: AgentBook, account: str, from_block: int
             stale = int(await reg("delayWrite")) > seq
         elif "policy" in detail:
             writes = await asyncio.gather(*(reg("policyWrite", i) for i in range(len(POLICY_FIELDS))))
-            detail["superseded"] = [f for f, w in zip(POLICY_FIELDS, writes) if int(w) > seq]
+            detail["superseded"] = [f for f, w in zip(POLICY_FIELDS, writes, strict=False) if int(w) > seq]
             stale = len(detail["superseded"]) == len(POLICY_FIELDS)
         # executeQueued checks the epoch, then the window, then freshness, then the agent terms; the status follows that order.
         # An agent item whose expiry is not after max(now, eta) fails the terms check at every possible execution time.

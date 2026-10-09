@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY
+from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, BONDING_CURVE
 from mercurifi.agent import AgentClient
 from mercurifi.errors import InvalidInputError, MercurifiError
 from mercurifi.policy import DEFAULT_POLICY
@@ -11,7 +11,21 @@ from mercurifi.revert import ContractRevertError
 from mercurifi.signers import local_key
 
 from .helpers import (
-    ACCOUNT, AGENT_KEY, FACTORY, REGISTRY, TOKEN, WAD, A, MockRpc, agent_action_log, local_client, local_rpc, log, mock_account, mock_curve,
+    ACCOUNT,
+    AGENT_KEY,
+    CURVE,
+    FACTORY,
+    REGISTRY,
+    TOKEN,
+    WAD,
+    A,
+    MockRpc,
+    agent_action_log,
+    local_client,
+    local_rpc,
+    log,
+    mock_account,
+    mock_curve,
     sent_call,
 )
 
@@ -292,3 +306,32 @@ async def test_amounts_are_checked_before_any_read() -> None:
     with pytest.raises(InvalidInputError):
         await agent.buy(TOKEN, usdc=25)  # type: ignore[arg-type]
     assert len(rpc.methods("eth_call")) == start
+
+
+async def test_logs_without_an_address_are_skipped() -> None:
+    rpc, _, agent = await setup()
+    own = agent_action_log(agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=3_000_000, tokenDelta=2 * WAD, periodId=4)
+    rpc.receipt_logs = [{k: v for k, v in own.items() if k != "address"}, {"address": None, "topics": [], "data": "0x"}, {"address": ACCOUNT}, own]
+    assert (await agent.buy(TOKEN, usdc="3")).period_id == 4
+
+
+async def test_malformed_block_is_an_rpc_error() -> None:
+    rpc, _, agent = await setup()
+    rpc.on("eth_getBlockByNumber", lambda p: {"number": "0x10", "timestamp": "soon"})
+    with pytest.raises(MercurifiError) as e:
+        await agent.headroom()
+    assert e.value.code == "RPC_ERROR"
+    rpc.on("eth_getBlockByNumber", lambda p: {"timestamp": "0x10"})
+    with pytest.raises(MercurifiError) as e2:
+        await agent.buy(TOKEN, usdc="1")
+    assert e2.value.code == "RPC_ERROR"
+
+
+async def test_sell_on_a_graduated_curve_is_refused_before_quoting() -> None:
+    rpc, _, agent = await setup(phase=2, balance=5 * WAD)
+
+    def boom(a: list[Any]) -> Any:
+        raise AssertionError("quoteSell must not be read on a graduated curve")
+
+    rpc.read(CURVE, BONDING_CURVE, "quoteSell", boom)
+    await refused(agent.sell(TOKEN, amount_wei=WAD), "NotTrading")

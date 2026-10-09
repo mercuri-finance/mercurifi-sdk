@@ -13,7 +13,7 @@ from .networks import LOCAL_CHAIN_ID, NETWORKS, AgentBook, NetworkBook, is_loopb
 from .nonce import NonceManager
 from .policy import MAX_DEADLINE_SECONDS
 from .redact import first_line, redact_url, redact_urls_in
-from .rpc import Rpc, RpcError
+from .rpc import Rpc
 from .tx import TxSender
 from .verify import verify_network
 

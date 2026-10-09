@@ -6,8 +6,8 @@ from typing import Any
 
 import httpx
 import pytest
-from hexbytes import HexBytes
 from eth_account.typed_transactions.typed_transaction import TypedTransaction
+from hexbytes import HexBytes
 
 from mercurifi.abi import AGENT_ACCOUNT, AGENT_POLICY_REGISTRY
 from mercurifi.client import AsyncClient, create_client

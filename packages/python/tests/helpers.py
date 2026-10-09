@@ -6,14 +6,17 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
+from eth_account.typed_transactions.typed_transaction import TypedTransaction
 from eth_utils.address import to_checksum_address
 from eth_utils.crypto import keccak
-
-from eth_account.typed_transactions.typed_transaction import TypedTransaction
 from hexbytes import HexBytes
 
 from mercurifi.abi import (
-    AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, BONDING_CURVE, LAUNCH_TOKEN,
+    AGENT_ACCOUNT,
+    AGENT_ACCOUNT_FACTORY,
+    AGENT_POLICY_REGISTRY,
+    BONDING_CURVE,
+    LAUNCH_TOKEN,
 )
 from mercurifi.abi import LAUNCH_FACTORY as LAUNCH_FACTORY_ABI
 from mercurifi.client import AsyncClient, create_client

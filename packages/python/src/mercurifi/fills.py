@@ -49,8 +49,11 @@ class Fill:
 
 def _decode(contract: Any, entry: Mapping[str, Any], name: str) -> dict[str, Any] | None:
     """The decoded args of a log if it is event `name`; a malformed or foreign log is skipped, never fatal."""
+    topics, data = entry.get("topics"), entry.get("data")
+    if not isinstance(topics, list) or not isinstance(data, str):
+        return None
     try:
-        decoded = contract.decode_log(list(entry["topics"]), entry["data"])
+        decoded = contract.decode_log(list(topics), data)
     except MercurifiError:
         return None
     if decoded is None or decoded[0] != name:
@@ -59,12 +62,18 @@ def _decode(contract: Any, entry: Mapping[str, Any], name: str) -> dict[str, Any
     return args
 
 
+def _emitter(entry: Any) -> str | None:
+    """The lower-cased emitter of a log, or None when the log is malformed (it is then skipped)."""
+    address = entry.get("address") if isinstance(entry, Mapping) else None
+    return address.lower() if isinstance(address, str) else None
+
+
 def fill_from_receipt(receipt: Mapping[str, Any], account: str, launch_factory: str) -> Fill:
     """AgentAction is emitted by the account itself (not the registry); another account's is ignored and a sweep's
     AccountWithdrawn is not an action. Exactly one AgentAction from this account must be present."""
     tx_hash = str(receipt.get("transactionHash"))
     logs = list(receipt.get("logs", []))
-    actions = [a for entry in logs if str(entry["address"]).lower() == account.lower()
+    actions = [a for entry in logs if _emitter(entry) == account.lower()
                if (a := _decode(AGENT_ACCOUNT, entry, "AgentAction")) is not None]
     if len(actions) != 1:
         raise MercurifiError(f"Expected one AgentAction from {account} in {tx_hash}, found {len(actions)}.", code="FILL_NOT_FOUND")
@@ -74,7 +83,7 @@ def fill_from_receipt(receipt: Mapping[str, Any], account: str, launch_factory: 
     if action is None:
         raise MercurifiError(
             f"{account} reported an unknown action code {code} in {tx_hash}; this SDK version does not know it.", code="UNKNOWN_ACTION")
-    created = [c for entry in logs if str(entry["address"]).lower() == launch_factory.lower()
+    created = [c for entry in logs if _emitter(entry) == launch_factory.lower()
                if (c := _decode(LAUNCH_FACTORY, entry, "TokenCreated")) is not None]
     # A launch must show the factory creating the very token the account reports, with the account as its creator.
     made = next((c for c in created if str(c["token"]).lower() == str(a["token"]).lower() and str(c["creator"]).lower() == account.lower()), None)

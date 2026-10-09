@@ -7,8 +7,15 @@ import pytest
 
 from mercurifi.errors import InvalidInputError
 from mercurifi.units import (
-    apply_slippage_floor, format_usdc6, parse_tokens, parse_usdc, resolve_token_amount, resolve_usdc6,
-    slippage_to_bps, wei_to_usdc6_ceil, wei_to_usdc6_floor,
+    apply_slippage_floor,
+    format_usdc6,
+    parse_tokens,
+    parse_usdc,
+    resolve_token_amount,
+    resolve_usdc6,
+    slippage_to_bps,
+    wei_to_usdc6_ceil,
+    wei_to_usdc6_floor,
 )
 
 V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "units.json").read_text())

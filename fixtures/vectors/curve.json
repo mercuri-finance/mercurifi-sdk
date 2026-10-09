@@ -18,5 +18,28 @@
     { "usdcIn": "100", "usdcUsed": "99", "tokensOut": "5", "tokensRemaining": "10", "out": true },
     { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "10", "tokensRemaining": "10", "out": true },
     { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "9", "tokensRemaining": "10", "out": false }
+  ],
+  "impact": {
+    "buy": [
+      { "net": "24750000000000000000", "tokensOut": "1000000000000000000000000", "price": "10000000000000", "bps": "14750" },
+      { "net": "24750000000000000000", "tokensOut": "1000000000000000000000000", "price": "25000000000000", "bps": "0" },
+      { "net": "24750000000000000000", "tokensOut": "1000000000000000000000000", "price": "24750000000000", "bps": "0" },
+      { "net": "24750000000000000001", "tokensOut": "1000000000000000000000000", "price": "24750000000000", "bps": "1" }
+    ],
+    "sell": [
+      { "gross": "10000000000000000000", "tokensIn": "5000000000000000000", "price": "4000000000000000000", "bps": "5000" },
+      { "gross": "10000000000000000000", "tokensIn": "5000000000000000000", "price": "2000000000000000000", "bps": "0" },
+      { "gross": "9999999999999999999", "tokensIn": "5000000000000000000", "price": "2000000000000000000", "bps": "1" },
+      { "gross": "10000000000000000000", "tokensIn": "5000000000000000000", "price": "2000000000000000001", "bps": "1" }
+    ]
+  },
+  "mayGraduate": [
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "10", "tokensRemaining": "100", "may": false },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "49", "tokensRemaining": "100", "may": false },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "50", "tokensRemaining": "100", "may": true },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "100", "tokensRemaining": "100", "may": true },
+    { "usdcIn": "100", "usdcUsed": "99", "tokensOut": "10", "tokensRemaining": "100", "may": true },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "5", "tokensRemaining": "11", "may": true },
+    { "usdcIn": "100", "usdcUsed": "100", "tokensOut": "4", "tokensRemaining": "11", "may": false }
   ]
 }
