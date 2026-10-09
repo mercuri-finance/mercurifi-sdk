@@ -1,5 +1,9 @@
+import asyncio
+import json
 import logging
 import pickle
+import subprocess
+import sys
 import traceback
 from typing import Any
 
@@ -244,7 +248,7 @@ KEY_URL = "https://rpc.example.org/v2/SECRETKEY123"
 
 
 def _ok(request: httpx.Request) -> httpx.Response:
-    body = __import__("json").loads(request.content)
+    body = json.loads(request.content)
     return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": "0x1"})
 
 
@@ -269,7 +273,7 @@ async def test_httpx_and_httpcore_logs_never_show_the_key(caplog: pytest.LogCapt
 async def test_rejects_loose_json_rpc_responses() -> None:
     def respond(**over: object) -> httpx.MockTransport:
         def handler(request: httpx.Request) -> httpx.Response:
-            body = __import__("json").loads(request.content)
+            body = json.loads(request.content)
             doc: dict[str, object] = {"jsonrpc": "2.0", "id": body["id"], "result": "0x1"}
             doc.update(over)
             return httpx.Response(200, json={k: v for k, v in doc.items() if v is not _MISSING})
@@ -351,3 +355,31 @@ async def test_local_book_api_fields_are_validated() -> None:
         await create_client(replace(book, api_key_prefix="x_"), rpc_url=LOCAL, rpc_transport=transport, api=None)
     ok = await create_client(replace(book, api_base_url="http://127.0.0.1:9000"), rpc_url=LOCAL, rpc_transport=local_rpc().transport(), api=None)
     await ok.aclose()
+
+
+async def test_concurrent_requests_each_check_their_own_id() -> None:
+    gate = asyncio.Event()
+    seen: list[int] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body["id"])
+        if len(seen) == 2:
+            gate.set()
+        await gate.wait()  # both requests are in flight before either answers
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": hex(body["id"])})
+
+    rpc = Rpc(LOCAL, transport=httpx.MockTransport(handler))
+    a, b = await asyncio.gather(rpc.request("eth_chainId", []), rpc.request("eth_chainId", []))
+    await rpc.aclose()
+    assert sorted([a, b]) == ["0x1", "0x2"]
+
+
+def test_log_redaction_is_installed_at_package_import() -> None:
+    code = (
+        "import logging, mercurifi\n"
+        "from mercurifi.redact import RedactingFilter\n"
+        "print(all(any(isinstance(f, RedactingFilter) for f in logging.getLogger(n).filters) for n in ('httpx', 'httpcore')))"
+    )
+    out = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "True"

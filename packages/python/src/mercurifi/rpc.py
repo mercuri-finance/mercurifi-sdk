@@ -64,10 +64,11 @@ class Rpc:
 
     async def request(self, method: str, params: list[Any]) -> Any:
         self._id += 1
+        rid = self._id  # captured locally: concurrent requests must each compare their own id
         failure: str | None = None
         status, raw = 0, b""
         try:
-            payload = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
+            payload = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params}
             async with self._http.stream("POST", self._url, json=payload) as response:
                 status = response.status_code
                 declared = response.headers.get("content-length", "")
@@ -101,7 +102,7 @@ class Rpc:
             raise self._fail("the response is not a JSON-RPC object")
         if body.get("jsonrpc") != "2.0":
             raise self._fail("the response is not JSON-RPC 2.0")
-        if body.get("id") != self._id or isinstance(body.get("id"), bool):
+        if body.get("id") != rid or isinstance(body.get("id"), bool):
             raise self._fail("the response id does not match the request")
         error = body.get("error")
         if error:
