@@ -319,10 +319,11 @@ export class AgentClient {
       }
       if (amountIn > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
     } else {
-      if (amountIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
       basis = await readBasis(client, this.account, p.token, at);
       // Before the swap the account values only the recorded part; the excess is added once the proceeds are known.
       if (recordedSellValue6(basis, amountIn).value6 > policy.maxTradeUsdc) throw localRevert('TradeTooLarge', [policy.maxTradeUsdc]);
+      // The contract's order: pool key, then the recorded-value cap, and only then the swap that would fail on the balance.
+      if (amountIn > balance) throw new InvalidInputError('amount', 'The account holds less of this token than the amount to sell.');
     }
 
     const zeroForOne = isAddressEqual(buyToken ? book.launch.usdc : p.token, key.currency0);

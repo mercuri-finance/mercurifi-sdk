@@ -354,8 +354,6 @@ class AgentClient:
             raise InvalidInputError("usdc" if buy_token else "amount", "The account holds none of this token." if wanted == "all" else "The swap amount must be above zero.")
         if amount_in > UINT128_MAX:
             raise local_revert("AmountTooLarge")
-        if not buy_token and amount_in > balance:
-            raise InvalidInputError("amount", "The account holds less of this token than the amount to sell.")
         key = await read_pool_key(rpc, book, token, at=at)
 
         basis = None
@@ -369,6 +367,9 @@ class AgentClient:
             # Before the swap the account values only the recorded part; the excess is added once the proceeds are known.
             if recorded_sell_value6(basis, amount_in)[1] > policy.max_trade_usdc:
                 raise local_revert("TradeTooLarge", [policy.max_trade_usdc])
+            # The contract's order: pool key, then the recorded-value cap, and only then the swap that would fail on the balance.
+            if amount_in > balance:
+                raise InvalidInputError("amount", "The account holds less of this token than the amount to sell.")
 
         zero_for_one = (book.launch.usdc if buy_token else token).lower() == str(key["currency0"]).lower()
         out = await quote_exact_in(rpc, book, key, zero_for_one, amount_in, self.account, at=at)

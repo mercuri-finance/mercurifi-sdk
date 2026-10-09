@@ -391,8 +391,19 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     expect(Number(up)).toBeGreaterThan(12_000);
   });
 
-  it('checks explicit amounts against the balance first, with a plain message', async () => {
-    const basis = [110_000_000n, 11_000n * WAD, 10n ** 23n] as const;
+  it('orders a pool sell like the contract: pool key, then the recorded-value cap, then the balance', async () => {
+    const foreign = await setup({ phase: 2, balance: WAD }, null, 5);
+    foreign.rpc.read(A(3), graduationManagerAbi, 'poolKey', { ...poolKey, hooks: A(0x666) });
+    await expect(foreign.agent.swapExactIn({ token: TOKEN, side: 'sell', amountWei: 2_000n * WAD })).rejects.toThrow(/LaunchHook/);
+    const costly = await setup({ phase: 2, balance: WAD }, null, 5, { basis: [10n ** 12n, 1_000n * WAD, 0n] });
+    costly.rpc.read(A(3), graduationManagerAbi, 'poolKey', poolKey);
+    await refused(costly.agent.swapExactIn({ token: TOKEN, side: 'sell', amountWei: 2_000n * WAD }), 'TradeTooLarge');
+    expect(foreign.rpc.sent.length + costly.rpc.sent.length).toBe(0);
+  });
+
+  it('checks explicit amounts against the balance, with a plain message', async () => {
+    // A small recorded cost keeps the sell under the per-trade cap, so the balance check is the one that fails.
+    const basis = [1n, 11_000n * WAD, 0n] as const;
     const pool = await setup({ phase: 2, balance: WAD }, null, 5, { basis });
     pool.rpc.read(A(3), graduationManagerAbi, 'poolKey', poolKey);
     await expect(pool.agent.swapExactIn({ token: TOKEN, side: 'sell', amountWei: 2_000n * WAD })).rejects.toThrow(/holds less of this token/);

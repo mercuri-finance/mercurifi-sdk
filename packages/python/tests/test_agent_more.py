@@ -408,8 +408,21 @@ async def test_pool_sell_all_uses_the_balance() -> None:
     assert args_of(rpc)[2] == 5 * WAD
 
 
+async def test_pool_sell_is_ordered_like_the_contract() -> None:
+    # Pool key first, then the recorded-value cap, and only then the balance (which the swap itself would fail on).
+    foreign_rpc, foreign = await setup(action=5, phase=2, balance=WAD)
+    foreign_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", {**KEY, "hooks": A(0x666)})
+    with pytest.raises(MercurifiError, match="LaunchHook"):
+        await foreign.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD)
+    costly_rpc, costly = await setup(action=5, account={"basis": (10**12, 1_000 * WAD, 0)}, phase=2, balance=WAD)
+    costly_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", KEY)
+    await refused(costly.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD), "TradeTooLarge")
+    assert foreign_rpc.sent == costly_rpc.sent == []
+
+
 async def test_explicit_sell_above_the_balance_is_refused_with_a_plain_message() -> None:
-    pool_rpc, pool = await setup(action=5, account={"basis": CRASH_BASIS}, phase=2, balance=WAD)
+    # A small recorded cost keeps the sell under the per-trade cap, so the balance check is the one that fails.
+    pool_rpc, pool = await setup(action=5, account={"basis": (1, 11_000 * WAD, 0)}, phase=2, balance=WAD)
     pool_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", KEY)
     with pytest.raises(InvalidInputError, match="holds less of this token"):
         await pool.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD)
