@@ -6,7 +6,9 @@ import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBo
 import { MAX_PRIORITY_FEE_PER_GAS } from './gas.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
 import { NonceManager } from './nonce.js';
+import { OwnerClient } from './owner.js';
 import { redactUrl, redactUrlsIn } from './redact.js';
+import type { Signer } from './signers.js';
 import { TxSender } from './tx.js';
 import { verifyNetwork } from './verify.js';
 
@@ -71,6 +73,11 @@ export class MercurifiClient {
   requireAgents(): AgentBook {
     if (this.network.agents === null) throw new NotDeployedError(this.network.name);
     return this.network.agents;
+  }
+
+  /** Owner-side client for the main wallet. */
+  owner(signer: Signer): OwnerClient {
+    return new OwnerClient(this, signer);
   }
 
   warn(message: string): void {

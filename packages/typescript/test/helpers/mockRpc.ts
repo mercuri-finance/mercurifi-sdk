@@ -4,7 +4,7 @@ import {
 } from 'viem';
 
 export interface RpcLog { address: Address; topics: Hex[]; data: Hex }
-type Result = unknown | ((args: readonly unknown[]) => unknown);
+type Result = ((args: readonly unknown[]) => unknown) | object | string | number | bigint | boolean | null | undefined;
 type TopicFilter = (Hex | Hex[] | null)[];
 
 const callKey = (to: string, data: string): string => `${to.toLowerCase()}:${data.slice(0, 10).toLowerCase()}`;

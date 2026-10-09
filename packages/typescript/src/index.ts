@@ -14,3 +14,6 @@ export { feesWithFloor, gasLimitFor, MIN_MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_G
 export { NonceManager } from './nonce.js';
 export { chainDeadline } from './time.js';
 export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';
+export { OwnerClient, AccountManager, type CreateAccountParams, type CreatedAccount, type ChangeResult, type AgentGrant, type WithdrawParams } from './owner.js';
+export { decodeQueuedPayload, effectiveEta, QUEUE_KINDS, QUEUE_EVENTS, type QueuedChange, type QueuedDetail, type QueuedStatus } from './queue.js';
+export type { AccountState, AgentInfo } from './reads.js';
