@@ -1,5 +1,5 @@
 """Generated ABIs (scripts/gen-abis.mjs) wrapped as Contract objects. Never edit the JSON by hand."""
-from ..codec import Contract, load_abi
+from ..codec import Contract, ErrorDecoder, load_abi
 
 AGENT_ACCOUNT = Contract(load_abi("agentAccount"), "AgentAccount")
 AGENT_POLICY_REGISTRY = Contract(load_abi("agentPolicyRegistry"), "AgentPolicyRegistry")
@@ -18,3 +18,11 @@ ALL = (
     AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY, BONDING_CURVE, LAUNCH_FACTORY, FEE_MANAGER, GRADUATION_MANAGER,
     LAUNCH_HOOK, LAUNCH_TOKEN, V4_QUOTER, UNIVERSAL_ROUTER,
 )
+
+# Revert decoding follows TypeScript revert.ts: the three agent ABIs first (merged), then Launch, then UniversalRouter
+# before V4Quoter. ALL keeps the generator order instead; do not use it for reverts.
+REVERT_ORDER = (
+    AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY, BONDING_CURVE, LAUNCH_FACTORY, FEE_MANAGER, GRADUATION_MANAGER,
+    LAUNCH_HOOK, LAUNCH_TOKEN, UNIVERSAL_ROUTER, V4_QUOTER,
+)
+REVERT_DECODER = ErrorDecoder(REVERT_ORDER)  # raises at import if one selector means two signatures
