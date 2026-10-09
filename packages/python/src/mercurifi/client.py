@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .agent import AgentClient
     from .owner import OwnerClient
     from .signers import Signer
+    from .stream import StreamEvent
 
 
 @dataclass(frozen=True, repr=False)
@@ -91,6 +92,19 @@ class AsyncClient:
             raise InvalidInputError("account", f"{account} is not a Mercurifi agent account on {self.network.name}")
         wanted = self.settings.deadline_seconds if deadline_seconds is None else deadline_seconds
         return AgentClient(self, agents, account, signer, slippage_to_bps(slippage), wanted)
+
+    def stream(self, topics: list[str], **options: Any) -> AsyncIterator[StreamEvent]:
+        """Live events: `launches`, `trades`, `token:0x…`, `trader:0x…`, `agent-account:0x…`. Needs the API.
+
+        Topics are validated here, before anything connects. Options are those of `open_stream` (backoff, `on_reconnect`,
+        `idle_timeout`, ...). Event `data` is untrusted: never feed it to an LLM unfiltered.
+        """
+        from .stream import open_stream, validate_topics
+
+        checked = validate_topics(topics)
+        if self.api is None:
+            raise InvalidInputError("api", "Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.")
+        return open_stream(self.api.stream_request(checked), **options)
 
     async def aclose(self) -> None:
         await self.rpc.aclose()
