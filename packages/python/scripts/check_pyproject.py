@@ -1,4 +1,5 @@
-"""Fails when the package's runtime dependencies differ from the exact approved specifiers.
+"""Fails when the package's runtime dependencies differ from the exact approved specifiers, or when the build
+configuration could run extra code or put files outside mercurifi/ into the wheel.
 
 Usage: python scripts/check_pyproject.py [path/to/pyproject.toml]
 """
@@ -60,6 +61,22 @@ for key in ("optional-dependencies", "scripts", "gui-scripts", "entry-points"):
         problems.append(f"project.{key} must not be dynamic")
 if "allow-direct-references" in data.get("tool", {}).get("hatch", {}).get("metadata", {}):
     problems.append("tool.hatch.metadata.allow-direct-references is not allowed: dependencies come from the index only")
+hatch = data.get("tool", {}).get("hatch", {})
+if "hooks" in hatch.get("metadata", {}):
+    problems.append("tool.hatch.metadata.hooks is not allowed: metadata hooks run code at build time")
+# Keys that run code at build time, add files outside mercurifi/ (force-include, shared-data and shared-scripts land
+# anywhere, including *.data/ or a .pth), or add unhashed build dependencies. Checked on the build table and every target.
+FORBIDDEN_BUILD_KEYS = ("hooks", "force-include", "shared-data", "shared-scripts", "dependencies", "require-runtime-dependencies", "require-runtime-features")
+build_tables = {"tool.hatch.build": hatch.get("build", {})}
+for target, table in hatch.get("build", {}).get("targets", {}).items():
+    build_tables[f"tool.hatch.build.targets.{target}"] = table
+for where, table in build_tables.items():
+    for key in FORBIDDEN_BUILD_KEYS:
+        if isinstance(table, dict) and key in table:
+            problems.append(f"{where}.{key} is not allowed: the wheel holds mercurifi/ only and the build runs no extra code")
+# Hatch also reads hatch.toml beside pyproject.toml; it would bypass every rule above.
+if (path.parent / "hatch.toml").exists():
+    problems.append("hatch.toml is not allowed: all build configuration lives in pyproject.toml where this gate reads it")
 if problems:
     sys.exit("\n".join(problems))
 print("pyproject policy ok")

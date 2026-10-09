@@ -86,3 +86,39 @@ def test_declares_tomli_for_python_310() -> None:
         import tomli as tomllib
     data = tomllib.loads((SCRIPT.parent.parent / "pyproject.toml").read_text())
     assert 'tomli==2.2.1; python_version < "3.11"' in data["dependency-groups"]["dev"]
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        # Build hooks run arbitrary code at build time and can add files to the wheel.
+        '[tool.hatch.build.hooks.custom]\npath = "hook.py"',
+        '[tool.hatch.build.targets.wheel.hooks.custom]\npath = "hook.py"',
+        '[tool.hatch.build.targets.sdist.hooks.vcs]\nversion-file = "v.py"',
+        '[tool.hatch.metadata.hooks.custom]\npath = "meta.py"',
+        # force-include and shared-data put files outside mercurifi/ (shared-data lands under *.data/ and is installed anywhere).
+        '[tool.hatch.build.force-include]\n"../secret" = "mercurifi/secret"',
+        '[tool.hatch.build.targets.wheel.force-include]\n"x.pth" = "x.pth"',
+        '[tool.hatch.build.targets.sdist.force-include]\n"x" = "x"',
+        '[tool.hatch.build.shared-data]\n"x" = "share/x"',
+        '[tool.hatch.build.targets.wheel.shared-data]\n"x" = "share/x"',
+        '[tool.hatch.build.targets.wheel.shared-scripts]\n"x" = "x"',
+        # Per-target build dependencies would bypass the hashed build constraints.
+        '[tool.hatch.build.targets.wheel]\ndependencies = ["evil==1.0"]',
+    ],
+)
+def test_rejects_build_hooks_force_include_and_shared_data(tmp_path: Path, table: str) -> None:
+    r = run(tmp_path, GOOD, extra=table)
+    assert r.returncode != 0
+    assert "not allowed" in r.stderr
+
+
+def test_rejects_a_hatch_toml_next_to_the_pyproject(tmp_path: Path) -> None:
+    (tmp_path / "hatch.toml").write_text('[build.hooks.custom]\npath = "hook.py"\n')
+    r = run(tmp_path, GOOD)
+    assert r.returncode != 0
+    assert "hatch.toml" in r.stderr
+
+
+def test_accepts_the_plain_wheel_packages_setting(tmp_path: Path) -> None:
+    assert run(tmp_path, GOOD, extra='[tool.hatch.build.targets.wheel]\npackages = ["src/x"]').returncode == 0
