@@ -117,10 +117,7 @@ The package READMEs go further: [TypeScript](packages/typescript/README.md) and
 
 ## Loss bound
 
-A stolen agent key can still lose money through bad trades: buying an attacker's token, or selling the account's
-holdings into a price the attacker pushed down. **That loss is bounded by the account's caps, not prevented.** Per
-period, the bound is the USDC spend cap plus the sell cap, which is measured at the account's own cost basis. It keeps
-accruing every period until the key is revoked or expires.
+A stolen agent key can still lose money through bad trades: buying an attacker's token, or selling the account's holdings into a price the attacker pushed down. **That loss is bounded by the account's caps, not prevented.** Per period, the bound is the USDC spend cap plus the sell cap, which is measured at the account's own cost basis. It keeps accruing every period until the key is revoked or expires.
 
 Read [docs/security-model.md](docs/security-model.md) before you give a key to a program.
 
