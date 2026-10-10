@@ -60,7 +60,7 @@ function setup() {
     writeFileSync(join(bin, name), text);
     chmodSync(join(bin, name), 0o755);
   }
-  writeFileSync(join(contracts, 'script', 'build-trade-router.sh'), 'true\n');
+  writeFileSync(join(contracts, 'script', 'build-universal-router.sh'), 'true\n');
   return { root, state, bin, contracts };
 }
 

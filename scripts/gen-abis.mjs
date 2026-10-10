@@ -27,7 +27,7 @@ export const SOURCES = [
   ['launchHook', 'LaunchHook.sol', 'LaunchHook'],
   ['launchToken', 'LaunchToken.sol', 'LaunchToken'],
   ['v4Quoter', 'V4Quoter.sol', 'V4Quoter'],
-  ['universalRouter', 'trade-router/UniversalRouter.sol', 'UniversalRouter'],
+  ['universalRouter', 'universal-router/UniversalRouter.sol', 'UniversalRouter'],
 ];
 
 // Members the SDK calls or decodes. A missing one is an interface break with the contracts: stop and report.
@@ -95,7 +95,7 @@ export const digestOf = (entries) =>
 const loadAbi = (outDir, dir, contract) => {
   const files = ['', '.default', '.small', '.posm'].map((p) => join(outDir, dir, `${contract}${p}.json`)).filter((f) => existsSync(f));
   if (files.length === 0) {
-    throw new Error(`missing artifact out/${dir}/${contract}: run forge build (and bash script/build-trade-router.sh for the router) in the contracts worktree`);
+    throw new Error(`missing artifact out/${dir}/${contract}: run forge build (and bash script/build-universal-router.sh for the router) in the agent contracts checkout`);
   }
   const abis = files.map((f) => JSON.parse(readFileSync(f, 'utf8')).abi);
   if (new Set(abis.map(canonical)).size !== 1) throw new Error(`${contract}: compiler profiles disagree on the ABI`);
@@ -109,7 +109,7 @@ const warnStale = (contractsDir, dir, contract) => {
   if (source === null) return;
   const sourceTime = statSync(source).mtimeMs;
   for (const f of artifacts) {
-    if (statSync(f).mtimeMs < sourceTime) console.warn(`warning: ${f} is older than ${source}; run forge build in the contracts worktree`);
+    if (statSync(f).mtimeMs < sourceTime) console.warn(`warning: ${f} is older than ${source}; run forge build in the agent contracts checkout`);
   }
 };
 

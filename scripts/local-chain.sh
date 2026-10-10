@@ -98,7 +98,7 @@ if ! printf '%s' "$client" | grep -Eq '"result"[[:space:]]*:[[:space:]]*"anvil/'
 fi
 (
   cd "$CONTRACTS"
-  bash script/build-trade-router.sh >/dev/null
+  bash script/build-universal-router.sh >/dev/null
   forge script script/local/DeployAgentLocal.s.sol:DeployAgentLocal --rpc-url "$RPC" --broadcast --slow -q
 )
 cp "$CONTRACTS/$EXPORT" "$BOOK"

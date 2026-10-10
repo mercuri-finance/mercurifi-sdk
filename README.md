@@ -64,7 +64,7 @@ Every error carries a stable `code` and a readable message. A call the account w
 
 ## Local development
 
-- Prerequisites for the Anvil tier: Foundry's `anvil` and `forge` on the PATH, and a checkout of the agent contracts. Point `MERCURIFI_CONTRACTS_DIR` at it (for example `export MERCURIFI_CONTRACTS_DIR=$HOME/src/agent-contracts`); `scripts/local-chain.sh` and `scripts/gen-abis.mjs` (except `--verify-digest`) stop with a clear message when it is unset.
+- Prerequisites for the Anvil tier: Foundry's `anvil` and `forge` on the PATH, and a checkout of the agent contracts (`git clone --recurse-submodules https://github.com/mercuri-finance/mercuri-agent-contracts.git`). Point `MERCURIFI_CONTRACTS_DIR` at it (for example `export MERCURIFI_CONTRACTS_DIR=$HOME/src/agent-contracts`); `scripts/local-chain.sh` and `scripts/gen-abis.mjs` (except `--verify-digest`) stop with a clear message when it is unset.
 - `scripts/local-chain.sh` starts a loopback Anvil (chain 31337) on `127.0.0.1:$ANVIL_PORT` (default 8545), deploys the Launch and agent contracts, and writes `fixtures/local-book-<port>.json`. `scripts/stop-local-chain.sh [port]` stops it.
 - The test tiers find the chain from the same `ANVIL_PORT`. `ANVIL_RPC` may override the URL; its port then names the book, so keep the two consistent.
 - `cd packages/typescript && npm test && npm run typecheck`; `npm run test:integration` runs the Anvil tier (`RECORD=1` rewrites `fixtures/recorded`).
