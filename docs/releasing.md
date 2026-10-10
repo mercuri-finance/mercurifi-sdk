@@ -41,7 +41,7 @@ Each release workflow has two jobs:
 
 Hygiene notes (zizmor style):
 
-- Third-party actions are pinned by SHA with the exact tag in a comment: `actions/checkout` v4.4.0, `actions/setup-node` v4.4.0 (both copied from the Launch web repository), `actions/upload-artifact` v4.6.2, `actions/download-artifact` v4.3.0 and `pypa/gh-action-pypi-publish` v1.12.4 (tag commits read with `git ls-remote`, dereferenced where the tag is annotated). Dependabot-style bumps are manual: re-resolve the SHA, then update the comment.
+- Third-party actions are pinned by SHA with the exact tag in a comment: `actions/checkout` v4.4.0, `actions/setup-node` v4.4.0 (both copied from the Launch web repository), `actions/upload-artifact` v4.6.2, `actions/download-artifact` v4.3.0 and `pypa/gh-action-pypi-publish` v1.14.2 (the first line that pins its own `actions/setup-python` by SHA, which the repository's SHA-pinning rule requires) (tag commits read with `git ls-remote`, dereferenced where the tag is annotated). Dependabot-style bumps are manual: re-resolve the SHA, then update the comment.
 - CI runs the TypeScript suite on Node 22 (`.nvmrc`) and 24. The npm publish job uses Node 24 because trusted publishing needs npm 11.5.1 or later.
 - The wheel smoke test is offline by default on a laptop (uv cache only) and online when `CI=true`; `MERCURIFI_SMOKE_ONLINE=1` or `0` overrides it, and the workflows set `1` explicitly. Every dependency it installs is hash-pinned either way.
 - Build-backend dependencies are hash-pinned in `packages/python/build-constraints.txt` (hatchling 1.27.0 and its tree); regenerate it with the command in its header when `[build-system]` changes.
