@@ -11,10 +11,10 @@ Read [docs/security-model.md](../../docs/security-model.md) before you give a ke
 ## Install
 
 ```
-pip install mercurifi
+pip install --pre mercurifi
 ```
 
-Not yet published; until then install from the repository checkout (`pip install ./packages/python`). Python 3.10 or newer. Direct dependencies: `eth-account`, `eth-abi`, `eth-utils`, `httpx`.
+Beta release (`--pre` lets pip pick it), published with attestations from the SDK repository. Python 3.10 or newer. Direct dependencies: `eth-account`, `eth-abi`, `eth-utils`, `httpx`.
 
 ## Quickstart (Arc testnet)
 

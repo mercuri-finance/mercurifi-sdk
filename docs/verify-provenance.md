@@ -1,6 +1,6 @@
 # Verifying a release
 
-These steps apply once a version is published. Nothing is published yet, so they are inert today. Refuse any version whose provenance is missing or names another repository or workflow.
+Every published version carries provenance from this repository's release workflows. Refuse any version whose provenance is missing or names another repository or workflow.
 
 ## npm
 

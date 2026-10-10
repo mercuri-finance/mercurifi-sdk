@@ -14,7 +14,7 @@ Read [docs/security-model.md](../../docs/security-model.md) before you give a ke
 npm install @mercurifi/sdk
 ```
 
-Not yet published; until then build from the repository checkout (`cd packages/typescript && npm ci && npm run build`). Node 20 or newer. The one runtime dependency is `viem`.
+Beta release, published with signed provenance from the SDK repository. Node 20 or newer. The one runtime dependency is `viem`.
 
 ## Quickstart (Arc testnet)
 

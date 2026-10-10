@@ -16,9 +16,9 @@ Each publish needs its own explicit owner approval. Publish only from the releas
 8. Dispatch the release workflows. The `build` job runs without approval and without an OIDC token; the `publish` job waits for the environment's approval, then only downloads the build's artifact and publishes it. On npm it only stages the version (npm's recommended flow): the owner then runs `npm stage list @mercurifi/sdk` and `npm stage approve <stage-id>` with 2FA, and only that makes it public. The npm trusted publisher should allow stage publish only, not direct publish.
 9. Verify provenance per [verify-provenance.md](verify-provenance.md).
 
-## Open point
+## First publish (done, 10 Oct 2026)
 
-npm may require the package to exist before a trusted publisher can be configured. If so, the first publish is a manual, owner-run placeholder publish with a short-lived granular token and 2FA. Decide this with the owner at publish time.
+npm needs a package to exist before a trusted publisher can be configured, so the owner published a placeholder `@mercurifi/sdk@0.0.0` (a README only) from their own terminal, then bound the trusted publisher (stage publish only) to `release-npm.yml` and `npm-release`. PyPI used a pending publisher. `0.1.0-beta.0` and `0.1.0b0` then went out through the workflows; the owner approved the npm stage with `npx -y npm@11.19.1 stage approve <stage-id> --auth-type=web` (a passkey; `npm stage` needs npm 11.19 or later).
 
 ## Accepted advisories
 
@@ -28,9 +28,9 @@ npm may require the package to exist before a trusted publisher can be configure
 
 CI and the npm release workflow run `npm audit --omit=dev --audit-level=high`, so any advisory in the runtime tree (viem and its dependencies) fails the build. A dev-tree advisory is added here, with a reason and a revisit point, or fixed.
 
-## CI and release configuration (inert)
+## CI and release configuration
 
-The workflows under `.github/workflows/` are written but have never run: there is no remote, `release-npm.yml` and `release-pypi.yml` trigger only on `workflow_dispatch`, and each publish job sits behind a GitHub environment (`npm-release`, `pypi-release`) that must require owner approval, plus a guard on the organisation, `github.actor` and `github.triggering_actor`. Publishing uses npm trusted publishing with provenance and PyPI Trusted Publishing with attestations, so no long-lived token is stored anywhere.
+`release-npm.yml` and `release-pypi.yml` trigger only on `workflow_dispatch`, and each publish job sits behind a GitHub environment (`npm-release`, `pypi-release`) that must require owner approval, plus a guard on the organisation, `github.actor` and `github.triggering_actor`. Publishing uses npm trusted publishing with provenance and PyPI Trusted Publishing with attestations, so no long-lived token is stored anywhere.
 
 Each release workflow has two jobs:
 
@@ -51,12 +51,12 @@ Hygiene notes (zizmor style):
 - Run steps use no `${{ }}` expressions from event data.
 - Python lint is `ruff check` (CI and the release build). `ruff format` is deliberately **not** enforced: adopting it would reformat about 50 files (49 on 9 Oct) in one diff with no behaviour change, so it is left for a separate, owner-approved formatting commit. Do not add a `ruff format --check` step until that commit lands.
 
-Before the first run, once the repository exists (checklist for the owner):
+First-run checklist for the owner (completed 10 Oct 2026):
 
-- [ ] Create the `npm-release` and `pypi-release` environments with required reviewers and a deployment branch rule **before the first dispatch** (a referenced environment that does not exist is auto-created without protection).
-- [ ] Configure the npm trusted publisher (bound to environment `npm-release`) and the PyPI pending publisher (bound to `pypi-release`); see Steps above.
-- [ ] Set `packages/typescript/package.json` `repository.url` to the GitHub repository before the first provenance publish (npm requires it to match the repository the provenance names, and refuses the publish otherwise).
-- [ ] Re-resolve every pinned SHA against the new repository's allowed-actions policy; enable "require actions pinned to a full SHA".
-- [ ] Confirm the `if:` guard (`mercuri-finance` / `mercurifinance`) matches the real organisation and publishing account.
-- [ ] Run `zizmor` with a GitHub token (online audits such as impostor-commit and known-vulnerable-actions were skipped offline).
-- [ ] Watch the first CI run: the wheel smoke test runs online there (`CI=true`) and installs every dependency from PyPI with hashes; it was exercised locally with an empty uv cache.
+- [x] Create the `npm-release` and `pypi-release` environments with required reviewers and a deployment branch rule **before the first dispatch** (a referenced environment that does not exist is auto-created without protection).
+- [x] Configure the npm trusted publisher (bound to environment `npm-release`) and the PyPI pending publisher (bound to `pypi-release`); see Steps above.
+- [x] Set `packages/typescript/package.json` `repository.url` to the GitHub repository before the first provenance publish (npm requires it to match the repository the provenance names, and refuses the publish otherwise).
+- [x] Re-resolve every pinned SHA against the new repository's allowed-actions policy; enable "require actions pinned to a full SHA".
+- [x] Confirm the `if:` guard (`mercuri-finance` / `mercurifinance`) matches the real organisation and publishing account.
+- [x] Run `zizmor` with a GitHub token (online audits such as impostor-commit and known-vulnerable-actions were skipped offline).
+- [x] Watch the first CI run: the wheel smoke test runs online there (`CI=true`) and installs every dependency from PyPI with hashes; it was exercised locally with an empty uv cache.
