@@ -13,13 +13,34 @@ from mercurifi import ContractRevertError, create_client, errors, local_key
 
 ADDRESS = {"type": "string", "pattern": "^0x[0-9a-fA-F]{40}$"}
 TOOLS = [
-    {"name": "get_headroom", "description": "Remaining USDC spend and sell caps, actions and launches this period.",
-     "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
-    {"name": "get_token_numbers", "description": "Numeric facts about a Launch token: phase, price in USDC, progress, snipe tax, age, holders.",
-     "input_schema": {"type": "object", "properties": {"token": ADDRESS}, "required": ["token"], "additionalProperties": False}},
-    {"name": "buy", "description": 'Buy a Launch token with USDC, given as a decimal string such as "5".',
-     "input_schema": {"type": "object", "properties": {"token": ADDRESS, "usdc": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"}},
-                      "required": ["token", "usdc"], "additionalProperties": False}},
+    {
+        "name": "get_headroom",
+        "description": "Remaining USDC spend and sell caps, actions and launches this period.",
+        "input_schema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "get_token_numbers",
+        "description": "Numeric facts about a Launch token: phase, price in USDC, progress, snipe tax, age, holders.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"token": ADDRESS},
+            "required": ["token"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "buy",
+        "description": 'Buy a Launch token with USDC, given as a decimal string such as "5".',
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "token": ADDRESS,
+                "usdc": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,6})?$"},
+            },
+            "required": ["token", "usdc"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -27,7 +48,14 @@ async def handle(mf: Any, agent: Any, name: str, args: dict[str, Any]) -> dict[s
     try:
         if name == "get_headroom":
             h = await agent.headroom()
-            return {"spend_usdc": h.spend, "sell_usdc": h.sell, "max_trade_usdc": h.max_trade, "actions": h.actions, "launches": h.launches, "period_ends_at": h.period_ends_at}
+            return {
+                "spend_usdc": h.spend,
+                "sell_usdc": h.sell,
+                "max_trade_usdc": h.max_trade,
+                "actions": h.actions,
+                "launches": h.launches,
+                "period_ends_at": h.period_ends_at,
+            }
         if name == "get_token_numbers":
             return dict((await mf.token(args["token"])).numeric())
         if name == "buy":
@@ -35,9 +63,14 @@ async def handle(mf: Any, agent: Any, name: str, args: dict[str, Any]) -> dict[s
             return {"tokens_out": f.tokens, "usdc_spent": f.usdc_spent, "tx_hash": f.tx_hash}
         return {"code": "UNKNOWN_TOOL"}
     except ContractRevertError as e:
-        return {"code": e.code, "revert_name": e.revert.name}  # fixed labels only: never str(e), which can quote contract text
+        return {
+            "code": e.code,
+            "revert_name": e.revert.name,
+        }  # fixed labels only: never str(e), which can quote contract text
     except errors.MercurifiError as e:
-        return {"code": e.code}  # known SDK errors become a stable code, never the exception message; anything else still raises
+        return {
+            "code": e.code
+        }  # known SDK errors become a stable code, never the exception message; anything else still raises
 
 
 async def main() -> None:

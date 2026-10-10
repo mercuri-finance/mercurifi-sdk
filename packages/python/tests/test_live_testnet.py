@@ -1,5 +1,6 @@
 """Opt-in, read-only check against the public Arc testnet RPC (the SDK's default; never a paid provider). Skipped unless
 MERCURIFI_LIVE_TESTNET=1: `MERCURIFI_LIVE_TESTNET=1 uv run pytest tests/test_live_testnet.py`. Sends nothing."""
+
 import os
 import re
 
@@ -9,7 +10,10 @@ from mercurifi.client import create_client
 from mercurifi.identity import get_agent
 from mercurifi.networks import TESTNET
 
-pytestmark = pytest.mark.skipif(os.environ.get("MERCURIFI_LIVE_TESTNET") != "1", reason="set MERCURIFI_LIVE_TESTNET=1 to read the live testnet")
+pytestmark = pytest.mark.skipif(
+    os.environ.get("MERCURIFI_LIVE_TESTNET") != "1",
+    reason="set MERCURIFI_LIVE_TESTNET=1 to read the live testnet",
+)
 
 
 async def test_passes_start_up_verification_of_the_pinned_agent_deployment() -> None:

@@ -18,7 +18,9 @@ from mercurifi.units import (
     wei_to_usdc6_floor,
 )
 
-V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "units.json").read_text())
+V = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "units.json").read_text()
+)
 
 
 @pytest.mark.parametrize("case", V["parseUsdc"])
@@ -87,7 +89,25 @@ def test_amount_forms() -> None:
 
 
 @pytest.mark.parametrize(
-    "bad", [".5", "1.", "0x10", "1E3", "+1", "1_0", "١٢", "NaN", "Infinity", "1\n2", "1 2", 25, 25.0, True, None, b"1"]
+    "bad",
+    [
+        ".5",
+        "1.",
+        "0x10",
+        "1E3",
+        "+1",
+        "1_0",
+        "١٢",
+        "NaN",
+        "Infinity",
+        "1\n2",
+        "1 2",
+        25,
+        25.0,
+        True,
+        None,
+        b"1",
+    ],
 )
 def test_parse_rejects(bad: object) -> None:
     with pytest.raises(InvalidInputError):
@@ -128,7 +148,13 @@ def test_huge_inputs_are_typed_and_cheap() -> None:
     for bad in (10**400, -(10**400)):
         with pytest.raises(InvalidInputError):
             slippage_to_bps(bad)
-    for huge in (Decimal("1E+99999999"), Decimal("1E+999999999"), Decimal("1E-999999999"), Decimal("1E+41"), Decimal("1E-41")):
+    for huge in (
+        Decimal("1E+99999999"),
+        Decimal("1E+999999999"),
+        Decimal("1E-999999999"),
+        Decimal("1E+41"),
+        Decimal("1E-41"),
+    ):
         with pytest.raises(InvalidInputError):
             resolve_usdc6(huge, None)
     with pytest.raises(InvalidInputError):

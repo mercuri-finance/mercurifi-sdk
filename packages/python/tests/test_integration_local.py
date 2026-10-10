@@ -4,6 +4,7 @@ chain and its book fixtures/local-book-<port>.json; ANVIL_RPC may override the U
 One ordered test: each block depends on the state the previous one left, as in the TypeScript tier's local.test.ts. Python does not
 record fixtures; the TS tier is the single recorder and test_recorded.py proves Python decodes its files identically.
 """
+
 import asyncio
 import json
 import os
@@ -26,7 +27,9 @@ from mercurifi.tx import WriteRequest
 
 pytestmark = pytest.mark.integration
 RPC = os.environ.get("ANVIL_RPC", f"http://127.0.0.1:{os.environ.get('ANVIL_PORT', '8545')}")
-BOOK = Path(__file__).resolve().parents[3] / "fixtures" / f"local-book-{urlsplit(RPC).port or 80}.json"
+BOOK = (
+    Path(__file__).resolve().parents[3] / "fixtures" / f"local-book-{urlsplit(RPC).port or 80}.json"
+)
 WAD = 10**18
 DAY = 86_400
 ZERO = "0x" + "00" * 20
@@ -43,7 +46,11 @@ def require_loopback() -> None:
 async def anvil(method: str, params: list[Any]) -> Any:
     require_loopback()
     async with httpx.AsyncClient(trust_env=False) as http:
-        body = (await http.post(RPC, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params})).json()
+        body = (
+            await http.post(
+                RPC, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+            )
+        ).json()
     if "error" in body:
         raise RuntimeError(body["error"]["message"])
     return body["result"]
@@ -117,10 +124,14 @@ async def _run(mf: AsyncClient) -> None:
 
     async def agent_call(fn: str, token: str, amount: int) -> DecodedRevert:
         deadline = await mf.rpc.latest_timestamp() + 60
-        return await chain_revert(mf, agent_signer.address, account, AGENT_ACCOUNT.encode(fn, token, amount, 1, deadline))
+        return await chain_revert(
+            mf, agent_signer.address, account, AGENT_ACCOUNT.encode(fn, token, amount, 1, deadline)
+        )
 
     # Account with the defaults and a first agent (no sell).
-    created = await mf.owner(owner).create_account(first_agent=FirstAgent(agent_signer.address, permissions=ALL_BUT_SELL))
+    created = await mf.owner(owner).create_account(
+        first_agent=FirstAgent(agent_signer.address, permissions=ALL_BUT_SELL)
+    )
     account = created.account
     await mf.owner(owner).deposit(account, usdc="1000")
     agent = await mf.agent(account, agent_signer)
@@ -181,7 +192,9 @@ async def _run(mf: AsyncClient) -> None:
     await fund(pumper.address, 10_000)
     deadline = await mf.rpc.latest_timestamp() + 600
     pump = BONDING_CURVE.encode("buy", 1, ZERO, deadline)
-    await mf.sender.send(pumper, WriteRequest(to=first_curve, data=pump, label="pump", value=2_000 * WAD))
+    await mf.sender.send(
+        pumper, WriteRequest(to=first_curve, data=pump, label="pump", value=2_000 * WAD)
+    )
     await agent.buy(token, usdc="40")
     held = int(await mf.rpc.read(LAUNCH_TOKEN, token, "balanceOf", pumper.address))
     approve = LAUNCH_TOKEN.encode("approve", first_curve, held)
@@ -194,7 +207,9 @@ async def _run(mf: AsyncClient) -> None:
     before = await agent.position(token)
     basis = Basis(before.cost_usdc6, before.basis_tokens, before.high_water)
     tokens_in = basis.tokens // 10
-    assert tokens_in <= before.balance_wei  # every token was bought by the account: nothing is unrecorded
+    assert (
+        tokens_in <= before.balance_wei
+    )  # every token was bought by the account: nothing is unrecorded
     recorded, value6 = recorded_sell_value6(basis, tokens_in)
     assert recorded == tokens_in
     assert curve_sell_value6(basis, tokens_in, 0) == value6
@@ -225,7 +240,12 @@ async def _run(mf: AsyncClient) -> None:
     whale = new_key()
     await fund(whale.address, 100_000)
     deadline = await mf.rpc.latest_timestamp() + 600
-    whale_buy = WriteRequest(to=curve, data=BONDING_CURVE.encode("buy", 1, ZERO, deadline), label="whale", value=lo - 40 * WAD)
+    whale_buy = WriteRequest(
+        to=curve,
+        data=BONDING_CURVE.encode("buy", 1, ZERO, deadline),
+        label="whale",
+        value=lo - 40 * WAD,
+    )
     await mf.sender.send(whale, whale_buy)
     completing = await agent.buy(full, usdc="50")
     tx = await mf.rpc.request("eth_getTransactionByHash", [completing.tx_hash])
@@ -234,15 +254,24 @@ async def _run(mf: AsyncClient) -> None:
     assert (await mf.token(full)).phase == "graduationPending"
 
     # The launch limit is checked before the trade size (registry preamble), on chain.
-    await agent.launch("PyLocal Three", "PYL3", metadata_uri="ipfs://py-3")  # third of three this period
+    await agent.launch(
+        "PyLocal Three", "PYL3", metadata_uri="ipfs://py-3"
+    )  # third of three this period
     config_hash = str(await mf.rpc.read(LAUNCH_FACTORY, mf.network.launch.factory, "configHash"))
     initial_buy6 = 150_000_000
     request = {
-        "name": "PyLocal Four", "symbol": "PYL4", "metadataURI": "ipfs://py-4", "salt": "0x" + "00" * 31 + "04",
-        "expectedConfigHash": config_hash, "initialBuyUsdc": initial_buy6, "minTokensOut": 1,
+        "name": "PyLocal Four",
+        "symbol": "PYL4",
+        "metadataURI": "ipfs://py-4",
+        "salt": "0x" + "00" * 31 + "04",
+        "expectedConfigHash": config_hash,
+        "initialBuyUsdc": initial_buy6,
+        "minTokensOut": 1,
         "deadline": await mf.rpc.latest_timestamp() + 60,
     }
-    on_chain = await chain_revert(mf, agent_signer.address, account, AGENT_ACCOUNT.encode("launch", request))
+    on_chain = await chain_revert(
+        mf, agent_signer.address, account, AGENT_ACCOUNT.encode("launch", request)
+    )
     assert (on_chain.name, on_chain.source) == ("LaunchLimit", "AgentPolicyRegistry")
     # The multi-failure: out of launches and an initial buy above maxTradeUsdc at once; LaunchLimit wins.
     assert (await agent.headroom()).launches == 0
@@ -268,7 +297,10 @@ async def _run(mf: AsyncClient) -> None:
     await warp(3_601)
     with pytest.raises(ContractRevertError) as stale:
         await manager.execute_queued(add.queued_id)
-    assert (stale.value.revert.name, stale.value.revert.source) == ("StaleQueued", "AgentPolicyRegistry")
+    assert (stale.value.revert.name, stale.value.revert.source) == (
+        "StaleQueued",
+        "AgentPolicyRegistry",
+    )
 
     # Every queue kind decodes; pausing cancels them all.
     await manager.set_token_allowed(token, True)

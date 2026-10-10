@@ -15,12 +15,23 @@ async def main(name: str, symbol: str, image_path: str | None) -> None:
     agent = await mf.agent(os.environ["ACCOUNT"], local_key(os.environ["AGENT_KEY"]))
     room = await agent.headroom()
     if room.launches == 0:
-        print(f"No launches left this period; caps reset at {datetime.fromtimestamp(room.period_ends_at, timezone.utc).isoformat()}.")
+        print(
+            f"No launches left this period; caps reset at {datetime.fromtimestamp(room.period_ends_at, timezone.utc).isoformat()}."
+        )
         return
     image = None
     if image_path:
-        image = ImageUpload(Path(image_path).read_bytes(), "image/png" if image_path.endswith(".png") else "image/jpeg")
-    fill = await agent.launch(name, symbol, description="Launched by a Mercurifi agent key.", image=image, initial_buy_usdc="2")
+        image = ImageUpload(
+            Path(image_path).read_bytes(),
+            "image/png" if image_path.endswith(".png") else "image/jpeg",
+        )
+    fill = await agent.launch(
+        name,
+        symbol,
+        description="Launched by a Mercurifi agent key.",
+        image=image,
+        initial_buy_usdc="2",
+    )
     print(f"launched {fill.launched.token if fill.launched else 'nothing'} in {fill.tx_hash}")
 
 

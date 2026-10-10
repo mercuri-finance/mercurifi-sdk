@@ -1,4 +1,5 @@
 """ERC-8004 identity helpers against the shared vectors (fixtures/vectors/identity.json), as in identity.test.ts."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,12 @@ import pytest
 from eth_utils.crypto import keccak
 
 from mercurifi.codec import to_hex
-from mercurifi.errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
+from mercurifi.errors import (
+    InvalidInputError,
+    MercurifiError,
+    NetworkMismatchError,
+    NotDeployedError,
+)
 from mercurifi.identity import (
     AGENT_ACCOUNT_SERVICE,
     ERC8004_REGISTRIES,
@@ -31,9 +37,17 @@ from mercurifi.rpc import Rpc
 
 from .helpers import MockRpc, NodeError
 
-V: dict[str, Any] = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "identity.json").read_text(encoding="utf-8"))
+V: dict[str, Any] = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "identity.json").read_text(
+        encoding="utf-8"
+    )
+)
 TESTNET = ERC8004_REGISTRIES["testnet"]
-_PY_NAMES = {"agentId": "agent_id", "x402Support": "x402_support", "supportedTrust": "supported_trust"}
+_PY_NAMES = {
+    "agentId": "agent_id",
+    "x402Support": "x402_support",
+    "supportedTrust": "supported_trust",
+}
 
 
 def _kwargs(inp: dict[str, Any]) -> dict[str, Any]:
@@ -47,13 +61,21 @@ def test_pins_the_per_network_addresses() -> None:
     for net, book in V["registries"].items():
         b = ERC8004_REGISTRIES[net]
         assert (b.chain_id, b.identity_registry, b.reputation_registry, b.validation_registry) == (
-            book["chainId"], book["identityRegistry"], book["reputationRegistry"], book["validationRegistry"])
+            book["chainId"],
+            book["identityRegistry"],
+            book["reputationRegistry"],
+            book["validationRegistry"],
+        )
 
 
 def test_uses_the_selectors_and_topics_found_in_the_deployed_implementation() -> None:
     for sig, sel in V["selectors"].items():
         assert to_hex(keccak(text=sig)[:4]) == sel
-    fns = {IDENTITY_REGISTRY.selector(i["name"]) for i in IDENTITY_REGISTRY_ABI if i["type"] == "function"}
+    fns = {
+        IDENTITY_REGISTRY.selector(i["name"])
+        for i in IDENTITY_REGISTRY_ABI
+        if i["type"] == "function"
+    }
     assert fns == set(V["selectors"].values())
     for sig, topic in V["events"].items():
         assert to_hex(keccak(text=sig)) == topic
@@ -70,13 +92,23 @@ def test_keeps_mainnet_refused_while_agent_accounts_are_not_deployed_there() -> 
 
 @pytest.mark.parametrize("case", V["register"], ids=lambda c: c["agentURI"][:40])
 def test_register_calldata(case: dict[str, Any]) -> None:
-    assert encode_register("testnet", case["agentURI"]) == {"chainId": 5042002, "to": TESTNET.identity_registry, "data": case["data"], "value": 0}
+    assert encode_register("testnet", case["agentURI"]) == {
+        "chainId": 5042002,
+        "to": TESTNET.identity_registry,
+        "data": case["data"],
+        "value": 0,
+    }
 
 
 @pytest.mark.parametrize("case", V["setAgentURI"], ids=lambda c: c["agentURI"])
 def test_set_agent_uri_calldata(case: dict[str, Any]) -> None:
     got = encode_set_agent_uri("testnet", int(case["agentId"]), case["agentURI"])
-    assert got == {"chainId": 5042002, "to": TESTNET.identity_registry, "data": case["data"], "value": 0}
+    assert got == {
+        "chainId": 5042002,
+        "to": TESTNET.identity_registry,
+        "data": case["data"],
+        "value": 0,
+    }
 
 
 def test_refuses_an_unusable_agent_uri_or_id() -> None:
@@ -102,7 +134,10 @@ def test_registration_file_json_and_data_uri(case: dict[str, Any]) -> None:
 
 def test_links_the_account_as_a_service_entry_never_as_the_agent_wallet() -> None:
     file = build_registration_file(**_kwargs(V["files"][0]["input"]))
-    assert file["services"][0] == {"name": AGENT_ACCOUNT_SERVICE, "endpoint": "eip155:5042002:0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"}
+    assert file["services"][0] == {
+        "name": AGENT_ACCOUNT_SERVICE,
+        "endpoint": "eip155:5042002:0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    }
     assert "agentWallet" not in registration_file_json(file)
 
 
@@ -121,7 +156,9 @@ def test_refuses_wrong_types_and_unknown_service_fields() -> None:
     with pytest.raises(InvalidInputError, match="x402Support"):
         build_registration_file(**base, x402_support=1)  # type: ignore[arg-type]
     with pytest.raises(InvalidInputError, match="unknown field url"):
-        build_registration_file(**base, services=[{"name": "web", "endpoint": "https://a.example", "url": "x"}])
+        build_registration_file(
+            **base, services=[{"name": "web", "endpoint": "https://a.example", "url": "x"}]
+        )
     with pytest.raises(InvalidInputError, match="agentId"):
         build_registration_file(**base, agent_id=True)
     with pytest.raises(InvalidInputError, match="supportedTrust"):
@@ -136,17 +173,28 @@ def _receipt(**over: Any) -> dict[str, Any]:
 
 def test_reads_the_registered_log_of_a_real_testnet_receipt() -> None:
     e = V["receiptExpect"]
-    assert agent_id_from_receipt("testnet", _receipt()) == RegisteredAgent(int(e["agentId"]), e["owner"], e["agentURI"])
+    assert agent_id_from_receipt("testnet", _receipt()) == RegisteredAgent(
+        int(e["agentId"]), e["owner"], e["agentURI"]
+    )
 
 
 def test_falls_back_to_the_mint_transfer_without_a_registered_log() -> None:
-    logs = [lg for lg in V["receipt"]["logs"] if lg["topics"][0] == V["events"]["Transfer(address,address,uint256)"]]
+    logs = [
+        lg
+        for lg in V["receipt"]["logs"]
+        if lg["topics"][0] == V["events"]["Transfer(address,address,uint256)"]
+    ]
     e = V["receiptExpect"]
-    assert agent_id_from_receipt("testnet", _receipt(logs=logs)) == RegisteredAgent(int(e["agentId"]), e["owner"], None)
+    assert agent_id_from_receipt("testnet", _receipt(logs=logs)) == RegisteredAgent(
+        int(e["agentId"]), e["owner"], None
+    )
 
 
 def test_ignores_logs_from_any_other_address() -> None:
-    logs = [{**lg, "address": "0x000000000000000000000000000000000000dEaD"} for lg in V["receipt"]["logs"]]
+    logs = [
+        {**lg, "address": "0x000000000000000000000000000000000000dEaD"}
+        for lg in V["receipt"]["logs"]
+    ]
     with pytest.raises(MercurifiError, match="no agent registration event"):
         agent_id_from_receipt("testnet", _receipt(logs=logs))
 
@@ -182,7 +230,9 @@ async def test_get_agent_reads_owner_uri_and_wallet() -> None:
         got = await get_agent(rpc, "testnet", 897205)
     finally:
         await rpc.aclose()
-    assert got == AgentIdentity(897205, OWNER, "https://agentcard.example.com/agent-9258.json", OWNER)
+    assert got == AgentIdentity(
+        897205, OWNER, "https://agentcard.example.com/agent-9258.json", OWNER
+    )
 
 
 async def test_get_agent_refuses_an_rpc_on_another_chain() -> None:
@@ -195,8 +245,12 @@ async def test_get_agent_refuses_an_rpc_on_another_chain() -> None:
 
 
 async def test_get_agent_reports_an_unknown_id() -> None:
-    nonexistent = to_hex(keccak(text="ERC721NonexistentToken(uint256)")[:4] + (9).to_bytes(32, "big"))
-    rpc = _rpc(_mocked().revert(TESTNET.identity_registry, IDENTITY_REGISTRY, "ownerOf", nonexistent))
+    nonexistent = to_hex(
+        keccak(text="ERC721NonexistentToken(uint256)")[:4] + (9).to_bytes(32, "big")
+    )
+    rpc = _rpc(
+        _mocked().revert(TESTNET.identity_registry, IDENTITY_REGISTRY, "ownerOf", nonexistent)
+    )
     try:
         with pytest.raises(MercurifiError) as info:
             await get_agent(rpc, "testnet", 9)
@@ -222,4 +276,3 @@ async def test_get_agent_keeps_the_rpc_url_out_of_failures() -> None:
         assert info.value.code == "RPC_ERROR"
         assert "SUPERSECRETKEY123" not in str(info.value)
         assert info.value.__cause__ is None and info.value.__context__ is None
-

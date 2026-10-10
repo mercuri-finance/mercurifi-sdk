@@ -48,7 +48,12 @@ class ClientSettings:
 
 class AsyncClient:
     def __init__(
-        self, network: NetworkBook, rpc: Rpc, api: Any, settings: ClientSettings, on_warning: Callable[[str], None],
+        self,
+        network: NetworkBook,
+        rpc: Rpc,
+        api: Any,
+        settings: ClientSettings,
+        on_warning: Callable[[str], None],
         api_base_url: str | None = None,
     ) -> None:
         self.network = network
@@ -60,7 +65,12 @@ class AsyncClient:
         # One agent key per process: sends from one key are serialised and nonces are counted locally.
         self.nonces = NonceManager(lambda address: rpc.get_transaction_count(address, "pending"))
         self.sender = TxSender(
-            rpc, network.chain_id, self.nonces, settings.receipt_timeout, settings.poll_interval, settings.max_fee_per_gas_cap,
+            rpc,
+            network.chain_id,
+            self.nonces,
+            settings.receipt_timeout,
+            settings.poll_interval,
+            settings.max_fee_per_gas_cap,
             max_priority_fee_per_gas=settings.max_priority_fee_per_gas,
         )
 
@@ -82,7 +92,14 @@ class AsyncClient:
 
         return OwnerClient(self, signer)
 
-    async def agent(self, account: str, signer: Signer, *, slippage: float = 0.01, deadline_seconds: int | None = None) -> AgentClient:
+    async def agent(
+        self,
+        account: str,
+        signer: Signer,
+        *,
+        slippage: float = 0.01,
+        deadline_seconds: int | None = None,
+    ) -> AgentClient:
         """Agent-side client. Refuses an address that is not an account of this network's factory."""
         from .agent import AgentClient
         from .reads import is_agent_account
@@ -90,7 +107,9 @@ class AsyncClient:
 
         agents = self.require_agents()
         if not await is_agent_account(self.rpc, agents, account):
-            raise InvalidInputError("account", f"{account} is not a Mercurifi agent account on {self.network.name}")
+            raise InvalidInputError(
+                "account", f"{account} is not a Mercurifi agent account on {self.network.name}"
+            )
         wanted = self.settings.deadline_seconds if deadline_seconds is None else deadline_seconds
         return AgentClient(self, agents, account, signer, slippage_to_bps(slippage), wanted)
 
@@ -110,7 +129,10 @@ class AsyncClient:
 
         checked = validate_topics(topics)
         if self.api is None:
-            raise InvalidInputError("api", "Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.")
+            raise InvalidInputError(
+                "api",
+                "Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.",
+            )
         return open_stream(self.api.stream_request(checked), **options)
 
     async def aclose(self) -> None:
@@ -129,12 +151,18 @@ def _resolve_book(network: str | NetworkBook) -> NetworkBook:
     if isinstance(network, str):
         book = NETWORKS.get(network) if network in NETWORKS else None  # own keys only
         if book is None:
-            raise InvalidInputError("network", "network must be 'mainnet', 'testnet' or a local address book")
+            raise InvalidInputError(
+                "network", "network must be 'mainnet', 'testnet' or a local address book"
+            )
         return book
     if not isinstance(network, NetworkBook):
-        raise InvalidInputError("network", "network must be 'mainnet', 'testnet' or a local address book")
+        raise InvalidInputError(
+            "network", "network must be 'mainnet', 'testnet' or a local address book"
+        )
     if network.name != "local" or network.chain_id != LOCAL_CHAIN_ID:
-        raise NetworkMismatchError(f"custom address books are accepted only for the local chain {LOCAL_CHAIN_ID}; use 'mainnet' or 'testnet' for Arc")
+        raise NetworkMismatchError(
+            f"custom address books are accepted only for the local chain {LOCAL_CHAIN_ID}; use 'mainnet' or 'testnet' for Arc"
+        )
     if network.api_base_url is not None:
         _check_api_url("api_base_url", network.api_base_url)
     if network.api_key_prefix not in (None, "mfk_live_", "mfk_test_"):
@@ -145,7 +173,9 @@ def _resolve_book(network: str | NetworkBook) -> NetworkBook:
 def _check_http_url(field: str, url: object) -> str:
     """http(s) with a host and a valid port, or InvalidInputError. Never echoes the value (it may carry a key)."""
     if url_host(url) is None:
-        raise InvalidInputError(field, f"{field} is not a valid URL; expected http(s)://host[:port][/path]")
+        raise InvalidInputError(
+            field, f"{field} is not a valid URL; expected http(s)://host[:port][/path]"
+        )
     assert isinstance(url, str)
     return url
 
@@ -157,7 +187,11 @@ def _check_api_url(field: str, url: str) -> None:
 
 
 def _positive(field: str, value: object, what: str) -> None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value < float("inf"):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not 0 < value < float("inf")
+    ):
         raise InvalidInputError(field, f"{field} must be a positive number ({what})")
 
 
@@ -188,20 +222,46 @@ async def create_client(
         raise InvalidInputError("rpc_url", f"rpc_url is required on {book.name}")
     _check_http_url("rpc_url", url)
     if book.name == "local" and not is_loopback_url(url):
-        raise NetworkMismatchError("a local address book needs a loopback RPC (127.0.0.1, localhost or ::1)")
+        raise NetworkMismatchError(
+            "a local address book needs a loopback RPC (127.0.0.1, localhost or ::1)"
+        )
     if api_key is not None:
         if not isinstance(api_key, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,256}", api_key) is None:
-            raise InvalidInputError("api_key", "api_key is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key")
+            raise InvalidInputError(
+                "api_key",
+                "api_key is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key",
+            )
         if book.api_key_prefix is not None and not api_key.startswith(book.api_key_prefix):
-            raise NetworkMismatchError(f"This API key belongs to the other network; {book.name} keys start with {book.api_key_prefix}")
-    if isinstance(deadline_seconds, bool) or not isinstance(deadline_seconds, int) or not (1 <= deadline_seconds <= MAX_DEADLINE_SECONDS):
-        raise InvalidInputError("deadline_seconds", f"deadline_seconds must be an integer in 1..{MAX_DEADLINE_SECONDS}")
+            raise NetworkMismatchError(
+                f"This API key belongs to the other network; {book.name} keys start with {book.api_key_prefix}"
+            )
+    if (
+        isinstance(deadline_seconds, bool)
+        or not isinstance(deadline_seconds, int)
+        or not (1 <= deadline_seconds <= MAX_DEADLINE_SECONDS)
+    ):
+        raise InvalidInputError(
+            "deadline_seconds", f"deadline_seconds must be an integer in 1..{MAX_DEADLINE_SECONDS}"
+        )
     _positive("receipt_timeout", receipt_timeout, "seconds")
     _positive("poll_interval", poll_interval, "seconds")
-    if max_fee_per_gas_cap is not None and (isinstance(max_fee_per_gas_cap, bool) or not isinstance(max_fee_per_gas_cap, int) or max_fee_per_gas_cap < 1):
-        raise InvalidInputError("max_fee_per_gas_cap", "max_fee_per_gas_cap must be a positive integer (wei per gas)")
-    if isinstance(max_priority_fee_per_gas, bool) or not isinstance(max_priority_fee_per_gas, int) or max_priority_fee_per_gas < 1:
-        raise InvalidInputError("max_priority_fee_per_gas", "max_priority_fee_per_gas must be a positive integer (wei per gas)")
+    if max_fee_per_gas_cap is not None and (
+        isinstance(max_fee_per_gas_cap, bool)
+        or not isinstance(max_fee_per_gas_cap, int)
+        or max_fee_per_gas_cap < 1
+    ):
+        raise InvalidInputError(
+            "max_fee_per_gas_cap", "max_fee_per_gas_cap must be a positive integer (wei per gas)"
+        )
+    if (
+        isinstance(max_priority_fee_per_gas, bool)
+        or not isinstance(max_priority_fee_per_gas, int)
+        or max_priority_fee_per_gas < 1
+    ):
+        raise InvalidInputError(
+            "max_priority_fee_per_gas",
+            "max_priority_fee_per_gas must be a positive integer (wei per gas)",
+        )
     resolved_api_url = api_base_url if api_base_url is not None else book.api_base_url
     if api_base_url is not None:
         _check_api_url("api_base_url", api_base_url)
@@ -212,13 +272,19 @@ async def create_client(
     warn = on_warning or _warn
     # Skipping start-up verification is for the loopback book only; on Arc the chain check is unconditional.
     if verify is False and book.name != "local":
-        warn(f"verify=False is ignored on {book.name}; start-up verification always runs outside the local book.")
+        warn(
+            f"verify=False is ignored on {book.name}; start-up verification always runs outside the local book."
+        )
     # The default HTTP API: built before the RPC so a bad option fails early; it holds the key privately.
     resolved_api: Any
     if isinstance(api, str) and api == "default":
         from .api import HttpApi
 
-        resolved_api = None if resolved_api_url is None else HttpApi(resolved_api_url, book.chain_id, api_key=api_key, on_warning=warn)
+        resolved_api = (
+            None
+            if resolved_api_url is None
+            else HttpApi(resolved_api_url, book.chain_id, api_key=api_key, on_warning=warn)
+        )
     else:
         resolved_api = api
     rpc = Rpc(url, transport=rpc_transport)
@@ -235,8 +301,19 @@ async def create_client(
             )
         if failure is not None:
             await rpc.aclose()
-            if resolved_api is not None and hasattr(resolved_api, "aclose") and api is not resolved_api:
+            if (
+                resolved_api is not None
+                and hasattr(resolved_api, "aclose")
+                and api is not resolved_api
+            ):
                 await resolved_api.aclose()
             raise failure
-    settings = ClientSettings(receipt_timeout, poll_interval, max_fee_per_gas_cap, deadline_seconds, api_key, max_priority_fee_per_gas)
+    settings = ClientSettings(
+        receipt_timeout,
+        poll_interval,
+        max_fee_per_gas_cap,
+        deadline_seconds,
+        api_key,
+        max_priority_fee_per_gas,
+    )
     return AsyncClient(book, rpc, resolved_api, settings, warn, resolved_api_url)

@@ -1,11 +1,19 @@
 """Agent key permission bits (spec 4.3)."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
 
 from .errors import InvalidInputError
 
-PERMISSIONS: dict[str, int] = {"buy": 1, "sell": 2, "launch": 4, "swap": 8, "claim": 16, "sweep": 32}
+PERMISSIONS: dict[str, int] = {
+    "buy": 1,
+    "sell": 2,
+    "launch": 4,
+    "swap": 8,
+    "claim": 16,
+    "sweep": 32,
+}
 _ORDER: tuple[str, ...] = ("buy", "sell", "launch", "swap", "claim", "sweep")
 
 #: `sell` is opt-in and never preselected (spec 4.3).
@@ -18,7 +26,15 @@ SELL_RISK_WARNING = (
 )
 
 #: AgentAction.action ids (AgentTypes.sol).
-ACTIONS: dict[int, str] = {1: "buy", 2: "sell", 3: "launch", 4: "poolBuy", 5: "poolSell", 6: "claim", 7: "sweep"}
+ACTIONS: dict[int, str] = {
+    1: "buy",
+    2: "sell",
+    3: "launch",
+    4: "poolBuy",
+    5: "poolSell",
+    6: "claim",
+    7: "sweep",
+}
 
 
 def encode_permissions(perms: Iterable[str]) -> int:
@@ -28,7 +44,9 @@ def encode_permissions(perms: Iterable[str]) -> int:
     bits = 0
     for p in items:
         if not isinstance(p, str) or p not in PERMISSIONS:
-            raise InvalidInputError("permissions", f"unknown permission {p!r}; expected one of {', '.join(_ORDER)}")
+            raise InvalidInputError(
+                "permissions", f"unknown permission {p!r}; expected one of {', '.join(_ORDER)}"
+            )
         bits |= PERMISSIONS[p]
     return bits
 

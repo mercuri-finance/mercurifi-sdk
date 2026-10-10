@@ -1,4 +1,5 @@
 """Mercurifi Agent Accounts SDK. Read docs/security-model.md: agent keys can lose money within your caps."""
+
 from . import errors
 from ._version import __version__
 from .agent import AgentClient, ImageUpload
@@ -18,7 +19,29 @@ from .sync import Client
 install_log_redaction()
 
 __all__ = [
-    "AccountManager", "AgentClient", "AsyncClient", "ChainPolicy", "Client", "ContractRevertError", "DEFAULT_POLICY", "FirstAgent",
-    "ImageUpload", "MAINNET", "OwnerClient", "TESTNET", "TxRevertedError", "__version__", "create_client", "decode_revert", "errors",
-    "generate_agent_key", "kms_signer", "local_key", "local_network", "open_stream", "verify_built_owner_tx", "verify_built_tx", "wrap_untrusted",
+    "AccountManager",
+    "AgentClient",
+    "AsyncClient",
+    "ChainPolicy",
+    "Client",
+    "ContractRevertError",
+    "DEFAULT_POLICY",
+    "FirstAgent",
+    "ImageUpload",
+    "MAINNET",
+    "OwnerClient",
+    "TESTNET",
+    "TxRevertedError",
+    "__version__",
+    "create_client",
+    "decode_revert",
+    "errors",
+    "generate_agent_key",
+    "kms_signer",
+    "local_key",
+    "local_network",
+    "open_stream",
+    "verify_built_owner_tx",
+    "verify_built_tx",
+    "wrap_untrusted",
 ]

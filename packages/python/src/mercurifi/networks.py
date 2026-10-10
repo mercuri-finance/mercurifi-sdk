@@ -57,18 +57,38 @@ _SHARED = {
 }
 
 MAINNET = NetworkBook(
-    "mainnet", 5042, None, "https://launch-api.mercuri.finance", "mfk_live_",
-    LaunchBook(factory="0x8f5DfA0c48E14cCD03AE01795B8a95759BA859EB", fee_manager="0x31D1bfe59B783f4c077F853f962D1355AfB52580",
-               graduation_manager="0x5E82a03a30a1627Cb0Fa860dBe708e262e5124e4", launch_hook="0xe6D50A6e12f3883605A4456dCDEe50EE05fAE0Cc", **_SHARED),
+    "mainnet",
+    5042,
+    None,
+    "https://launch-api.mercuri.finance",
+    "mfk_live_",
+    LaunchBook(
+        factory="0x8f5DfA0c48E14cCD03AE01795B8a95759BA859EB",
+        fee_manager="0x31D1bfe59B783f4c077F853f962D1355AfB52580",
+        graduation_manager="0x5E82a03a30a1627Cb0Fa860dBe708e262e5124e4",
+        launch_hook="0xe6D50A6e12f3883605A4456dCDEe50EE05fAE0Cc",
+        **_SHARED,
+    ),
     None,
 )
 TESTNET = NetworkBook(
-    "testnet", 5042002, "https://rpc.testnet.arc.io", "https://testnet-launch-api.mercuri.finance", "mfk_test_",
-    LaunchBook(factory="0x08D8CDDA59b5ce9216F7eD9B34E1F0391C80cC0E", fee_manager="0xcE1260DF73dEEbD71A869CC4E9A2006994f3E5E2",
-               graduation_manager="0x3A17cD90e34EBae71D92013f763FD01bAef1efdc", launch_hook="0x87e6BaBAc4598F99f4A0717ad294934455Fe60cc", **_SHARED),
+    "testnet",
+    5042002,
+    "https://rpc.testnet.arc.io",
+    "https://testnet-launch-api.mercuri.finance",
+    "mfk_test_",
+    LaunchBook(
+        factory="0x08D8CDDA59b5ce9216F7eD9B34E1F0391C80cC0E",
+        fee_manager="0xcE1260DF73dEEbD71A869CC4E9A2006994f3E5E2",
+        graduation_manager="0x3A17cD90e34EBae71D92013f763FD01bAef1efdc",
+        launch_hook="0x87e6BaBAc4598F99f4A0717ad294934455Fe60cc",
+        **_SHARED,
+    ),
     # From deployments/5042002.json in the agent contracts repository (github.com/mercuri-finance/mercuri-agent-contracts); deploy_block is the factory's.
     AgentBook(
-        factory="0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd", implementation="0xD11567fDfc9833E39E7EEbB0964c7bB7f4FF40b5", registry="0xcfCDA6a022314eA7Ae995cCf88e4eeB3A8802C69",
+        factory="0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd",
+        implementation="0xD11567fDfc9833E39E7EEbB0964c7bB7f4FF40b5",
+        registry="0xcfCDA6a022314eA7Ae995cCf88e4eeB3A8802C69",
         factory_code_hash="0xe46101aa4d40c13670b4a3cc796e842f66a78b20270151a9ad8a71993a743674",
         implementation_code_hash="0xc17ea4822c95a725023978abfbeb6a5e0083cce436a8bcd8530f83af6c10fa6f",
         registry_code_hash="0x6e690cd8038c639bfefa2a0f7db40242a6d99610ddd5d517d5fcb3ff22cdde22",
@@ -80,9 +100,23 @@ LOCAL_CHAIN_ID = 31337
 
 
 _LOCAL_KEYS = (
-    "chainId", "launchFactory", "feeManager", "graduationManager", "launchHook", "poolManager", "permit2", "universalRouter",
-    "v4Quoter", "usdc", "agentFactory", "agentImplementation", "agentRegistry", "agentFactoryCodeHash",
-    "agentImplementationCodeHash", "agentRegistryCodeHash", "deployBlock",
+    "chainId",
+    "launchFactory",
+    "feeManager",
+    "graduationManager",
+    "launchHook",
+    "poolManager",
+    "permit2",
+    "universalRouter",
+    "v4Quoter",
+    "usdc",
+    "agentFactory",
+    "agentImplementation",
+    "agentRegistry",
+    "agentFactoryCodeHash",
+    "agentImplementationCodeHash",
+    "agentRegistryCodeHash",
+    "deployBlock",
 )
 
 
@@ -93,18 +127,37 @@ def local_network(book: Mapping[str, Any]) -> NetworkBook:
         raise InvalidInputError("book", f"the local address book is missing: {', '.join(missing)}")
     chain_id = book["chainId"]
     if isinstance(chain_id, bool) or not isinstance(chain_id, int) or chain_id != LOCAL_CHAIN_ID:
-        raise NetworkMismatchError(f"a local address book must be for chain {LOCAL_CHAIN_ID} (Anvil), not {chain_id}")
+        raise NetworkMismatchError(
+            f"a local address book must be for chain {LOCAL_CHAIN_ID} (Anvil), not {chain_id}"
+        )
     deploy_block = book["deployBlock"]
     if isinstance(deploy_block, bool) or not isinstance(deploy_block, int) or deploy_block < 0:
         raise InvalidInputError("book", "deployBlock must be a non-negative integer")
     return NetworkBook(
-        "local", LOCAL_CHAIN_ID, "http://127.0.0.1:8545", None, None,
-        LaunchBook(book["launchFactory"], book["feeManager"], book["graduationManager"], book["launchHook"], book["poolManager"],
-                   book["permit2"], book["universalRouter"], book["v4Quoter"], book["usdc"]),
+        "local",
+        LOCAL_CHAIN_ID,
+        "http://127.0.0.1:8545",
+        None,
+        None,
+        LaunchBook(
+            book["launchFactory"],
+            book["feeManager"],
+            book["graduationManager"],
+            book["launchHook"],
+            book["poolManager"],
+            book["permit2"],
+            book["universalRouter"],
+            book["v4Quoter"],
+            book["usdc"],
+        ),
         AgentBook(
-            factory=book["agentFactory"], implementation=book["agentImplementation"], registry=book["agentRegistry"],
-            factory_code_hash=book["agentFactoryCodeHash"], implementation_code_hash=book["agentImplementationCodeHash"],
-            registry_code_hash=book["agentRegistryCodeHash"], deploy_block=deploy_block,
+            factory=book["agentFactory"],
+            implementation=book["agentImplementation"],
+            registry=book["agentRegistry"],
+            factory_code_hash=book["agentFactoryCodeHash"],
+            implementation_code_hash=book["agentImplementationCodeHash"],
+            registry_code_hash=book["agentRegistryCodeHash"],
+            deploy_block=deploy_block,
         ),
     )
 
@@ -120,7 +173,9 @@ def url_host(url: object) -> str | None:
         return None
     try:
         parsed = httpx.URL(url)
-        if parsed.scheme not in ("http", "https") or (parsed.port is not None and not 0 < parsed.port <= 65535):
+        if parsed.scheme not in ("http", "https") or (
+            parsed.port is not None and not 0 < parsed.port <= 65535
+        ):
             return None
         return parsed.host or None
     except (httpx.InvalidURL, ValueError):

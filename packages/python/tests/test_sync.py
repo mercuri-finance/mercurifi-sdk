@@ -11,7 +11,17 @@ from mercurifi.errors import ClientClosedError, InvalidInputError, MercurifiErro
 from mercurifi.networks import local_network
 from mercurifi.signers import local_key
 
-from .helpers import ACCOUNT, AGENT_KEY, TOKEN, WAD, A, local_json, local_rpc, mock_account, mock_curve
+from .helpers import (
+    ACCOUNT,
+    AGENT_KEY,
+    TOKEN,
+    WAD,
+    A,
+    local_json,
+    local_rpc,
+    mock_account,
+    mock_curve,
+)
 
 
 class FakeApi:
@@ -20,7 +30,13 @@ class FakeApi:
 
 
 def make(rpc: Any = None, api: Any = None) -> Client:
-    return Client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=(rpc or local_rpc()).transport(), api=api, on_warning=lambda m: None)
+    return Client(
+        local_network(local_json()),
+        rpc_url="http://127.0.0.1:8545",
+        rpc_transport=(rpc or local_rpc()).transport(),
+        api=api,
+        on_warning=lambda m: None,
+    )
 
 
 def test_blocking_client_wraps_the_async_one() -> None:
@@ -47,7 +63,18 @@ def test_token_safe_view_blocks_too() -> None:
     rpc = local_rpc()
     mock_account(rpc, owner=A(0x99), agent=A(0x98))
     mock_curve(rpc)
-    rpc.read(A(2), FEE_MANAGER, "tokenInfo", {"curve": A(3), "creator": ACCOUNT, "tradeFeeBps": 100, "creatorShareBps": 5_000, "referrerShareBps": 2_000})
+    rpc.read(
+        A(2),
+        FEE_MANAGER,
+        "tokenInfo",
+        {
+            "curve": A(3),
+            "creator": ACCOUNT,
+            "tradeFeeBps": 100,
+            "creatorShareBps": 5_000,
+            "referrerShareBps": 2_000,
+        },
+    )
     with make(rpc) as client:
         assert client.token(TOKEN).phase == "trading"
 
@@ -111,7 +138,13 @@ def test_a_streams_becomes_a_plain_iterator() -> None:
 
     # open_stream builds its own HTTP client, so a stream needs the network: only the wiring is checked here.
     with make(api=StreamApi()) as client:
-        it = client.stream(["launches"], transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"id: 1-0\nevent: launch\ndata: {\"a\": 1}\n\n")), max_reconnects=0)
+        it = client.stream(
+            ["launches"],
+            transport=httpx.MockTransport(
+                lambda r: httpx.Response(200, content=b'id: 1-0\nevent: launch\ndata: {"a": 1}\n\n')
+            ),
+            max_reconnects=0,
+        )
         first = next(it)
         assert (first.id, first.type, first.data) == ("1-0", "launch", {"a": 1})
         it.close()
@@ -138,7 +171,13 @@ def test_close_releases_a_thread_that_is_mid_call() -> None:
     mock_account(rpc, owner=A(0x99), agent=signer.address)
     mock_curve(rpc)
     transport = Hanging(rpc.transport())
-    client = Client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=transport, api=None, on_warning=lambda m: None)
+    client = Client(
+        local_network(local_json()),
+        rpc_url="http://127.0.0.1:8545",
+        rpc_transport=transport,
+        api=None,
+        on_warning=lambda m: None,
+    )
     agent = client.agent(ACCOUNT, signer)
     outcome: list[BaseException | None] = []
 
@@ -157,7 +196,11 @@ def test_close_releases_a_thread_that_is_mid_call() -> None:
     client.close()
     worker.join(1)
     assert not worker.is_alive() and time.monotonic() - started < 1.5
-    assert len(outcome) == 1 and isinstance(outcome[0], ClientClosedError) and isinstance(outcome[0], MercurifiError)
+    assert (
+        len(outcome) == 1
+        and isinstance(outcome[0], ClientClosedError)
+        and isinstance(outcome[0], MercurifiError)
+    )
     assert outcome[0].code == "CLIENT_CLOSED"
     assert client._runner.thread.daemon is True and not client._runner.thread.is_alive()
 
@@ -183,7 +226,11 @@ class StreamApi:
 
 
 def heartbeat_stream(client: Client, state: dict[str, bool]) -> Any:
-    transport = httpx.MockTransport(lambda r: httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Heartbeats(state)))
+    transport = httpx.MockTransport(
+        lambda r: httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=Heartbeats(state)
+        )
+    )
     return client.stream(["launches"], transport=transport, idle_timeout=0)
 
 
@@ -240,4 +287,10 @@ def test_close_from_the_loop_thread_raises_and_changes_nothing() -> None:
 
 def test_the_api_key_is_not_left_in_the_options_and_is_validated() -> None:
     with pytest.raises(InvalidInputError):
-        Client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=local_rpc().transport(), api_key="bad key!", on_warning=lambda m: None)
+        Client(
+            local_network(local_json()),
+            rpc_url="http://127.0.0.1:8545",
+            rpc_transport=local_rpc().transport(),
+            api_key="bad key!",
+            on_warning=lambda m: None,
+        )

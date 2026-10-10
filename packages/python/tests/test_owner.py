@@ -56,7 +56,16 @@ async def setup(owner: str | None = None, **over: Any) -> Ctx:
     mock_curve(rpc, balance=5 * WAD)
     rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "predictAccount", ACCOUNT)
     rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "createAccount", ACCOUNT)
-    rpc.receipt_logs = [log(AGENT_ACCOUNT_FACTORY, FACTORY, "AccountCreated", owner=OWNER.address, account=ACCOUNT, salt=SALT)]
+    rpc.receipt_logs = [
+        log(
+            AGENT_ACCOUNT_FACTORY,
+            FACTORY,
+            "AccountCreated",
+            owner=OWNER.address,
+            account=ACCOUNT,
+            salt=SALT,
+        )
+    ]
     warnings: list[str] = []
     mf = await local_client(rpc, on_warning=warnings.append, **over)
     return Ctx(rpc, mf.owner(OWNER), warnings, mf)
@@ -78,6 +87,7 @@ def owner_payload(a: str) -> str:
 
 # --- creation -------------------------------------------------------------------------------------------------------
 
+
 async def test_create_with_defaults_on_the_factory() -> None:
     t = await setup()
     res = await t.owner.create_account(salt=SALT, first_agent=FirstAgent(AGENT.address))
@@ -86,15 +96,29 @@ async def test_create_with_defaults_on_the_factory() -> None:
     assert (to, name) == (FACTORY.lower(), "createAccount")
     init = args[1]
     assert init["policy"] == DEFAULT_POLICY.to_abi()
-    assert (init["periodSeconds"], init["increaseDelay"], init["referrer"], init["firstAgentPermissions"]) == (86_400, 3_600, ZERO, 1 | 4 | 8 | 16)
+    assert (
+        init["periodSeconds"],
+        init["increaseDelay"],
+        init["referrer"],
+        init["firstAgentPermissions"],
+    ) == (86_400, 3_600, ZERO, 1 | 4 | 8 | 16)
     assert init["firstAgentExpiresAt"] == t.rpc.block["timestamp"] + 30 * 86_400
-    predict = [p for m, p in t.rpc.calls if m == "eth_call" and p[0]["data"].startswith(AGENT_ACCOUNT_FACTORY.selector("predictAccount"))]
-    assert predict and OWNER.address.lower()[2:] in predict[0][0]["data"].lower()  # the salt is bound to the owner
+    predict = [
+        p
+        for m, p in t.rpc.calls
+        if m == "eth_call"
+        and p[0]["data"].startswith(AGENT_ACCOUNT_FACTORY.selector("predictAccount"))
+    ]
+    assert (
+        predict and OWNER.address.lower()[2:] in predict[0][0]["data"].lower()
+    )  # the salt is bound to the owner
 
 
 async def test_sell_warns() -> None:
     t = await setup()
-    await t.owner.create_account(salt=SALT, first_agent=FirstAgent(AGENT.address, permissions=("buy", "sell")))
+    await t.owner.create_account(
+        salt=SALT, first_agent=FirstAgent(AGENT.address, permissions=("buy", "sell"))
+    )
     assert SELL_RISK_WARNING in t.warnings
 
 
@@ -115,11 +139,29 @@ async def test_create_requires_the_factory_event_matching_the_prediction() -> No
     with pytest.raises(MercurifiError) as exc:
         await t.owner.create_account(salt=SALT)
     assert exc.value.code == "MISSING_EVENT"
-    t.rpc.receipt_logs = [log(AGENT_ACCOUNT_FACTORY, FACTORY, "AccountCreated", owner=OWNER.address, account=A(0x31), salt=SALT)]
+    t.rpc.receipt_logs = [
+        log(
+            AGENT_ACCOUNT_FACTORY,
+            FACTORY,
+            "AccountCreated",
+            owner=OWNER.address,
+            account=A(0x31),
+            salt=SALT,
+        )
+    ]
     with pytest.raises(NetworkMismatchError, match="not the predicted"):
         await t.owner.create_account(salt=SALT)
     # an event from some other emitter does not count
-    t.rpc.receipt_logs = [log(AGENT_ACCOUNT_FACTORY, A(0x30), "AccountCreated", owner=OWNER.address, account=ACCOUNT, salt=SALT)]
+    t.rpc.receipt_logs = [
+        log(
+            AGENT_ACCOUNT_FACTORY,
+            A(0x30),
+            "AccountCreated",
+            owner=OWNER.address,
+            account=ACCOUNT,
+            salt=SALT,
+        )
+    ]
     with pytest.raises(MercurifiError):
         await t.owner.create_account(salt=SALT)
 
@@ -142,13 +184,17 @@ async def test_manage_refuses_non_owner_read_from_the_registry() -> None:
 
 # --- policy ---------------------------------------------------------------------------------------------------------
 
+
 async def test_mixed_policy_change() -> None:
     t, m = await mgr()
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "setPolicy", 4)
     t.rpc.receipt_logs = [registry_log("PolicyQueued", id=4, eta=ETA)]
     res = await m.set_policy({"max_trade_usdc": "50", "period_spend_cap": "900"})
     assert (res.outcome, res.queued_id, res.eta) == ("mixed", 4, ETA)
-    assert res.preview is not None and (res.preview.immediate, res.preview.queued) == (("max_trade_usdc",), ("period_spend_cap",))
+    assert res.preview is not None and (res.preview.immediate, res.preview.queued) == (
+        ("max_trade_usdc",),
+        ("period_spend_cap",),
+    )
     assert "Queued as item 4" in res.summary and res.warnings
 
 
@@ -179,9 +225,14 @@ async def test_preview_splits_immediate_and_queued_with_the_window() -> None:
     assert p.eta_if_queued == now + 3_600 and p.expires_if_queued == now + 3_600 + 604_800
     assert p.ceilings is not None
     assert "max_trade_usdc: 100 -> 50 applies immediately" in p.summary[0]
-    assert "period_spend_cap: 500 -> 900 is queued; executable from " in p.summary[1] and " until " in p.summary[1]
+    assert (
+        "period_spend_cap: 500 -> 900 is queued; executable from " in p.summary[1]
+        and " until " in p.summary[1]
+    )
     # Same ISO form as TypeScript's Date.toISOString (milliseconds included).
-    assert p.summary[1].endswith(f"executable from {_iso(now + 3_600)} until {_iso(now + 3_600 + 604_800)}")
+    assert p.summary[1].endswith(
+        f"executable from {_iso(now + 3_600)} until {_iso(now + 3_600 + 604_800)}"
+    )
     assert t.rpc.sent == []
     n = await m.preview_policy({"max_trade_usdc": "50"})
     assert (n.eta_if_queued, n.expires_if_queued, n.queued) == (None, None, ())
@@ -194,25 +245,42 @@ def test_effective_eta_takes_the_larger_delay() -> None:
 
 # --- queue view -----------------------------------------------------------------------------------------------------
 
+
 async def test_list_queued_from_registry_logs() -> None:
     t, m = await mgr()
     rpc = t.rpc
     now = rpc.block["timestamp"]
-    rpc.logs = [queue_log(1), queue_log(2, "IncreaseDelayQueued"), queue_log(3),
-                log(AGENT_POLICY_REGISTRY, REGISTRY, "AgentQueued", account=A(0x55), id=9)]
+    rpc.logs = [
+        queue_log(1),
+        queue_log(2, "IncreaseDelayQueued"),
+        queue_log(3),
+        log(AGENT_POLICY_REGISTRY, REGISTRY, "AgentQueued", account=A(0x55), id=9),
+    ]
     add = add_payload(AGENT.address, now + 86_400)
     delay = to_hex(encode(["uint32"], [60]))
 
     def queued(a: list[object]) -> tuple[object, ...]:
-        items = {1: (1, now - 10, 1, 1, add), 2: (5, now + 100, 1, 1, delay), 3: (1, now - 10, 0, 1, add)}
+        items = {
+            1: (1, now - 10, 1, 1, add),
+            2: (5, now + 100, 1, 1, delay),
+            3: (1, now - 10, 0, 1, add),
+        }
         if a[1] not in items:
             raise AssertionError(f"another account's id {a[1]} was read")
         return items[a[1]]  # type: ignore[index]
 
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", queued)
     items = await m.list_queued()
-    assert [(q.id, q.kind, q.status) for q in items] == [(1, "addAgent", "ready"), (2, "delay", "pending"), (3, "addAgent", "cancelled")]
-    assert items[0].detail == {"agent": AGENT.address, "expires_at": now + 86_400, "permissions": ["buy", "launch", "swap", "claim"]}
+    assert [(q.id, q.kind, q.status) for q in items] == [
+        (1, "addAgent", "ready"),
+        (2, "delay", "pending"),
+        (3, "addAgent", "cancelled"),
+    ]
+    assert items[0].detail == {
+        "agent": AGENT.address,
+        "expires_at": now + 86_400,
+        "permissions": ["buy", "launch", "swap", "claim"],
+    }
     flt = rpc.methods("eth_getLogs")[0][0]
     assert flt["address"].lower() == REGISTRY.lower()
     assert flt["topics"] == [None, "0x" + "0" * 24 + ACCOUNT[2:].lower()]
@@ -224,7 +292,12 @@ async def test_list_queued_skips_malformed_logs() -> None:
     now = rpc.block["timestamp"]
     bad = {**queue_log(7), "data": "0x01"}  # right topics, truncated data
     rpc.logs = [bad, queue_log(1)]
-    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", lambda a: (1, now - 10, 1, 1, add_payload(AGENT.address, now + 86_400)))
+    rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        lambda a: (1, now - 10, 1, 1, add_payload(AGENT.address, now + 86_400)),
+    )
     assert [q.id for q in await m.list_queued()] == [1]
 
 
@@ -235,18 +308,31 @@ async def test_stale_items_and_superseded_policy_fields() -> None:
     rpc.logs = [queue_log(1), queue_log(2, "PolicyQueued")]
     target = replace(DEFAULT_POLICY, period_spend_cap=900_000_000)
     policy_payload = to_hex(encode([POLICY_TYPE], [tuple(target.to_abi().values())]))
-    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued",
-             lambda a: (2, now - 10, 1, 5, add_payload(AGENT.address, now + 86_400)) if a[1] == 1 else (3, now + 100, 1, 5, policy_payload))
+    rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        lambda a: (2, now - 10, 1, 5, add_payload(AGENT.address, now + 86_400))
+        if a[1] == 1
+        else (3, now + 100, 1, 5, policy_payload),
+    )
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agentWrite", 7)
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "policyWrite", lambda a: 9 if a[1] == 0 else 0)
     items = await m.list_queued()
-    assert [(q.id, q.kind, q.seq, q.status) for q in items] == [(1, "setAgent", 5, "stale"), (2, "policy", 5, "pending")]
+    assert [(q.id, q.kind, q.seq, q.status) for q in items] == [
+        (1, "setAgent", 5, "stale"),
+        (2, "policy", 5, "pending"),
+    ]
     assert items[1].detail["superseded"] == ["max_trade_usdc"]
     assert items[1].detail["policy"].period_spend_cap == 900_000_000
     # every field superseded: the whole policy item is stale
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "policyWrite", 9)
     again = await m.list_queued()
-    assert again[1].status == "stale" and again[1].warning is not None and "changes nothing" in again[1].warning
+    assert (
+        again[1].status == "stale"
+        and again[1].warning is not None
+        and "changes nothing" in again[1].warning
+    )
 
 
 async def test_expired_and_stale_flags_with_warnings() -> None:
@@ -277,7 +363,12 @@ async def test_expired_wins_over_stale_like_execute_queued() -> None:
     t, m = await mgr()
     now = t.rpc.block["timestamp"]
     t.rpc.logs = [queue_log(1, "TokenAllowQueued")]
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", (4, now - 604_800 - 5, 1, 1, owner_payload(TOKEN)))
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        (4, now - 604_800 - 5, 1, 1, owner_payload(TOKEN)),
+    )
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "tokenWrite", 3)
     assert (await m.list_queued())[0].status == "expired"
 
@@ -296,12 +387,22 @@ async def test_unexecutable_agent_items_and_owner_items() -> None:
         return (6, now - 10, 0, 1, owner_payload(NEW_OWNER))
 
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", queued)
-    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agentWrite", 99)  # owner items are never stale by seq; agent item here is unexecutable
+    rpc.read(
+        REGISTRY, AGENT_POLICY_REGISTRY, "agentWrite", 99
+    )  # owner items are never stale by seq; agent item here is unexecutable
     items = await m.list_queued()
-    assert [(q.id, q.kind, q.status) for q in items] == [(1, "addAgent", "stale"), (2, "owner", "pending"), (3, "owner", "cancelled")]
+    assert [(q.id, q.kind, q.status) for q in items] == [
+        (1, "addAgent", "stale"),
+        (2, "owner", "pending"),
+        (3, "owner", "cancelled"),
+    ]
     rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agentWrite", 0)
     items = await m.list_queued()
-    assert [(q.id, q.status) for q in items] == [(1, "unexecutable"), (2, "pending"), (3, "cancelled")]
+    assert [(q.id, q.status) for q in items] == [
+        (1, "unexecutable"),
+        (2, "pending"),
+        (3, "cancelled"),
+    ]
     assert items[0].warning is not None and "AgentExpiryOutOfRange" in items[0].warning
     assert items[1].warning is not None and "new owner calling acceptOwnership" in items[1].warning
     assert items[2].warning is not None and "Only cancelQueued clears it" in items[2].warning
@@ -312,8 +413,12 @@ async def test_pending_ownership_for_the_incoming_owner() -> None:
     t = await setup(NEW_OWNER)
     now = t.rpc.block["timestamp"]
     t.rpc.logs = [queue_log(1, "OwnershipQueued"), queue_log(2, "OwnershipQueued")]
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued",
-               lambda a: (6, now - 10, 1, 1, owner_payload(OWNER.address if a[1] == 1 else A(0x77))))
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        lambda a: (6, now - 10, 1, 1, owner_payload(OWNER.address if a[1] == 1 else A(0x77))),
+    )
     mine = await t.owner.pending_ownership(ACCOUNT)
     assert [(q.id, q.status) for q in mine] == [(1, "ready")]
 
@@ -338,7 +443,12 @@ async def test_api_candidates_are_verified_on_chain_and_logs_are_not_scanned() -
     api = FakeApi([{"id": "1"}, {"id": "zz"}])
     t, m = await mgr(api=api, api_key="k")
     now = t.rpc.block["timestamp"]
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", (1, now - 10, 1, 1, add_payload(AGENT.address, now + 86_400)))
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        (1, now - 10, 1, 1, add_payload(AGENT.address, now + 86_400)),
+    )
     assert [q.id for q in await m.list_queued()] == [1]
     assert t.rpc.methods("eth_getLogs") == []
 
@@ -353,8 +463,15 @@ async def test_api_failure_and_empty_answers_fall_back_to_a_bounded_log_scan() -
     t2, m2 = await mgr(api=empty, api_key="k")
     now = t2.rpc.block["timestamp"]
     t2.rpc.logs = [queue_log(1)]
-    t2.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued", (1, now - 10, 1, 1, add_payload(A(0x51), 1_800_000_000, 1)))
-    assert [q.id for q in await m.list_queued()] == [] and [q.id for q in await m2.list_queued()] == [1]
+    t2.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        (1, now - 10, 1, 1, add_payload(A(0x51), 1_800_000_000, 1)),
+    )
+    assert [q.id for q in await m.list_queued()] == [] and [
+        q.id for q in await m2.list_queued()
+    ] == [1]
     assert empty.account_calls == 1 and t2.rpc.methods("eth_getLogs")
     nokey = FakeApi([{"id": "1"}])
     _, m3 = await mgr(api=nokey)
@@ -364,19 +481,28 @@ async def test_api_failure_and_empty_answers_fall_back_to_a_bounded_log_scan() -
 
 # --- registry writes ------------------------------------------------------------------------------------------------
 
+
 async def test_add_agent_queues_on_the_registry_with_id_and_eta_from_the_mined_event() -> None:
     t, m = await mgr()
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "addAgent", 6)
     t.rpc.receipt_logs = [registry_log("AgentQueued", id=6, eta=ETA)]
     r = await m.add_agent(AGENT2, expires_in_days=30, permissions=["buy"])
     to, name, args = sent(t.rpc)
-    assert (to, name, args[0], args[1], args[3]) == (REGISTRY.lower(), "addAgent", ACCOUNT, AGENT2, 1)
+    assert (to, name, args[0], args[1], args[3]) == (
+        REGISTRY.lower(),
+        "addAgent",
+        ACCOUNT,
+        AGENT2,
+        1,
+    )
     assert args[2] == t.rpc.block["timestamp"] + 30 * 86_400
     assert (r.outcome, r.queued_id, r.eta) == ("queued", 6, ETA)
     assert "queued as item 6" in r.summary
 
 
-async def test_queue_id_comes_from_the_receipt_not_the_preflight_and_must_match_the_account() -> None:
+async def test_queue_id_comes_from_the_receipt_not_the_preflight_and_must_match_the_account() -> (
+    None
+):
     t, m = await mgr()
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "addAgent", 6)
     t.rpc.receipt_logs = [registry_log("AgentQueued", id=77, eta=ETA)]
@@ -394,7 +520,12 @@ async def test_agent_expiry_the_delay_would_outlive_is_refused_before_sending() 
         await m.add_agent(AGENT2, expires_in_days=2)
     with pytest.raises(InvalidInputError, match="could never be executed"):
         await m.rotate_agent(AGENT.address, AGENT2, expires_in_days=1)
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agent", {"active": True, "expiresAt": 1_700_000_100, "permissions": 1})
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "agent",
+        {"active": True, "expiresAt": 1_700_000_100, "permissions": 1},
+    )
     with pytest.raises(InvalidInputError, match="could never be executed"):
         await m.set_agent(AGENT.address, expires_in_days=2)
     assert t.rpc.sent == []
@@ -436,7 +567,12 @@ async def test_set_agent_narrower_now_wider_queued() -> None:
     r = await m.set_agent(AGENT.address, permissions=["buy"])
     assert sent(t.rpc) == (REGISTRY.lower(), "setAgent", [ACCOUNT, AGENT.address, 1_800_000_000, 1])
     assert (r.outcome, r.queued_id, r.eta) == ("immediate", None, None)
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agent", lambda a: {"active": a[1] == AGENT.address, "expiresAt": 1_800_000_000, "permissions": 1})
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "agent",
+        lambda a: {"active": a[1] == AGENT.address, "expiresAt": 1_800_000_000, "permissions": 1},
+    )
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "setAgent", 9)
     t.rpc.receipt_logs = [registry_log("AgentQueued", id=9, eta=ETA)]
     w = await m.set_agent(AGENT.address, permissions=["buy", "swap"])
@@ -451,7 +587,14 @@ async def test_rotate_revokes_now_and_queues_the_new_key() -> None:
     t.rpc.receipt_logs = [registry_log("AgentQueued", id=11, eta=ETA)]
     r = await m.rotate_agent(AGENT.address, AGENT2, expires_in_days=30)
     to, name, args = sent(t.rpc)
-    assert (to, name, args[0], args[1], args[2], args[4]) == (REGISTRY.lower(), "rotateAgent", ACCOUNT, AGENT.address, AGENT2, 1 | 4 | 8 | 16)
+    assert (to, name, args[0], args[1], args[2], args[4]) == (
+        REGISTRY.lower(),
+        "rotateAgent",
+        ACCOUNT,
+        AGENT.address,
+        AGENT2,
+        1 | 4 | 8 | 16,
+    )
     assert (r.outcome, r.queued_id) == ("mixed", 11)
 
 
@@ -480,7 +623,11 @@ async def test_increase_delay_raise_lower_equal() -> None:
     t.rpc.receipt_logs = [registry_log("IncreaseDelayQueued", id=12, delay=60, eta=ETA)]
     down = await m.set_increase_delay(60)
     assert sent(t.rpc, 1)[2] == [ACCOUNT, 60]
-    assert (down.outcome, down.queued_id, down.eta) == ("queued", 12, ETA) and "Lowering the delay" in " ".join(down.warnings)
+    assert (down.outcome, down.queued_id, down.eta) == (
+        "queued",
+        12,
+        ETA,
+    ) and "Lowering the delay" in " ".join(down.warnings)
     assert (await m.set_increase_delay(3_600)).outcome == "none"
     assert len(t.rpc.sent) == 2
 
@@ -493,7 +640,9 @@ async def test_transfer_ownership_queues_and_warns() -> None:
     assert sent(t.rpc) == (REGISTRY.lower(), "transferOwnership", [ACCOUNT, NEW_OWNER])
     assert (r.outcome, r.queued_id) == ("queued", 8)
     joined = " ".join(r.warnings)
-    assert "acceptOwnership" in joined and "retires the new owner as an agent" in joined and t.warnings
+    assert (
+        "acceptOwnership" in joined and "retires the new owner as an agent" in joined and t.warnings
+    )
 
 
 async def test_token_allowlist_rules() -> None:
@@ -508,7 +657,9 @@ async def test_token_allowlist_rules() -> None:
     assert missing.value.code == "MISSING_EVENT"
     assert sent(t.rpc) == (REGISTRY.lower(), "setTokenAllowed", [ACCOUNT, TOKEN, True])
     t.rpc.receipt_logs = [registry_log("TokenAllowed", account=A(0x99), token=TOKEN, allowed=True)]
-    with pytest.raises(MercurifiError, match="no \\*Queued event"):  # another account's event proves nothing
+    with pytest.raises(
+        MercurifiError, match="no \\*Queued event"
+    ):  # another account's event proves nothing
         await m.set_token_allowed(TOKEN, True)
     t.rpc.receipt_logs = [registry_log("TokenAllowed", token=TOKEN, allowed=True)]
     r = await m.set_token_allowed(TOKEN, True)  # id 0, but the receipt shows it applied
@@ -525,7 +676,10 @@ async def test_execute_queued_outcome_comes_from_the_receipt() -> None:
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "executeQueued", None)
     t.rpc.receipt_logs = [registry_log("QueuedExecuted", id=3)]
     ok = await m.execute_queued(3)
-    assert sent(t.rpc) == (REGISTRY.lower(), "executeQueued", [ACCOUNT, 3]) and ok.outcome == "immediate"
+    assert (
+        sent(t.rpc) == (REGISTRY.lower(), "executeQueued", [ACCOUNT, 3])
+        and ok.outcome == "immediate"
+    )
     t.rpc.receipt_logs = [registry_log("QueuedCancelled", id=3)]
     voided = await m.execute_queued(3)
     assert voided.outcome == "cancelled" and "nothing was applied" in voided.summary
@@ -537,8 +691,14 @@ async def test_execute_queued_outcome_comes_from_the_receipt() -> None:
 
 async def test_execute_queued_refuses_owner_items_and_unknown_ids_locally() -> None:
     t, m = await mgr()
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "queued",
-               lambda a: (6, 1_700_000_000, 1, 1, owner_payload(NEW_OWNER)) if a[1] == 8 else (0, 0, 0, 0, "0x"))
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "queued",
+        lambda a: (6, 1_700_000_000, 1, 1, owner_payload(NEW_OWNER))
+        if a[1] == 8
+        else (0, 0, 0, 0, "0x"),
+    )
     with pytest.raises(InvalidInputError, match="acceptOwnership"):
         await m.execute_queued(8)
     with pytest.raises(InvalidInputError, match="no queued item 99"):
@@ -558,7 +718,11 @@ async def test_accept_ownership_on_the_registry() -> None:
 async def test_accept_ownership_needs_the_event_for_this_id_and_account() -> None:
     t = await setup()
     t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "acceptOwnership", None)
-    for logs in ([], [registry_log("QueuedExecuted", id=4)], [registry_log("QueuedExecuted", id=3, account=A(0x88))]):
+    for logs in (
+        [],
+        [registry_log("QueuedExecuted", id=4)],
+        [registry_log("QueuedExecuted", id=3, account=A(0x88))],
+    ):
         t.rpc.receipt_logs = logs
         with pytest.raises(MercurifiError) as exc:
             await t.owner.accept_ownership(ACCOUNT, 3)
@@ -571,11 +735,17 @@ async def test_accept_ownership_warns_about_retirement_only_for_an_active_agent(
     t.rpc.receipt_logs = [registry_log("QueuedExecuted", id=3)]
     as_agent = await t.mf.owner(AGENT).accept_ownership(ACCOUNT, 3)
     assert "retires it as an agent" in " ".join(as_agent.warnings)
-    t.rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agent", {"active": False, "expiresAt": 0, "permissions": 0})
+    t.rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "agent",
+        {"active": False, "expiresAt": 0, "permissions": 0},
+    )
     assert (await t.mf.owner(AGENT).accept_ownership(ACCOUNT, 3)).warnings == []
 
 
 # --- money in and out -----------------------------------------------------------------------------------------------
+
 
 async def test_deposit_and_fund_gas_send_native_value() -> None:
     t = await setup()
@@ -625,8 +795,14 @@ async def test_withdraw_has_no_recipient_parameter() -> None:
 async def test_withdraw_rejects_mixed_or_missing_amount_fields() -> None:
     t, m = await mgr()
     bad: list[dict[str, Any]] = [
-        {"usdc": "1", "all": True}, {"usdc": "1", "usdc6": 1}, {"usdc": "1", "amount": "1"}, {"amount": "1"},
-        {"token": TOKEN, "usdc": "1"}, {}, {"token": TOKEN, "amount": "1", "amount_wei": 1}, {"amount_wei": 1},
+        {"usdc": "1", "all": True},
+        {"usdc": "1", "usdc6": 1},
+        {"usdc": "1", "amount": "1"},
+        {"amount": "1"},
+        {"token": TOKEN, "usdc": "1"},
+        {},
+        {"token": TOKEN, "amount": "1", "amount_wei": 1},
+        {"amount_wei": 1},
     ]
     for kwargs in bad:
         with pytest.raises(InvalidInputError):
@@ -730,9 +906,21 @@ async def test_reads_and_payload_decoding() -> None:
     t = await setup()
     agents, rpc = t.mf.require_agents(), t.mf.rpc
     state = await read_account_state(rpc, agents, ACCOUNT)
-    assert (state.owner, state.registry, state.increase_delay, state.epoch, state.write_seq) == (OWNER.address, REGISTRY, 3_600, 1, 1)
-    assert state.balance_wei == 1_000 * WAD and state.policy == DEFAULT_POLICY and not state.factory_paused
-    assert await is_agent_account(rpc, agents, ACCOUNT) and not await is_agent_account(rpc, agents, A(0x42))
+    assert (state.owner, state.registry, state.increase_delay, state.epoch, state.write_seq) == (
+        OWNER.address,
+        REGISTRY,
+        3_600,
+        1,
+        1,
+    )
+    assert (
+        state.balance_wei == 1_000 * WAD
+        and state.policy == DEFAULT_POLICY
+        and not state.factory_paused
+    )
+    assert await is_agent_account(rpc, agents, ACCOUNT) and not await is_agent_account(
+        rpc, agents, A(0x42)
+    )
     assert (await read_ceilings(rpc, agents)).max_trade_usdc == 1_000_000_000
     info = await read_agent(rpc, agents, ACCOUNT, AGENT.address, 1_700_000_000)
     assert info.active and not info.retired and not info.expired and info.permission_bits == 63

@@ -10,11 +10,30 @@ from mercurifi.policy import DEFAULT_POLICY
 
 from .helpers import ACCOUNT, TOKEN, WAD, A
 
-EXP: dict[str, Any] = {"chain_id": 5042002, "account": ACCOUNT, "function_name": "buy", "exact": {"token": TOKEN, "usdcIn": 25_000_000},
-                       "at_least": {"minTokensOut": 980 * WAD}, "deadline": (900, 1_100)}
-LAUNCH_EXACT = {"name": "Robo", "symbol": "ROBO", "metadataURI": "https://x.example/m/ab.json", "salt": "0x" + "11" * 32,
-                "expectedConfigHash": "0x" + "22" * 32, "initialBuyUsdc": 0, "minTokensOut": 0}
-LAUNCH_EXP: dict[str, Any] = {"chain_id": 5042002, "account": ACCOUNT, "function_name": "launch", "exact": LAUNCH_EXACT, "deadline": (900, 1_100)}
+EXP: dict[str, Any] = {
+    "chain_id": 5042002,
+    "account": ACCOUNT,
+    "function_name": "buy",
+    "exact": {"token": TOKEN, "usdcIn": 25_000_000},
+    "at_least": {"minTokensOut": 980 * WAD},
+    "deadline": (900, 1_100),
+}
+LAUNCH_EXACT = {
+    "name": "Robo",
+    "symbol": "ROBO",
+    "metadataURI": "https://x.example/m/ab.json",
+    "salt": "0x" + "11" * 32,
+    "expectedConfigHash": "0x" + "22" * 32,
+    "initialBuyUsdc": 0,
+    "minTokensOut": 0,
+}
+LAUNCH_EXP: dict[str, Any] = {
+    "chain_id": 5042002,
+    "account": ACCOUNT,
+    "function_name": "launch",
+    "exact": LAUNCH_EXACT,
+    "deadline": (900, 1_100),
+}
 
 
 def buy(min_out: int = 980 * WAD, deadline: int = 1_000, token: str = TOKEN) -> str:
@@ -22,14 +41,30 @@ def buy(min_out: int = 980 * WAD, deadline: int = 1_000, token: str = TOKEN) -> 
 
 
 def launch(deadline: int, **over: Any) -> str:
-    return AGENT_ACCOUNT.encode("launch", {
-        "name": "Robo", "symbol": "ROBO", "metadataURI": "https://x.example/m/ab.json", "salt": "0x" + "11" * 32,
-        "expectedConfigHash": "0x" + "22" * 32, "initialBuyUsdc": 0, "minTokensOut": 0, "deadline": deadline, **over,
-    })
+    return AGENT_ACCOUNT.encode(
+        "launch",
+        {
+            "name": "Robo",
+            "symbol": "ROBO",
+            "metadataURI": "https://x.example/m/ab.json",
+            "salt": "0x" + "11" * 32,
+            "expectedConfigHash": "0x" + "22" * 32,
+            "initialBuyUsdc": 0,
+            "minTokensOut": 0,
+            "deadline": deadline,
+            **over,
+        },
+    )
 
 
 def built(data: str | None = None, **over: object) -> dict[str, object]:
-    return {"chainId": 5042002, "to": ACCOUNT, "data": buy() if data is None else data, "value": "0", **over}
+    return {
+        "chainId": 5042002,
+        "to": ACCOUNT,
+        "data": buy() if data is None else data,
+        "value": "0",
+        **over,
+    }
 
 
 def verify(b: dict[str, object], **over: Any) -> tuple[str, dict[str, Any]]:
@@ -48,15 +83,31 @@ def test_flattens_the_launch_request_and_checks_its_deadline() -> None:
         verify_built_tx(built(launch(5_000)), **LAUNCH_EXP)
 
 
-@pytest.mark.parametrize(("bad", "pattern"), [
-    (built(to=A(0xCC)), "target"), (built(chainId=5042), "chain"), (built(chainId=True), "chain"), (built(value="1"), "value"), (built(value=0), "value"),
-    (built(value="-1"), "value"), (built(selector="0xdeadbeef"), "selector"), (built(selector=None), "selector"),
-    (built(buy(979 * WAD)), "minTokensOut"), (built(buy(980 * WAD, 5_000)), "deadline"),
-    (built(buy() + "deadbeef"), "trailing"),
-    (built(AGENT_ACCOUNT.encode("withdraw", TOKEN, 1)), "not an agent trade function"),
-    (built(AGENT_POLICY_REGISTRY.encode("setPolicy", ACCOUNT, DEFAULT_POLICY.to_abi())), "does not decode against AgentAccount"),
-    (built("0x12"), "not hex"), (built("nothex"), "not hex"), ({**built(), "data": 5}, "not a string"), (built(buy()[:-2]), "trailing"),
-])
+@pytest.mark.parametrize(
+    ("bad", "pattern"),
+    [
+        (built(to=A(0xCC)), "target"),
+        (built(chainId=5042), "chain"),
+        (built(chainId=True), "chain"),
+        (built(value="1"), "value"),
+        (built(value=0), "value"),
+        (built(value="-1"), "value"),
+        (built(selector="0xdeadbeef"), "selector"),
+        (built(selector=None), "selector"),
+        (built(buy(979 * WAD)), "minTokensOut"),
+        (built(buy(980 * WAD, 5_000)), "deadline"),
+        (built(buy() + "deadbeef"), "trailing"),
+        (built(AGENT_ACCOUNT.encode("withdraw", TOKEN, 1)), "not an agent trade function"),
+        (
+            built(AGENT_POLICY_REGISTRY.encode("setPolicy", ACCOUNT, DEFAULT_POLICY.to_abi())),
+            "does not decode against AgentAccount",
+        ),
+        (built("0x12"), "not hex"),
+        (built("nothex"), "not hex"),
+        ({**built(), "data": 5}, "not a string"),
+        (built(buy()[:-2]), "trailing"),
+    ],
+)
 def test_refuses(bad: dict[str, object], pattern: str) -> None:
     with pytest.raises(BuildMismatchError, match=pattern):
         verify(bad)
@@ -70,13 +121,30 @@ def test_refuses_a_non_mapping_built_transaction() -> None:
 def test_refuses_a_deadline_on_a_function_that_takes_none() -> None:
     claim = AGENT_ACCOUNT.encode("claimFees")
     with pytest.raises(BuildMismatchError, match="no deadline"):
-        verify_built_tx(built(claim), chain_id=5042002, account=ACCOUNT, function_name="claimFees", deadline=(1, 2))
-    assert verify_built_tx(built(claim), chain_id=5042002, account=ACCOUNT, function_name="claimFees")[0] == "claimFees"
+        verify_built_tx(
+            built(claim),
+            chain_id=5042002,
+            account=ACCOUNT,
+            function_name="claimFees",
+            deadline=(1, 2),
+        )
+    assert (
+        verify_built_tx(built(claim), chain_id=5042002, account=ACCOUNT, function_name="claimFees")[
+            0
+        ]
+        == "claimFees"
+    )
 
 
 def test_compares_addresses_case_insensitively_and_refuses_names_the_function_lacks() -> None:
     mixed = "0x00000000000000000000000000000000000000Bb"
-    assert verify(built(to="0x00000000000000000000000000000000000000AA"), exact={"token": mixed, "usdcIn": 25_000_000})[0] == "buy"
+    assert (
+        verify(
+            built(to="0x00000000000000000000000000000000000000AA"),
+            exact={"token": mixed, "usdcIn": 25_000_000},
+        )[0]
+        == "buy"
+    )
     with pytest.raises(BuildMismatchError, match="no argument nope"):
         verify(built(), exact={**EXP["exact"], "nope": 1})
     with pytest.raises(BuildMismatchError, match="no numeric argument"):
@@ -91,15 +159,25 @@ def test_compares_addresses_case_insensitively_and_refuses_names_the_function_la
 def test_pins_the_launch_config_hash_and_compares_bytes32_case_insensitively() -> None:
     assert verify_built_tx(built(launch(1_000)), **LAUNCH_EXP)[0] == "launch"
     with pytest.raises(BuildMismatchError, match="expectedConfigHash"):
-        verify_built_tx(built(launch(1_000)), **{**LAUNCH_EXP, "exact": {**LAUNCH_EXACT, "expectedConfigHash": "0x" + "33" * 32}})
+        verify_built_tx(
+            built(launch(1_000)),
+            **{**LAUNCH_EXP, "exact": {**LAUNCH_EXACT, "expectedConfigHash": "0x" + "33" * 32}},
+        )
     upper = {**LAUNCH_EXACT, "expectedConfigHash": "0x" + "22" * 32, "salt": "0x" + "11" * 32}
-    assert verify_built_tx(built(launch(1_000)), **{**LAUNCH_EXP, "exact": {**upper, "expectedConfigHash": "0x" + "22".upper() * 32}})[0] == "launch"
+    assert (
+        verify_built_tx(
+            built(launch(1_000)),
+            **{**LAUNCH_EXP, "exact": {**upper, "expectedConfigHash": "0x" + "22".upper() * 32}},
+        )[0]
+        == "launch"
+    )
 
 
 def test_fails_closed_every_argument_must_be_covered_by_name() -> None:
     bare = {k: v for k, v in EXP.items() if k not in ("exact", "at_least")}
     cases: list[dict[str, Any]] = [
-        dict(bare), {**bare, "deadline": EXP["deadline"]},
+        dict(bare),
+        {**bare, "deadline": EXP["deadline"]},
         {**EXP, "exact": {"usdcIn": 25_000_000}},  # token uncovered
         {**EXP, "at_least": None},  # minTokensOut uncovered
         {**EXP, "deadline": None},  # deadline uncovered
@@ -132,8 +210,15 @@ def test_refuses_hostile_buys() -> None:
 def test_covers_swap_exact_in_flipped_buy_token_and_sweep_to_owner() -> None:
     def swap(buy_token: bool) -> str:
         return AGENT_ACCOUNT.encode("swapExactIn", TOKEN, buy_token, 5, 4, 1_000)
-    e: dict[str, Any] = {"chain_id": 5042002, "account": ACCOUNT, "function_name": "swapExactIn", "exact": {"token": TOKEN, "buyToken": True, "amountIn": 5},
-                         "at_least": {"minAmountOut": 4}, "deadline": EXP["deadline"]}
+
+    e: dict[str, Any] = {
+        "chain_id": 5042002,
+        "account": ACCOUNT,
+        "function_name": "swapExactIn",
+        "exact": {"token": TOKEN, "buyToken": True, "amountIn": 5},
+        "at_least": {"minAmountOut": 4},
+        "deadline": EXP["deadline"],
+    }
     assert verify_built_tx(built(swap(True)), **e)[0] == "swapExactIn"
     with pytest.raises(BuildMismatchError, match="buyToken"):
         verify_built_tx(built(swap(False)), **e)
@@ -143,7 +228,12 @@ def test_covers_swap_exact_in_flipped_buy_token_and_sweep_to_owner() -> None:
     with pytest.raises(BuildMismatchError):
         verify_built_tx(built(swap(True)), **{**e, "exact": {**e["exact"], "buyToken": 1}})
     sweep = AGENT_ACCOUNT.encode("sweepToOwner", TOKEN, 7)
-    w: dict[str, Any] = {"chain_id": 5042002, "account": ACCOUNT, "function_name": "sweepToOwner", "exact": {"token": TOKEN, "amount": 7}}
+    w: dict[str, Any] = {
+        "chain_id": 5042002,
+        "account": ACCOUNT,
+        "function_name": "sweepToOwner",
+        "exact": {"token": TOKEN, "amount": 7},
+    }
     assert verify_built_tx(built(sweep), **w)[0] == "sweepToOwner"
     with pytest.raises(BuildMismatchError, match="amount of sweepToOwner"):
         verify_built_tx(built(sweep), **{**w, "exact": {"token": TOKEN}})
@@ -158,8 +248,13 @@ def test_requires_all_eight_launch_fields() -> None:
             verify_built_tx(built(launch(1_000)), **{**LAUNCH_EXP, "exact": rest})
     with pytest.raises(BuildMismatchError, match="deadline of launch is not covered"):
         verify_built_tx(built(launch(1_000)), **{**LAUNCH_EXP, "deadline": None})
-    for k, v in (("metadataURI", "https://evil.example/x"), ("salt", "0x" + "99" * 32), ("initialBuyUsdc", 5), ("minTokensOut", 1),
-                 ("expectedConfigHash", "0x" + "44" * 32)):
+    for k, v in (
+        ("metadataURI", "https://evil.example/x"),
+        ("salt", "0x" + "99" * 32),
+        ("initialBuyUsdc", 5),
+        ("minTokensOut", 1),
+        ("expectedConfigHash", "0x" + "44" * 32),
+    ):
         with pytest.raises(BuildMismatchError, match=k):
             verify_built_tx(built(launch(1_000)), **{**LAUNCH_EXP, "exact": {**LAUNCH_EXACT, k: v}})
     with pytest.raises(BuildMismatchError, match="metadataURI"):
@@ -186,7 +281,24 @@ def test_rejects_a_non_int_or_negative_at_least_value(bad: object) -> None:
         verify(built(), at_least={"minTokensOut": bad})
 
 
-@pytest.mark.parametrize("bad", ["", " 25000000", "25000000 ", "-1", "0x10", "abc", "٢٥", "1" * 79, False, [], None, 25_000_000.0, 1.5])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        " 25000000",
+        "25000000 ",
+        "-1",
+        "0x10",
+        "abc",
+        "٢٥",
+        "1" * 79,
+        False,
+        [],
+        None,
+        25_000_000.0,
+        1.5,
+    ],
+)
 def test_rejects_a_bad_numeric_exact_value(bad: object) -> None:
     with pytest.raises(InvalidInputError):
         verify(built(), exact={"token": TOKEN, "usdcIn": bad})
@@ -212,6 +324,7 @@ def test_reads_each_expectation_value_once() -> None:
 
         def __len__(self) -> int:
             return 1
+
     liar = Liar()
     # a one-shot lying mapping is read once during the copy: validation and comparison see the same value
     assert verify_built_tx(built(), **{**EXP, "exact": _Merged(liar)})[0] == "buy"

@@ -17,23 +17,50 @@ from mercurifi.policy import (
     validate_policy,
 )
 
-V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "policy.json").read_text())
+V = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "policy.json").read_text()
+)
 SNAKE = {camel: snake for snake, camel in ABI_NAMES.items()}
-CEILINGS = ChainPolicy(1_000_000_000, 10_000_000_000, 2_000_000_000, 10_000_000_000, 5_000, 20, 2_000, 9_900, 0, 600, False)
+CEILINGS = ChainPolicy(
+    1_000_000_000,
+    10_000_000_000,
+    2_000_000_000,
+    10_000_000_000,
+    5_000,
+    20,
+    2_000,
+    9_900,
+    0,
+    600,
+    False,
+)
 
 
 def test_defaults_match_spec() -> None:
     assert DEFAULT_POLICY.to_abi() == {
-        "maxTradeUsdc": 100_000_000, "periodSpendCap": 500_000_000, "perTokenPeriodCap": 100_000_000, "periodSellCap": 500_000_000,
-        "maxActionsPerPeriod": 500, "launchesPerPeriod": 3, "maxPriceImpactBps": 300, "maxSnipeBps": 0,
-        "minTokenAgeBlocks": 0, "maxDeadlineSeconds": 120, "allowlistOnly": False,
+        "maxTradeUsdc": 100_000_000,
+        "periodSpendCap": 500_000_000,
+        "perTokenPeriodCap": 100_000_000,
+        "periodSellCap": 500_000_000,
+        "maxActionsPerPeriod": 500,
+        "launchesPerPeriod": 3,
+        "maxPriceImpactBps": 300,
+        "maxSnipeBps": 0,
+        "minTokenAgeBlocks": 0,
+        "maxDeadlineSeconds": 120,
+        "allowlistOnly": False,
     }
 
 
 @pytest.mark.parametrize("case", V["direction"])
 def test_direction(case: dict[str, Any]) -> None:
     field = SNAKE[case["field"]]
-    conv = (lambda x: int(x)) if isinstance(getattr(DEFAULT_POLICY, field), int) and not isinstance(getattr(DEFAULT_POLICY, field), bool) else (lambda x: x)
+    conv = (
+        (lambda x: int(x))
+        if isinstance(getattr(DEFAULT_POLICY, field), int)
+        and not isinstance(getattr(DEFAULT_POLICY, field), bool)
+        else (lambda x: x)
+    )
     patch_current: dict[str, Any] = {field: conv(case["current"])}
     patch_next: dict[str, Any] = {field: conv(case["next"])}
     current = replace(DEFAULT_POLICY, **patch_current)
@@ -54,8 +81,15 @@ def test_merge_and_ceilings() -> None:
 
 
 def test_preview_mixed() -> None:
-    pv = preview_policy_change(DEFAULT_POLICY, replace(DEFAULT_POLICY, max_trade_usdc=50_000_000, period_spend_cap=900_000_000))
-    assert (pv.outcome, pv.immediate, pv.queued) == ("mixed", ("max_trade_usdc",), ("period_spend_cap",))
+    pv = preview_policy_change(
+        DEFAULT_POLICY,
+        replace(DEFAULT_POLICY, max_trade_usdc=50_000_000, period_spend_cap=900_000_000),
+    )
+    assert (pv.outcome, pv.immediate, pv.queued) == (
+        "mixed",
+        ("max_trade_usdc",),
+        ("period_spend_cap",),
+    )
     assert pv.immediate_policy.period_spend_cap == 500_000_000
     assert [c for c in pv.changes if c.field == "period_spend_cap"][0].next == "900"
 
@@ -74,20 +108,38 @@ def test_ceiling_floor_for_min_token_age() -> None:
         validate_policy(replace(DEFAULT_POLICY, min_token_age_blocks=5), ceil)
     validate_policy(replace(DEFAULT_POLICY, min_token_age_blocks=10), ceil)
     validate_policy(replace(DEFAULT_POLICY, min_token_age_blocks=50), ceil)
-    validate_policy(replace(DEFAULT_POLICY, min_token_age_blocks=10, allowlist_only=True), replace(ceil, allowlist_only=False))
+    validate_policy(
+        replace(DEFAULT_POLICY, min_token_age_blocks=10, allowlist_only=True),
+        replace(ceil, allowlist_only=False),
+    )
 
 
 def test_shared_ranges_and_order() -> None:
-    for kw in ({"launches_per_period": 0x1_0000}, {"max_actions_per_period": 2**32}, {"max_trade_usdc": 2**64}, {"allowlist_only": 1}):
+    for kw in (
+        {"launches_per_period": 0x1_0000},
+        {"max_actions_per_period": 2**32},
+        {"max_trade_usdc": 2**64},
+        {"allowlist_only": 1},
+    ):
         with pytest.raises(InvalidInputError):
             validate_policy(replace(DEFAULT_POLICY, **kw))  # type: ignore[arg-type]
     with pytest.raises(InvalidInputError, match="max_price_impact_bps"):
-        validate_policy(replace(DEFAULT_POLICY, max_price_impact_bps=10_001, max_snipe_bps=10_001, max_deadline_seconds=0))
+        validate_policy(
+            replace(
+                DEFAULT_POLICY,
+                max_price_impact_bps=10_001,
+                max_snipe_bps=10_001,
+                max_deadline_seconds=0,
+            )
+        )
     with pytest.raises(InvalidInputError, match="max_snipe_bps"):
         validate_policy(replace(DEFAULT_POLICY, max_snipe_bps=10_001, max_deadline_seconds=0))
     with pytest.raises(InvalidInputError):
         merge_policy(DEFAULT_POLICY, {"max_trade_usdc": "18446744073709.551616"})
-    assert merge_policy(DEFAULT_POLICY, {"max_trade_usdc": "18446744073709.551615"}).max_trade_usdc == 2**64 - 1
+    assert (
+        merge_policy(DEFAULT_POLICY, {"max_trade_usdc": "18446744073709.551615"}).max_trade_usdc
+        == 2**64 - 1
+    )
     for bad in (True, 1.0, 2**32):
         with pytest.raises(InvalidInputError):
             merge_policy(DEFAULT_POLICY, {"max_actions_per_period": bad})
@@ -129,4 +181,8 @@ def test_decode_rejects_bool_and_float() -> None:
 
 def test_preview_sequences_are_tuples() -> None:
     pv = preview_policy_change(DEFAULT_POLICY, replace(DEFAULT_POLICY, max_trade_usdc=1))
-    assert isinstance(pv.changes, tuple) and isinstance(pv.immediate, tuple) and isinstance(pv.queued, tuple)
+    assert (
+        isinstance(pv.changes, tuple)
+        and isinstance(pv.immediate, tuple)
+        and isinstance(pv.queued, tuple)
+    )

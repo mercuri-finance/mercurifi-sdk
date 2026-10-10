@@ -29,7 +29,17 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent
 CONSTRAINTS = PKG / "build-constraints.txt"
-NAMES = ["AsyncClient", "Client", "create_client", "local_key", "generate_agent_key", "decode_revert", "verify_built_tx", "open_stream", "wrap_untrusted"]
+NAMES = [
+    "AsyncClient",
+    "Client",
+    "create_client",
+    "local_key",
+    "generate_agent_key",
+    "decode_revert",
+    "verify_built_tx",
+    "open_stream",
+    "wrap_untrusted",
+]
 # The dist-info files the real hatchling wheel holds, and nothing else: no entry_points.txt (console scripts or plugin
 # hooks), no signature files, no other metadata a tool could act on. licenses/** carries the LICENSE file.
 DIST_INFO_FILES = ("METADATA", "WHEEL", "RECORD")
@@ -51,7 +61,9 @@ def project_version(pyproject: Path) -> str:
         import tomllib
 
         return str(tomllib.loads(text)["project"]["version"])
-    except ModuleNotFoundError:  # Python 3.10 without tomli: the version line is a plain string in [project]
+    except (
+        ModuleNotFoundError
+    ):  # Python 3.10 without tomli: the version line is a plain string in [project]
         m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
         if m is None:
             sys.exit("no project version in pyproject.toml")
@@ -88,13 +100,22 @@ def check_wheel(whl: Path, version: str) -> list[str]:
             if n.startswith("/") or "\\" in n or ".." in parts:
                 problems.append(f"unsafe path: {n}")
             elif n.endswith(".pth"):
-                problems.append(f".pth files run code at interpreter start-up and are not allowed: {n}")
+                problems.append(
+                    f".pth files run code at interpreter start-up and are not allowed: {n}"
+                )
             elif parts[0].endswith(".data"):
-                problems.append(f"*.data/ entries install outside the package and are not allowed: {n}")
+                problems.append(
+                    f"*.data/ entries install outside the package and are not allowed: {n}"
+                )
             elif parts[0] not in ("mercurifi", dist) or len(parts) < 2:
                 problems.append(f"only mercurifi/** and {dist}/** are allowed: {n}")
-            elif parts[0] == dist and not ((len(parts) == 2 and parts[1] in DIST_INFO_FILES) or (len(parts) > 2 and parts[1] == "licenses")):
-                problems.append(f"{dist}/ may hold only {', '.join(DIST_INFO_FILES)} and licenses/**: {n}")
+            elif parts[0] == dist and not (
+                (len(parts) == 2 and parts[1] in DIST_INFO_FILES)
+                or (len(parts) > 2 and parts[1] == "licenses")
+            ):
+                problems.append(
+                    f"{dist}/ may hold only {', '.join(DIST_INFO_FILES)} and licenses/**: {n}"
+                )
         unlisted = sorted(set(names) - set(listed))
         missing = sorted(set(listed) - set(names))
         if unlisted:
@@ -105,14 +126,19 @@ def check_wheel(whl: Path, version: str) -> list[str]:
             if path == f"{dist}/RECORD" or path not in names:
                 continue
             data = z.read(path)
-            want = "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+            want = (
+                "sha256="
+                + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+            )
             if digest != want or size != str(len(data)):
                 problems.append(f"RECORD hash or size does not match {path}")
         if f"{dist}/METADATA" in names:
             meta = z.read(f"{dist}/METADATA").decode()
             m = re.search(r"^Version: (.+)$", meta, re.M)
             if m is None or m.group(1).strip() != version:
-                problems.append(f"METADATA version is {m.group(1).strip() if m else 'missing'}, expected {version}")
+                problems.append(
+                    f"METADATA version is {m.group(1).strip() if m else 'missing'}, expected {version}"
+                )
     return problems
 
 
@@ -145,7 +171,21 @@ def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
 def build(src: Path, out: Path, offline: list[str], only_wheel: bool) -> None:
     # Build-backend dependencies (hatchling and its tree) are pinned with hashes; uv refuses anything else.
     kind = ["--wheel"] if only_wheel else []
-    run(["uv", "build", *kind, *offline, "--build-constraints", str(CONSTRAINTS), "--require-hashes", "--out-dir", str(out), str(src)], cwd=PKG)
+    run(
+        [
+            "uv",
+            "build",
+            *kind,
+            *offline,
+            "--build-constraints",
+            str(CONSTRAINTS),
+            "--require-hashes",
+            "--out-dir",
+            str(out),
+            str(src),
+        ],
+        cwd=PKG,
+    )
 
 
 def one(paths: list[Path], what: str) -> Path:
@@ -155,8 +195,12 @@ def one(paths: list[Path], what: str) -> Path:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("wheel", nargs="?", type=Path, help="the wheel to check (default: build one)")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "wheel", nargs="?", type=Path, help="the wheel to check (default: build one)"
+    )
     parser.add_argument("--sdist", type=Path, help="the sdist to check against the wheel")
     args = parser.parse_args(argv)
     offline = [] if online_from_env(os.environ) else ["--offline"]
@@ -167,7 +211,10 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit("--sdist needs a wheel")
             out = Path(tmp) / "dist"
             build(PKG, out, offline, only_wheel=False)
-            wheel, sdist = one(sorted(out.glob("mercurifi-*.whl")), "wheel"), one(sorted(out.glob("mercurifi-*.tar.gz")), "sdist")
+            wheel, sdist = (
+                one(sorted(out.glob("mercurifi-*.whl")), "wheel"),
+                one(sorted(out.glob("mercurifi-*.tar.gz")), "sdist"),
+            )
         else:
             wheel, sdist = args.wheel.resolve(), args.sdist.resolve() if args.sdist else None
         problems = check_wheel(wheel, version)
@@ -192,11 +239,41 @@ def main(argv: list[str] | None = None) -> None:
         # no editable project); then the wheel itself without re-resolving. The same interpreter as this script, so an
         # offline cache holds matching wheels.
         env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(venv)}
-        run(["uv", "sync", "--frozen", "--no-dev", "--no-install-project", "--quiet", *offline, "--python", sys.executable], cwd=PKG, env=env)
-        run(["uv", "pip", "install", "--quiet", *offline, "--python", str(py), "--no-deps", str(wheel)])
+        run(
+            [
+                "uv",
+                "sync",
+                "--frozen",
+                "--no-dev",
+                "--no-install-project",
+                "--quiet",
+                *offline,
+                "--python",
+                sys.executable,
+            ],
+            cwd=PKG,
+            env=env,
+        )
+        run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--quiet",
+                *offline,
+                "--python",
+                str(py),
+                "--no-deps",
+                str(wheel),
+            ]
+        )
         # -I: no PYTHONPATH, no user site, and the working directory is not put on sys.path.
         clean = {k: v for k, v in os.environ.items() if not k.startswith(("PYTHON", "UV_PROJECT"))}
-        print(run([str(py), "-I", "-c", check_import_code(version)], cwd=tmp, env=clean).stdout.strip())
+        print(
+            run(
+                [str(py), "-I", "-c", check_import_code(version)], cwd=tmp, env=clean
+            ).stdout.strip()
+        )
 
 
 if __name__ == "__main__":

@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, BONDING_CURVE, LAUNCH_FACTORY
+from mercurifi.abi import (
+    AGENT_ACCOUNT,
+    AGENT_ACCOUNT_FACTORY,
+    AGENT_POLICY_REGISTRY,
+    BONDING_CURVE,
+    LAUNCH_FACTORY,
+)
 from mercurifi.errors import MercurifiError
 from mercurifi.revert import (
     ERROR_MESSAGES,
@@ -19,14 +25,23 @@ from mercurifi.revert import (
 )
 from mercurifi.rpc import RpcError
 
-VECTORS: dict[str, Any] = json.loads((Path(__file__).parents[3] / "fixtures" / "vectors" / "revert.json").read_text("utf-8"))
-SAFEVIEW: dict[str, Any] = json.loads((Path(__file__).parents[3] / "fixtures" / "vectors" / "safeview.json").read_text("utf-8"))
+VECTORS: dict[str, Any] = json.loads(
+    (Path(__file__).parents[3] / "fixtures" / "vectors" / "revert.json").read_text("utf-8")
+)
+SAFEVIEW: dict[str, Any] = json.loads(
+    (Path(__file__).parents[3] / "fixtures" / "vectors" / "safeview.json").read_text("utf-8")
+)
 
 
 def _reason_data(text: str) -> str:
     body = text.encode("utf-8")
     padded = body + b"\x00" * (-len(body) % 32)
-    return "0x08c379a0" + (32).to_bytes(32, "big").hex() + len(body).to_bytes(32, "big").hex() + padded.hex()
+    return (
+        "0x08c379a0"
+        + (32).to_bytes(32, "big").hex()
+        + len(body).to_bytes(32, "big").hex()
+        + padded.hex()
+    )
 
 
 def _reason(text: str) -> str:
@@ -54,21 +69,36 @@ def test_account_and_registry_errors_of_one_trade_decode_alike() -> None:
 
 
 def test_names_policy_fields_and_shared_errors() -> None:
-    assert "maxTradeUsdc" in decode_revert(AGENT_POLICY_REGISTRY.encode_error("BetaCeiling", 0)).message
-    assert "maxDeadlineSeconds" in decode_revert(AGENT_POLICY_REGISTRY.encode_error("InvalidPolicy", 9)).message
+    assert (
+        "maxTradeUsdc"
+        in decode_revert(AGENT_POLICY_REGISTRY.encode_error("BetaCeiling", 0)).message
+    )
+    assert (
+        "maxDeadlineSeconds"
+        in decode_revert(AGENT_POLICY_REGISTRY.encode_error("InvalidPolicy", 9)).message
+    )
     # Same signature in the account and the registry: one selector, named by the first source.
     assert decode_revert(AGENT_POLICY_REGISTRY.encode_error("NotOwner")).source == "AgentAccount"
 
 
 def test_launch_errors_bubble() -> None:
     assert "slippage" in decode_revert(BONDING_CURVE.encode_error("Slippage")).message.lower()
-    assert "config changed" in decode_revert(LAUNCH_FACTORY.encode_error("ConfigChanged")).message.lower()
-    assert "1,800,000" in decode_revert(BONDING_CURVE.encode_error("InsufficientGasForGraduation")).message
+    assert (
+        "config changed"
+        in decode_revert(LAUNCH_FACTORY.encode_error("ConfigChanged")).message.lower()
+    )
+    assert (
+        "1,800,000"
+        in decode_revert(BONDING_CURVE.encode_error("InsufficientGasForGraduation")).message
+    )
 
 
 def test_standard_and_unknown() -> None:
     reason = "0x08c379a0" + "0" * 62 + "20" + "0" * 62 + "03" + "616263" + "0" * 58
-    assert decode_revert(reason).message == 'Reverted with a contract-supplied reason (untrusted text): "abc"'
+    assert (
+        decode_revert(reason).message
+        == 'Reverted with a contract-supplied reason (untrusted text): "abc"'
+    )
     assert decode_revert("0x").name == "EmptyRevert"
     assert decode_revert(None).name == "EmptyRevert"
     assert decode_revert("0xdeadbeef").name == "UnknownError"
@@ -78,7 +108,12 @@ def test_standard_and_unknown() -> None:
 
 
 def test_every_account_registry_and_factory_error_has_a_message() -> None:
-    names = {i["name"] for c in (AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY) for i in c.abi if i["type"] == "error"}
+    names = {
+        i["name"]
+        for c in (AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY)
+        for i in c.abi
+        if i["type"] == "error"
+    }
     assert sorted(n for n in names if n not in ERROR_MESSAGES) == []
 
 
@@ -94,11 +129,18 @@ def test_shared_error_vectors(vector: dict[str, str]) -> None:
     assert (d.name, d.source, d.message) == (vector["name"], vector["source"], vector["message"])
 
 
-@pytest.mark.parametrize("vector", VECTORS["probes"], ids=lambda v: v["data"][:24] + f"#{VECTORS['probes'].index(v)}")
+@pytest.mark.parametrize(
+    "vector", VECTORS["probes"], ids=lambda v: v["data"][:24] + f"#{VECTORS['probes'].index(v)}"
+)
 def test_shared_probe_vectors(vector: dict[str, Any]) -> None:
     d = decode_revert(vector["data"])
     assert (d.name, d.source, d.message, d.selector, d.data, [str(a) for a in d.args]) == (
-        vector["name"], vector["source"], vector["message"], vector["selector"], vector["out"], vector["args"],
+        vector["name"],
+        vector["source"],
+        vector["message"],
+        vector["selector"],
+        vector["out"],
+        vector["args"],
     )
 
 
@@ -157,10 +199,19 @@ def test_error_classes_carry_the_decoded_revert() -> None:
 
 
 def test_time_fields_print_like_javascript() -> None:
-    assert "1970-01-01T00:00:07.000Z" in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 7)).message
-    assert "2027-01-15T08:00:00.000Z" in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 1_800_000_000)).message
+    assert (
+        "1970-01-01T00:00:07.000Z"
+        in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 7)).message
+    )
+    assert (
+        "2027-01-15T08:00:00.000Z"
+        in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 1_800_000_000)).message
+    )
     # A far-future uint40 is outside Python's datetime range but not JavaScript's.
-    assert "+036812-" in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 2**40 - 1)).message
+    assert (
+        "+036812-"
+        in decode_revert(AGENT_ACCOUNT_FACTORY.encode_error("PauseCooldown", 2**40 - 1)).message
+    )
 
 
 def test_wraps_error_string_as_untrusted_text_without_newlines_or_urls() -> None:
@@ -185,13 +236,17 @@ def test_strips_format_characters_and_replaces_quotes() -> None:
 
 
 def test_redacts_urls_without_a_word_boundary_and_for_other_schemes() -> None:
-    assert "KEY1" not in _reason("seehttps://u:p@a.example/KEY1 end") and "u:p" not in _reason("seehttps://u:p@a.example/KEY1 end")
+    assert "KEY1" not in _reason("seehttps://u:p@a.example/KEY1 end") and "u:p" not in _reason(
+        "seehttps://u:p@a.example/KEY1 end"
+    )
     assert "KEY2" not in _reason("x:https://b.example/KEY2")
     assert "KEY3" not in _reason("ftp://c.example/KEY3")
     assert "KEY4" not in _reason("open data:text/html,KEY4 now")
     assert "KEY5" not in _reason("run javascript:alert(KEY5)")
     assert "KEY6" not in _reason("ht​tp://d.example/KEY6")
-    other = _reason("ipfs://cid/KEY7 file:///etc/KEY8 https:\\\\h.example\\KEY9 wss://w.example/KEY10")
+    other = _reason(
+        "ipfs://cid/KEY7 file:///etc/KEY8 https:\\\\h.example\\KEY9 wss://w.example/KEY10"
+    )
     assert not any(k in other for k in ("KEY7", "KEY8", "KEY9", "KEY10"))
     assert "metadata: fine" in _reason("metadata: fine")
 
@@ -227,7 +282,10 @@ def test_never_raises_on_malformed_input() -> None:
     d = decode_revert("0x08c379a0" + "00" * 10)
     assert d.name == "MalformedRevert" and "malformed Error(string)" in d.message
     # Known selector, truncated or hostile arguments: never an exception.
-    assert decode_revert(AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 5)[:20]).name == "UnknownError"
+    assert (
+        decode_revert(AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 5)[:20]).name
+        == "UnknownError"
+    )
     assert decode_revert("0x4e487b71").name == "UnknownError"
 
 

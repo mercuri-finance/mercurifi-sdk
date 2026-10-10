@@ -3,6 +3,7 @@
 Transport failures surface as MercurifiError("RPC_ERROR") naming the host only and dropping the cause, because httpx
 messages and tracebacks embed the full URL (often with a provider key in the path).
 """
+
 from __future__ import annotations
 
 import json
@@ -37,14 +38,20 @@ def _data_of(error: dict[str, Any]) -> str | None:
 
 class Rpc:
     def __init__(
-        self, url: str, *, transport: httpx.AsyncBaseTransport | None = None, timeout: float = 15.0,
+        self,
+        url: str,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        timeout: float = 15.0,
         max_response_bytes: int = MAX_RESPONSE_BYTES,
     ) -> None:
         install_log_redaction()
         self._max_bytes = max_response_bytes
         self._url = url
         self._host = redact_url(url)
-        self._http = httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False, trust_env=False)
+        self._http = httpx.AsyncClient(
+            transport=transport, timeout=timeout, follow_redirects=False, trust_env=False
+        )
         self._id = 0
 
     def __repr__(self) -> str:
@@ -59,7 +66,10 @@ class Rpc:
             raise self._fail(f"unexpected {what}") from None
 
     def _fail(self, reason: str) -> MercurifiError:
-        return MercurifiError(f"The RPC request to {self._host} failed: {redact_urls_in(first_line(reason))}", code="RPC_ERROR")
+        return MercurifiError(
+            f"The RPC request to {self._host} failed: {redact_urls_in(first_line(reason))}",
+            code="RPC_ERROR",
+        )
 
     async def request(self, method: str, params: list[Any]) -> Any:
         self._id += 1
@@ -83,7 +93,9 @@ class Rpc:
                             break
                         chunks.append(chunk)
                     raw = b"".join(chunks)
-        except Exception as exc:  # transport, decoding or anything else: the text may embed the URL, so redact it
+        except (
+            Exception
+        ) as exc:  # transport, decoding or anything else: the text may embed the URL, so redact it
             failure = f"{type(exc).__name__}: {exc}"
         # Raised outside the except block so the original exception (which embeds the URL) is not kept as context.
         if failure is not None:
@@ -108,7 +120,9 @@ class Rpc:
             if not isinstance(error, dict):
                 raise self._fail("malformed JSON-RPC error")
             code = error.get("code", 0)
-            raise RpcError(code if isinstance(code, int) else 0, str(error.get("message", "")), _data_of(error))
+            raise RpcError(
+                code if isinstance(code, int) else 0, str(error.get("message", "")), _data_of(error)
+            )
         if "result" not in body:
             raise self._fail("the response has neither result nor error")
         return body["result"]
@@ -128,7 +142,9 @@ class Rpc:
     async def latest_block(self) -> tuple[int, int]:
         """(number, timestamp) of the latest block; a malformed answer is an RPC_ERROR, never a KeyError or ValueError."""
         block = await self.get_block()
-        return self._int(block.get("number"), "block number"), self._int(block.get("timestamp"), "block timestamp")
+        return self._int(block.get("number"), "block number"), self._int(
+            block.get("timestamp"), "block timestamp"
+        )
 
     async def latest_timestamp(self) -> int:
         return self._int((await self.get_block()).get("timestamp"), "block timestamp")
@@ -140,7 +156,10 @@ class Rpc:
         return code
 
     async def get_balance(self, address: str, *, at: int | None = None) -> int:
-        return self._int(await self.request("eth_getBalance", [address, "latest" if at is None else hex(at)]), "balance")
+        return self._int(
+            await self.request("eth_getBalance", [address, "latest" if at is None else hex(at)]),
+            "balance",
+        )
 
     async def get_transaction_count(self, address: str, tag: str = "pending") -> int:
         return self._int(await self.request("eth_getTransactionCount", [address, tag]), "nonce")
@@ -156,7 +175,16 @@ class Rpc:
             tx["gas"] = hex(gas)
         return tx
 
-    async def call(self, to: str, data: str, *, from_: str | None = None, value: int = 0, gas: int | None = None, block: str | int = "latest") -> str:
+    async def call(
+        self,
+        to: str,
+        data: str,
+        *,
+        from_: str | None = None,
+        value: int = 0,
+        gas: int | None = None,
+        block: str | int = "latest",
+    ) -> str:
         tag = block if isinstance(block, str) else hex(block)
         result = await self.request("eth_call", [self._tx(to, data, from_, value, gas), tag])
         if not isinstance(result, str):
@@ -164,7 +192,10 @@ class Rpc:
         return result
 
     async def estimate_gas(self, to: str, data: str, *, from_: str, value: int = 0) -> int:
-        return self._int(await self.request("eth_estimateGas", [self._tx(to, data, from_, value, None)]), "gas estimate")
+        return self._int(
+            await self.request("eth_estimateGas", [self._tx(to, data, from_, value, None)]),
+            "gas estimate",
+        )
 
     async def max_priority_fee(self) -> int:
         return self._int(await self.request("eth_maxPriorityFeePerGas", []), "priority fee")
@@ -186,7 +217,11 @@ class Rpc:
     ) -> list[dict[str, Any]]:
         """eth_getLogs for one emitter; `topics` is positional, None a wildcard (the registry's events carry the
         account as topic 1, so one filter covers every queue event of one account)."""
-        f: dict[str, Any] = {"address": address, "fromBlock": hex(from_block), "toBlock": hex(to_block)}
+        f: dict[str, Any] = {
+            "address": address,
+            "fromBlock": hex(from_block),
+            "toBlock": hex(to_block),
+        }
         if topics is not None:
             f["topics"] = topics
         logs = await self.request("eth_getLogs", [f])
@@ -194,9 +229,13 @@ class Rpc:
             raise self._fail("unexpected logs result")
         return logs
 
-    async def read(self, contract: Contract, address: str, fn: str, *args: object, at: int | None = None) -> Any:
+    async def read(
+        self, contract: Contract, address: str, fn: str, *args: object, at: int | None = None
+    ) -> Any:
         """A view call; `at` pins it to a block number (default: latest)."""
-        data = await self.call(address, contract.encode(fn, *args), block="latest" if at is None else at)
+        data = await self.call(
+            address, contract.encode(fn, *args), block="latest" if at is None else at
+        )
         return contract.decode_output(fn, data)
 
     async def aclose(self) -> None:

@@ -1,5 +1,6 @@
 """The TypeScript integration tier records real Anvil receipts and revert data (fixtures/recorded, RECORD=1); Python
 decodes the same files and must reach exactly the values TypeScript recorded. Python never records: one recorder."""
+
 import json
 from pathlib import Path
 
@@ -11,8 +12,14 @@ from mercurifi.revert import decode_revert
 DIR = Path(__file__).resolve().parents[3] / "fixtures" / "recorded"
 FILES = sorted(DIR.glob("*.json"))
 EXPECTED_FILES = {
-    "fill-buy.json", "fill-launch.json", "fill-sell.json", "fill-sell-high-water.json",
-    "revert-launch-limit.json", "revert-missing-permission.json", "revert-snipe.json", "revert-stale.json",
+    "fill-buy.json",
+    "fill-launch.json",
+    "fill-sell.json",
+    "fill-sell-high-water.json",
+    "revert-launch-limit.json",
+    "revert-missing-permission.json",
+    "revert-snipe.json",
+    "revert-stale.json",
     "revert-trade-too-large.json",
 }
 REVERTS = [p for p in FILES if p.name.startswith("revert-")]
@@ -34,10 +41,17 @@ def test_decodes_exactly_as_typescript(path: Path) -> None:
             "effectiveGasPrice": int(r["receipt"]["effectiveGasPrice"]),
         }
         f = fill_from_receipt(receipt, r["account"], r["launchFactory"])
-        launched = None if f.launched is None else {"token": f.launched.token, "curve": f.launched.curve}
+        launched = (
+            None if f.launched is None else {"token": f.launched.token, "curve": f.launched.curve}
+        )
         got = {
-            "action": f.action, "token": f.token, "usdcSpent6": str(f.usdc_spent6), "usdcReceived6": str(f.usdc_received6),
-            "tokenDelta": str(f.token_delta), "basisValue6": str(f.basis_value6), "launched": launched,
+            "action": f.action,
+            "token": f.token,
+            "usdcSpent6": str(f.usdc_spent6),
+            "usdcReceived6": str(f.usdc_received6),
+            "tokenDelta": str(f.token_delta),
+            "basisValue6": str(f.basis_value6),
+            "launched": launched,
         }
         assert got == r["expected"]
         assert f.tx_hash == r["receipt"]["transactionHash"]

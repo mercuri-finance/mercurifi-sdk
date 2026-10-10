@@ -6,8 +6,24 @@ import pytest
 from eth_utils.address import to_checksum_address
 from eth_utils.crypto import keccak
 
-from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, AGENT_POLICY_REGISTRY, ALL, LAUNCH_FACTORY, REVERT_DECODER, REVERT_ORDER, UNIVERSAL_ROUTER, V4_QUOTER
-from mercurifi.codec import AbiDecodeError, AbiEncodeError, AbiUnknownSelectorError, Contract, ErrorDecoder
+from mercurifi.abi import (
+    AGENT_ACCOUNT,
+    AGENT_ACCOUNT_FACTORY,
+    AGENT_POLICY_REGISTRY,
+    ALL,
+    LAUNCH_FACTORY,
+    REVERT_DECODER,
+    REVERT_ORDER,
+    UNIVERSAL_ROUTER,
+    V4_QUOTER,
+)
+from mercurifi.codec import (
+    AbiDecodeError,
+    AbiEncodeError,
+    AbiUnknownSelectorError,
+    Contract,
+    ErrorDecoder,
+)
 from mercurifi.policy import DEFAULT_POLICY
 
 TOKEN = to_checksum_address("0x" + "00" * 19 + "bb")
@@ -17,13 +33,25 @@ AGENT = to_checksum_address("0x" + "00" * 19 + "cc")
 
 def test_all_follows_the_ts_sources_order() -> None:
     assert [c.name for c in ALL] == [
-        "AgentAccount", "AgentPolicyRegistry", "AgentAccountFactory", "BondingCurve", "LaunchFactory", "FeeManager",
-        "GraduationManager", "LaunchHook", "LaunchToken", "V4Quoter", "UniversalRouter",
+        "AgentAccount",
+        "AgentPolicyRegistry",
+        "AgentAccountFactory",
+        "BondingCurve",
+        "LaunchFactory",
+        "FeeManager",
+        "GraduationManager",
+        "LaunchHook",
+        "LaunchToken",
+        "V4Quoter",
+        "UniversalRouter",
     ]
 
 
 def test_selector_is_keccak_of_canonical_signature() -> None:
-    assert AGENT_ACCOUNT.selector("buy") == "0x" + keccak(text="buy(address,uint256,uint256,uint256)")[:4].hex()
+    assert (
+        AGENT_ACCOUNT.selector("buy")
+        == "0x" + keccak(text="buy(address,uint256,uint256,uint256)")[:4].hex()
+    )
 
 
 def test_round_trips_registry_calls_with_structs() -> None:
@@ -39,53 +67,105 @@ def test_round_trips_registry_calls_with_structs() -> None:
 
 def test_round_trips_account_calls() -> None:
     buy = AGENT_ACCOUNT.encode("buy", TOKEN, 25_000_000, 1, 2)
-    assert AGENT_ACCOUNT.decode_input(buy) == ("buy", {"token": TOKEN, "usdcIn": 25_000_000, "minTokensOut": 1, "deadline": 2})
+    assert AGENT_ACCOUNT.decode_input(buy) == (
+        "buy",
+        {"token": TOKEN, "usdcIn": 25_000_000, "minTokensOut": 1, "deadline": 2},
+    )
 
 
 def test_round_trips_the_eight_field_launch_request() -> None:
     request = {
-        "name": "Example", "symbol": "EX", "metadataURI": "ipfs://m", "salt": "0x" + "cd" * 32, "expectedConfigHash": "0x" + "92" * 32,
-        "initialBuyUsdc": 10_000_000, "minTokensOut": 1_757_100_783_706_883_641_990_715, "deadline": 1_700_000_060,
+        "name": "Example",
+        "symbol": "EX",
+        "metadataURI": "ipfs://m",
+        "salt": "0x" + "cd" * 32,
+        "expectedConfigHash": "0x" + "92" * 32,
+        "initialBuyUsdc": 10_000_000,
+        "minTokensOut": 1_757_100_783_706_883_641_990_715,
+        "deadline": 1_700_000_060,
     }
     name, args = AGENT_ACCOUNT.decode_input(AGENT_ACCOUNT.encode("launch", request))
     assert name == "launch"
     assert list(args.values()) == [request]
-    assert list(request) == [c["name"] for c in AGENT_ACCOUNT.function("launch")["inputs"][0]["components"]]
+    assert list(request) == [
+        c["name"] for c in AGENT_ACCOUNT.function("launch")["inputs"][0]["components"]
+    ]
 
 
 def test_errors_and_results() -> None:
     data = AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 12_500_000)
     assert AGENT_POLICY_REGISTRY.decode_error(data) == ("PeriodSpendExceeded", [12_500_000])
     assert AGENT_ACCOUNT.decode_error(data) is None  # registry error: decoding merges ABIs
-    assert AGENT_ACCOUNT.decode_error(AGENT_ACCOUNT.encode_error("TradeTooLarge", 100_000_000)) == ("TradeTooLarge", [100_000_000])
+    assert AGENT_ACCOUNT.decode_error(AGENT_ACCOUNT.encode_error("TradeTooLarge", 100_000_000)) == (
+        "TradeTooLarge",
+        [100_000_000],
+    )
     assert AGENT_ACCOUNT.decode_error("0xdeadbeef") is None
     headroom = AGENT_POLICY_REGISTRY.encode_result("headroom", (1, 2, 3, 4))
     assert AGENT_POLICY_REGISTRY.decode_output("headroom", headroom) == (1, 2, 3, 4)
-    assert AGENT_POLICY_REGISTRY.decode_input(AGENT_POLICY_REGISTRY.encode("headroom", ACCOUNT)) == ("headroom", {"account": ACCOUNT})
+    assert AGENT_POLICY_REGISTRY.decode_input(
+        AGENT_POLICY_REGISTRY.encode("headroom", ACCOUNT)
+    ) == ("headroom", {"account": ACCOUNT})
     queued = AGENT_POLICY_REGISTRY.encode_result("queued", (1, 1_700_003_600, 1, 5, "0x1234"))
-    assert AGENT_POLICY_REGISTRY.decode_output("queued", queued) == (1, 1_700_003_600, 1, 5, "0x1234")
+    assert AGENT_POLICY_REGISTRY.decode_output("queued", queued) == (
+        1,
+        1_700_003_600,
+        1,
+        5,
+        "0x1234",
+    )
     basis = AGENT_ACCOUNT.encode_result("basis", (25_000_000, 10**24, 10**23))
     assert AGENT_ACCOUNT.decode_output("basis", basis) == (25_000_000, 10**24, 10**23)
 
 
 def test_logs_round_trip_indexed_and_plain_arguments() -> None:
-    topics, data = AGENT_ACCOUNT.encode_log("AgentAction", {"agent": TOKEN, "action": 1, "token": TOKEN, "usdcSpent": 5, "tokenDelta": -7, "periodId": 9})
+    topics, data = AGENT_ACCOUNT.encode_log(
+        "AgentAction",
+        {
+            "agent": TOKEN,
+            "action": 1,
+            "token": TOKEN,
+            "usdcSpent": 5,
+            "tokenDelta": -7,
+            "periodId": 9,
+        },
+    )
     name, args = AGENT_ACCOUNT.decode_log(topics, data)  # type: ignore[misc]
     assert name == "AgentAction"
-    assert (args["agent"], args["token"], args["usdcSpent"], args["tokenDelta"], args["periodId"]) == (TOKEN, TOKEN, 5, -7, 9)
+    assert (
+        args["agent"],
+        args["token"],
+        args["usdcSpent"],
+        args["tokenDelta"],
+        args["periodId"],
+    ) == (TOKEN, TOKEN, 5, -7, 9)
     assert AGENT_ACCOUNT_FACTORY.decode_log(topics, data) is None
     assert LAUNCH_FACTORY.function("createToken")["name"] == "createToken"
 
 
 def test_registry_queue_events_carry_the_account_as_topic_one() -> None:
     topics, data = AGENT_POLICY_REGISTRY.encode_log(
-        "AgentQueued", {"account": ACCOUNT, "id": 4, "agent": AGENT, "expiresAt": 1_800_000_000, "permissions": 29, "eta": 1_700_003_600}
+        "AgentQueued",
+        {
+            "account": ACCOUNT,
+            "id": 4,
+            "agent": AGENT,
+            "expiresAt": 1_800_000_000,
+            "permissions": 29,
+            "eta": 1_700_003_600,
+        },
     )
     assert len(topics) == 4  # topic0 + account + id + agent
     assert topics[1] == "0x" + "00" * 12 + ACCOUNT[2:].lower()
     name, args = AGENT_POLICY_REGISTRY.decode_log(topics, data)  # type: ignore[misc]
     assert name == "AgentQueued"
-    assert (args["account"], args["id"], args["agent"], args["permissions"], args["eta"]) == (ACCOUNT, 4, AGENT, 29, 1_700_003_600)
+    assert (args["account"], args["id"], args["agent"], args["permissions"], args["eta"]) == (
+        ACCOUNT,
+        4,
+        AGENT,
+        29,
+        1_700_003_600,
+    )
     assert AGENT_ACCOUNT.decode_log(topics, data) is None
 
 
@@ -103,13 +183,26 @@ def test_decode_input_is_strict_about_trailing_bytes() -> None:
 
 
 def test_decode_input_rejects_dirty_padding_and_non_canonical_offsets() -> None:
-    request = {"name": "E", "symbol": "X", "metadataURI": "", "salt": "0x" + "00" * 32, "expectedConfigHash": "0x" + "00" * 32,
-               "initialBuyUsdc": 0, "minTokensOut": 0, "deadline": 1}
+    request = {
+        "name": "E",
+        "symbol": "X",
+        "metadataURI": "",
+        "salt": "0x" + "00" * 32,
+        "expectedConfigHash": "0x" + "00" * 32,
+        "initialBuyUsdc": 0,
+        "minTokensOut": 0,
+        "deadline": 1,
+    }
     good = AGENT_ACCOUNT.encode("launch", request)
     assert AGENT_ACCOUNT.decode_input(good)[0] == "launch"
-    body = bytes.fromhex(good[2 + 8:])
+    body = bytes.fromhex(good[2 + 8 :])
     # Shift the dynamic tuple offset (first word) by 32 bytes and insert a padding word: eth-abi still decodes it.
-    shifted = bytes.fromhex(good[2:10]) + (int.from_bytes(body[:32], "big") + 32).to_bytes(32, "big") + bytes(32) + body[32:]
+    shifted = (
+        bytes.fromhex(good[2:10])
+        + (int.from_bytes(body[:32], "big") + 32).to_bytes(32, "big")
+        + bytes(32)
+        + body[32:]
+    )
     with pytest.raises(AbiDecodeError):
         AGENT_ACCOUNT.decode_input("0x" + shifted.hex())
     assert AGENT_ACCOUNT.decode_input("0x" + shifted.hex(), strict=False)[0] == "launch"
@@ -124,17 +217,27 @@ def test_decode_output_and_error_are_strict() -> None:
     headroom = AGENT_POLICY_REGISTRY.encode_result("headroom", (1, 2, 3, 4))
     with pytest.raises(AbiDecodeError):
         AGENT_POLICY_REGISTRY.decode_output("headroom", headroom + "00")
-    assert AGENT_POLICY_REGISTRY.decode_output("headroom", headroom + "00", strict=False) == (1, 2, 3, 4)
+    assert AGENT_POLICY_REGISTRY.decode_output("headroom", headroom + "00", strict=False) == (
+        1,
+        2,
+        3,
+        4,
+    )
     with pytest.raises(AbiDecodeError):
         AGENT_POLICY_REGISTRY.decode_output("headroom", headroom[:-2])
     err = AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 5)
     with pytest.raises(AbiDecodeError):
         AGENT_POLICY_REGISTRY.decode_error(err + PAD)
-    assert AGENT_POLICY_REGISTRY.decode_error(err + PAD, strict=False) == ("PeriodSpendExceeded", [5])
+    assert AGENT_POLICY_REGISTRY.decode_error(err + PAD, strict=False) == (
+        "PeriodSpendExceeded",
+        [5],
+    )
 
 
 def test_logs_check_topic_count_and_strict_data() -> None:
-    topics, data = AGENT_ACCOUNT.encode_log("AgentAction", {"agent": AGENT, "action": 1, "token": TOKEN})
+    topics, data = AGENT_ACCOUNT.encode_log(
+        "AgentAction", {"agent": AGENT, "action": 1, "token": TOKEN}
+    )
     with pytest.raises(AbiDecodeError):
         AGENT_ACCOUNT.decode_log(topics + [topics[1]], data)  # extra topic
     with pytest.raises(AbiDecodeError):
@@ -142,7 +245,9 @@ def test_logs_check_topic_count_and_strict_data() -> None:
     with pytest.raises(AbiDecodeError):
         AGENT_ACCOUNT.decode_log(topics, data + "00")
     with pytest.raises(AbiDecodeError):
-        AGENT_ACCOUNT.decode_log([topics[0], topics[1], "0x" + "ff" * 12 + topics[2][26:]], data)  # dirty address topic
+        AGENT_ACCOUNT.decode_log(
+            [topics[0], topics[1], "0x" + "ff" * 12 + topics[2][26:]], data
+        )  # dirty address topic
     assert AGENT_ACCOUNT.decode_log(topics, data) is not None
 
 
@@ -165,12 +270,19 @@ def test_codec_errors_are_typed() -> None:
 
 
 def _fn(name: str, inputs: list[str]) -> dict[str, Any]:
-    return {"type": "function", "name": name, "inputs": [{"name": f"a{i}", "type": t} for i, t in enumerate(inputs)], "outputs": []}
+    return {
+        "type": "function",
+        "name": name,
+        "inputs": [{"name": f"a{i}", "type": t} for i, t in enumerate(inputs)],
+        "outputs": [],
+    }
 
 
 def test_duplicate_selectors_and_overloads() -> None:
     same = _fn("f", ["uint256"])
-    assert Contract([same, dict(same)], "Dup").selector("f") == Contract([same], "One").selector("f")  # identical signature: accepted
+    assert Contract([same, dict(same)], "Dup").selector("f") == Contract([same], "One").selector(
+        "f"
+    )  # identical signature: accepted
     over = Contract([_fn("g", ["uint256"]), _fn("g", ["uint256", "uint256"])], "Over")
     with pytest.raises(AbiEncodeError):
         over.selector("g")
@@ -178,7 +290,11 @@ def test_duplicate_selectors_and_overloads() -> None:
 
 
 def _error(name: str, inputs: list[str]) -> dict[str, Any]:
-    return {"type": "error", "name": name, "inputs": [{"name": f"a{i}", "type": t} for i, t in enumerate(inputs)]}
+    return {
+        "type": "error",
+        "name": name,
+        "inputs": [{"name": f"a{i}", "type": t} for i, t in enumerate(inputs)],
+    }
 
 
 def test_error_decoder_merges_in_order() -> None:
@@ -190,18 +306,32 @@ def test_error_decoder_merges_in_order() -> None:
     assert dec.decode("0xdeadbeef") is None
     # Same name, different signature: a different selector, so not a conflict. Force a real conflict by faking a signature.
     c = Contract([_error("OnlyA", [])], "C")
-    c._errors = {sel: {**item, "name": "Other"} for sel, item in a._errors.items() if item["name"] == "OnlyA"}
+    c._errors = {
+        sel: {**item, "name": "Other"} for sel, item in a._errors.items() if item["name"] == "OnlyA"
+    }
     with pytest.raises(ValueError):
         ErrorDecoder([a, c])
 
 
 def test_revert_decoder_follows_the_ts_order_and_merges_agent_abis() -> None:
-    assert [c.name for c in REVERT_ORDER[:3]] == ["AgentAccount", "AgentPolicyRegistry", "AgentAccountFactory"]
+    assert [c.name for c in REVERT_ORDER[:3]] == [
+        "AgentAccount",
+        "AgentPolicyRegistry",
+        "AgentAccountFactory",
+    ]
     assert REVERT_ORDER.index(UNIVERSAL_ROUTER) < REVERT_ORDER.index(V4_QUOTER)
     assert ALL.index(V4_QUOTER) < ALL.index(UNIVERSAL_ROUTER)  # ALL keeps the generator order
     assert set(REVERT_ORDER) == set(ALL)
-    assert REVERT_DECODER.decode(AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 7)) == ("AgentPolicyRegistry", "PeriodSpendExceeded", [7])
-    assert REVERT_DECODER.decode(AGENT_ACCOUNT.encode_error("TradeTooLarge", 9)) == ("AgentAccount", "TradeTooLarge", [9])
+    assert REVERT_DECODER.decode(AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 7)) == (
+        "AgentPolicyRegistry",
+        "PeriodSpendExceeded",
+        [7],
+    )
+    assert REVERT_DECODER.decode(AGENT_ACCOUNT.encode_error("TradeTooLarge", 9)) == (
+        "AgentAccount",
+        "TradeTooLarge",
+        [9],
+    )
 
 
 def _unnamed(params: list[dict[str, Any]], where: str) -> list[str]:
@@ -223,7 +353,9 @@ def test_no_abi_has_unnamed_struct_components() -> None:
     assert bad == []
 
 
-VECTORS = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "abi.json").read_text())
+VECTORS = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "abi.json").read_text()
+)
 BY_FILE = {c.name[0].lower() + c.name[1:]: c for c in ALL}
 
 

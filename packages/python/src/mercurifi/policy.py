@@ -1,4 +1,5 @@
 """On-chain agent policy (spec 4.5) with a local mirror of the contract's validation (AgentPolicyLib)."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -47,26 +48,48 @@ def _as_int(name: str, raw: object) -> int:
 
 #: Struct order of `Policy`; also the index order a `BetaCeiling(uint8)` refers to.
 POLICY_FIELDS: tuple[str, ...] = (
-    "max_trade_usdc", "period_spend_cap", "per_token_period_cap", "period_sell_cap", "max_actions_per_period",
-    "launches_per_period", "max_price_impact_bps", "max_snipe_bps", "min_token_age_blocks", "max_deadline_seconds",
+    "max_trade_usdc",
+    "period_spend_cap",
+    "per_token_period_cap",
+    "period_sell_cap",
+    "max_actions_per_period",
+    "launches_per_period",
+    "max_price_impact_bps",
+    "max_snipe_bps",
+    "min_token_age_blocks",
+    "max_deadline_seconds",
     "allowlist_only",
 )
 ABI_NAMES: dict[str, str] = {
-    "max_trade_usdc": "maxTradeUsdc", "period_spend_cap": "periodSpendCap", "per_token_period_cap": "perTokenPeriodCap",
-    "period_sell_cap": "periodSellCap", "max_actions_per_period": "maxActionsPerPeriod",
-    "launches_per_period": "launchesPerPeriod", "max_price_impact_bps": "maxPriceImpactBps",
-    "max_snipe_bps": "maxSnipeBps", "min_token_age_blocks": "minTokenAgeBlocks",
-    "max_deadline_seconds": "maxDeadlineSeconds", "allowlist_only": "allowlistOnly",
+    "max_trade_usdc": "maxTradeUsdc",
+    "period_spend_cap": "periodSpendCap",
+    "per_token_period_cap": "perTokenPeriodCap",
+    "period_sell_cap": "periodSellCap",
+    "max_actions_per_period": "maxActionsPerPeriod",
+    "launches_per_period": "launchesPerPeriod",
+    "max_price_impact_bps": "maxPriceImpactBps",
+    "max_snipe_bps": "maxSnipeBps",
+    "min_token_age_blocks": "minTokenAgeBlocks",
+    "max_deadline_seconds": "maxDeadlineSeconds",
+    "allowlist_only": "allowlistOnly",
 }
 
-_USDC_FIELDS = frozenset({"max_trade_usdc", "period_spend_cap", "per_token_period_cap", "period_sell_cap"})
+_USDC_FIELDS = frozenset(
+    {"max_trade_usdc", "period_spend_cap", "per_token_period_cap", "period_sell_cap"}
+)
 _INT_LIMITS: dict[str, int] = {
-    "max_actions_per_period": 0xFFFF_FFFF, "launches_per_period": 0xFFFF, "max_price_impact_bps": 0xFFFF,
-    "max_snipe_bps": 0xFFFF, "min_token_age_blocks": 0xFFFF_FFFF, "max_deadline_seconds": 0xFFFF_FFFF,
+    "max_actions_per_period": 0xFFFF_FFFF,
+    "launches_per_period": 0xFFFF,
+    "max_price_impact_bps": 0xFFFF,
+    "max_snipe_bps": 0xFFFF,
+    "min_token_age_blocks": 0xFFFF_FFFF,
+    "max_deadline_seconds": 0xFFFF_FFFF,
 }
 _UINT64_MAX = 2**64 - 1
 
-DEFAULT_POLICY = ChainPolicy(100_000_000, 500_000_000, 100_000_000, 500_000_000, 500, 3, 300, 0, 0, 120, False)
+DEFAULT_POLICY = ChainPolicy(
+    100_000_000, 500_000_000, 100_000_000, 500_000_000, 500, 3, 300, 0, 0, 120, False
+)
 DEFAULT_PERIOD_SECONDS = 86_400
 MIN_PERIOD_SECONDS = 3_600
 MAX_PERIOD_SECONDS = 604_800
@@ -128,12 +151,17 @@ def validate_policy(p: ChainPolicy, ceilings: ChainPolicy | None = None) -> None
         _check_range(f, getattr(p, f))
     # Same order as AgentPolicyLib.checkShape: impact, snipe, deadline.
     if p.max_price_impact_bps > 10_000:
-        raise InvalidInputError("policy.max_price_impact_bps", "policy.max_price_impact_bps must be at most 10000")
+        raise InvalidInputError(
+            "policy.max_price_impact_bps", "policy.max_price_impact_bps must be at most 10000"
+        )
     if p.max_snipe_bps > 10_000:
-        raise InvalidInputError("policy.max_snipe_bps", "policy.max_snipe_bps must be at most 10000")
+        raise InvalidInputError(
+            "policy.max_snipe_bps", "policy.max_snipe_bps must be at most 10000"
+        )
     if not 1 <= p.max_deadline_seconds <= MAX_DEADLINE_SECONDS:
         raise InvalidInputError(
-            "policy.max_deadline_seconds", f"policy.max_deadline_seconds must be in 1..{MAX_DEADLINE_SECONDS}"
+            "policy.max_deadline_seconds",
+            f"policy.max_deadline_seconds must be in 1..{MAX_DEADLINE_SECONDS}",
         )
     if ceilings is None:
         return
@@ -144,12 +172,20 @@ def validate_policy(p: ChainPolicy, ceilings: ChainPolicy | None = None) -> None
         # min_token_age_blocks is a floor on-chain (AgentPolicyLib.checkCeilings); every other ceiling is an upper bound.
         if f == "min_token_age_blocks":
             if value < limit:
-                raise InvalidInputError(f"policy.{f}", f"policy.{f} = {_show(f, value)} is below the beta floor of {_show(f, limit)}")
+                raise InvalidInputError(
+                    f"policy.{f}",
+                    f"policy.{f} = {_show(f, value)} is below the beta floor of {_show(f, limit)}",
+                )
         elif value > limit:
-            raise InvalidInputError(f"policy.{f}", f"policy.{f} = {_show(f, value)} is above the beta ceiling of {_show(f, limit)}")
+            raise InvalidInputError(
+                f"policy.{f}",
+                f"policy.{f} = {_show(f, value)} is above the beta ceiling of {_show(f, limit)}",
+            )
 
 
-def field_direction(field: str, current: ChainPolicy, next_: ChainPolicy) -> Literal["same", "narrow", "widen"]:
+def field_direction(
+    field: str, current: ChainPolicy, next_: ChainPolicy
+) -> Literal["same", "narrow", "widen"]:
     """Per-field direction, identical to AgentPolicyLib.isNarrowing (spec 4.4)."""
     if field not in POLICY_FIELDS:
         raise InvalidInputError(f"policy.{field}", f"unknown policy field {field}")
@@ -192,13 +228,22 @@ def preview_policy_change(current: ChainPolicy, next_: ChainPolicy) -> PolicyPre
         d = field_direction(f, current, next_)
         if d == "same":
             continue
-        changes.append(PolicyChange(f, _show(f, getattr(current, f)), _show(f, getattr(next_, f)), d))
+        changes.append(
+            PolicyChange(f, _show(f, getattr(current, f)), _show(f, getattr(next_, f)), d)
+        )
         if d == "narrow":
             immediate.append(f)
             applied[f] = getattr(next_, f)
         else:
             queued.append(f)
     outcome: Literal["none", "immediate", "queued", "mixed"] = (
-        "none" if not changes else "immediate" if not queued else "queued" if not immediate else "mixed"
+        "none"
+        if not changes
+        else "immediate"
+        if not queued
+        else "queued"
+        if not immediate
+        else "mixed"
     )
-    return PolicyPreview(tuple(changes), tuple(immediate), tuple(queued), outcome, replace(current, **applied), next_)  # type: ignore[arg-type]
+    preview = replace(current, **applied)  # type: ignore[arg-type]
+    return PolicyPreview(tuple(changes), tuple(immediate), tuple(queued), outcome, preview, next_)

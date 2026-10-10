@@ -27,7 +27,9 @@ class NonceManager:
         self._next: dict[str, int] = {}
         # id(loop) -> (weak reference to the loop, locks by address). A contended lock holds its loop strongly, so a
         # weak-keyed map would never release it; entries of closed (or collected) loops are pruned on each access.
-        self._locks: dict[int, tuple[weakref.ReferenceType[asyncio.AbstractEventLoop], dict[str, asyncio.Lock]]] = {}
+        self._locks: dict[
+            int, tuple[weakref.ReferenceType[asyncio.AbstractEventLoop], dict[str, asyncio.Lock]]
+        ] = {}
 
     def _locks_for_running_loop(self) -> dict[str, asyncio.Lock]:
         loop = asyncio.get_running_loop()

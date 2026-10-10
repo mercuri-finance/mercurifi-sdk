@@ -3,6 +3,7 @@
 Contract-supplied text (Error(string)) is untrusted: it is normalised, neutralised by the shared sanitiser, bounded and
 quoted, and the raw string stays in `args` only. Decoding never raises.
 """
+
 from __future__ import annotations
 
 import re
@@ -34,8 +35,17 @@ from .units import format_usdc6
 # The three agent ABIs first (merged: a trade can revert from the account or the registry), then Launch and Uniswap.
 # The first contract that declares a selector names it.
 _SOURCES: tuple[Contract, ...] = (
-    AGENT_ACCOUNT, AGENT_POLICY_REGISTRY, AGENT_ACCOUNT_FACTORY, BONDING_CURVE, LAUNCH_FACTORY, FEE_MANAGER,
-    GRADUATION_MANAGER, LAUNCH_HOOK, LAUNCH_TOKEN, UNIVERSAL_ROUTER, V4_QUOTER,
+    AGENT_ACCOUNT,
+    AGENT_POLICY_REGISTRY,
+    AGENT_ACCOUNT_FACTORY,
+    BONDING_CURVE,
+    LAUNCH_FACTORY,
+    FEE_MANAGER,
+    GRADUATION_MANAGER,
+    LAUNCH_HOOK,
+    LAUNCH_TOKEN,
+    UNIVERSAL_ROUTER,
+    V4_QUOTER,
 )
 
 _HEX = re.compile(r"0x(?:[0-9a-fA-F]{2})*")
@@ -153,7 +163,9 @@ ERROR_MESSAGES: dict[str, Callable[[list[Any]], str]] = {
     "AccountExists": lambda a: f"An account already exists at {a[0]} for this owner and salt; use another salt.",
     "FailedDeployment": lambda a: "The account clone could not be deployed.",
     # The factory's error carries two amounts; the Universal Router declares one of the same name with none.
-    "InsufficientBalance": lambda a: f"Insufficient balance: {a[0]} available, {a[1]} needed." if len(a) >= 2 else "Insufficient balance.",
+    "InsufficientBalance": lambda a: f"Insufficient balance: {a[0]} available, {a[1]} needed."
+    if len(a) >= 2
+    else "Insufficient balance.",
     "ImplementationMismatch": lambda a: "The implementation is not bound to this factory and its registry.",
     "InvalidCeiling": lambda a: f"The beta ceiling for {_field(a[0])} is out of range.",
     "NoActivePause": lambda a: "There is no active pause to extend.",
@@ -183,17 +195,30 @@ ERROR_MESSAGES: dict[str, Callable[[list[Any]], str]] = {
 def untrusted_reason(raw: object) -> str:
     """Contract-supplied text, made inert: NFKC, no control or format characters (bidi overrides, zero-width), no double
     quotes, no URLs, bounded length without splitting a surrogate pair. The raw string stays in `args`."""
-    text = unicodedata.normalize("NFKC", pre_bound(raw if isinstance(raw, str) else str(raw), _MAX_REASON))
-    clean = truncate_chars(js_strip(neutralize_untrusted(text.replace('"', "'"))), _MAX_REASON, "...")
+    text = unicodedata.normalize(
+        "NFKC", pre_bound(raw if isinstance(raw, str) else str(raw), _MAX_REASON)
+    )
+    clean = truncate_chars(
+        js_strip(neutralize_untrusted(text.replace('"', "'"))), _MAX_REASON, "..."
+    )
     return f'Reverted with a contract-supplied reason (untrusted text): "{clean}"'
 
 
 def _decoded(name: str, args: list[Any], source: str, selector: str, data: str) -> DecodedRevert:
     explain = ERROR_MESSAGES.get(name)
-    return DecodedRevert(name, args, source, selector, data, explain(args) if explain else f"Reverted with {name} ({source}).")
+    return DecodedRevert(
+        name,
+        args,
+        source,
+        selector,
+        data,
+        explain(args) if explain else f"Reverted with {name} ({source}).",
+    )
 
 
-def _malformed(message: str, source: str = "unknown", selector: str = "0x", data: str = "0x") -> DecodedRevert:
+def _malformed(
+    message: str, source: str = "unknown", selector: str = "0x", data: str = "0x"
+) -> DecodedRevert:
     return DecodedRevert("MalformedRevert", [], source, selector, data, message)
 
 
@@ -211,16 +236,22 @@ def _error_string(body: bytes) -> str | None:
     return body[offset + 32 : offset + 32 + length].decode("utf-8", "replace")
 
 
-def _lenient_uint_error(contract: Contract, selector: str, body: bytes) -> tuple[str, list[Any]] | None:
+def _lenient_uint_error(
+    contract: Contract, selector: str, body: bytes
+) -> tuple[str, list[Any]] | None:
     """viem reads an integer argument without range checks (BetaCeiling(300) for a uint8); eth-abi rejects the dirty
     padding. For an error whose arguments are all unsigned integers, read the words the same way."""
     item = contract._errors.get(selector)
     if item is None:
         return None
     inputs = item.get("inputs", [])
-    if not all(str(i.get("type", "")).startswith("uint") for i in inputs) or len(body) < 32 * len(inputs):
+    if not all(str(i.get("type", "")).startswith("uint") for i in inputs) or len(body) < 32 * len(
+        inputs
+    ):
         return None
-    return item["name"], [int.from_bytes(body[32 * n : 32 * n + 32], "big") for n in range(len(inputs))]
+    return item["name"], [
+        int.from_bytes(body[32 * n : 32 * n + 32], "big") for n in range(len(inputs))
+    ]
 
 
 def _decode(data: str | None) -> DecodedRevert:
@@ -228,23 +259,41 @@ def _decode(data: str | None) -> DecodedRevert:
         return _decoded("EmptyRevert", [], "EVM", "0x", "0x")
     if not isinstance(data, str) or _HEX.fullmatch(data) is None:
         return _malformed("The revert data is not valid hex, so it could not be decoded.")
-    data = data.lower()  # hex digits are case-insensitive; selectors and the returned data are lower-case
+    data = (
+        data.lower()
+    )  # hex digits are case-insensitive; selectors and the returned data are lower-case
     raw = from_hex(data)
     if len(raw) < 4:
-        return _malformed("The revert data is shorter than a 4-byte selector, so it could not be decoded.", data=data)
+        return _malformed(
+            "The revert data is shorter than a 4-byte selector, so it could not be decoded.",
+            data=data,
+        )
     selector = data[:10].lower()
     if selector == _ERROR_SELECTOR:
         reason = _error_string(raw[4:])
         if reason is None:
-            return _malformed("The revert carried a malformed Error(string).", "Solidity", selector, data)
-        return DecodedRevert("Error", [reason], "Solidity", selector, data, untrusted_reason(reason))
+            return _malformed(
+                "The revert carried a malformed Error(string).", "Solidity", selector, data
+            )
+        return DecodedRevert(
+            "Error", [reason], "Solidity", selector, data, untrusted_reason(reason)
+        )
     if selector == _PANIC_SELECTOR and len(raw) >= 36:
         code = int.from_bytes(raw[4:36], "big")
-        return DecodedRevert("Panic", [code], "Solidity", selector, data, f"Panic 0x{code:x} (arithmetic or assertion failure).")
+        return DecodedRevert(
+            "Panic",
+            [code],
+            "Solidity",
+            selector,
+            data,
+            f"Panic 0x{code:x} (arithmetic or assertion failure).",
+        )
     for contract in _SOURCES:
         try:
             hit = contract.decode_error(data, strict=False)
-        except Exception:  # selector known but the arguments are malformed: try the next ABI, as viem does
+        except (
+            Exception
+        ):  # selector known but the arguments are malformed: try the next ABI, as viem does
             hit = _lenient_uint_error(contract, selector, raw[4:])
             if hit is None:
                 continue
@@ -254,8 +303,17 @@ def _decode(data: str | None) -> DecodedRevert:
         try:
             return _decoded(name, args, contract.name, selector, data)
         except Exception:
-            return DecodedRevert(name, args, contract.name, selector, data, f"Reverted with {name} ({contract.name}).")
-    return DecodedRevert("UnknownError", [], "unknown", selector, data, f"Reverted with an unknown error {selector}.")
+            return DecodedRevert(
+                name,
+                args,
+                contract.name,
+                selector,
+                data,
+                f"Reverted with {name} ({contract.name}).",
+            )
+    return DecodedRevert(
+        "UnknownError", [], "unknown", selector, data, f"Reverted with an unknown error {selector}."
+    )
 
 
 def decode_revert(data: str | None) -> DecodedRevert:

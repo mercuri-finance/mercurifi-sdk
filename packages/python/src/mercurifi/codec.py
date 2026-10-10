@@ -1,4 +1,5 @@
 """A small ABI layer over eth-abi: calls, results, errors and events, with structs as dicts keyed by component name."""
+
 from __future__ import annotations
 
 import json
@@ -96,20 +97,27 @@ def _encode_params(params: Sequence[Mapping[str, Any]], values: Sequence[Any]) -
     if len(params) != len(values):
         raise AbiEncodeError(f"expected {len(params)} argument(s), got {len(values)}")
     try:
-        return encode([canonical_type(p) for p in params], [_to_abi(p, v) for p, v in zip(params, values, strict=True)])
+        return encode(
+            [canonical_type(p) for p in params],
+            [_to_abi(p, v) for p, v in zip(params, values, strict=True)],
+        )
     except AbiEncodeError:
         raise
     except (EncodingError, ValueError, TypeError, KeyError) as exc:
         raise AbiEncodeError(f"cannot encode arguments: {type(exc).__name__}: {exc}") from exc
 
 
-def _decode_params(params: Sequence[Mapping[str, Any]], data: bytes, strict: bool = True) -> list[Any]:
+def _decode_params(
+    params: Sequence[Mapping[str, Any]], data: bytes, strict: bool = True
+) -> list[Any]:
     types = [canonical_type(p) for p in params]
     try:
         raw = decode(types, data)
         # eth-abi ignores trailing bytes and non-canonical offsets; the only canonical form is what encode() produces.
         if strict and encode(types, raw) != data:
-            raise AbiDecodeError("non-canonical ABI data (trailing bytes, dirty padding or non-canonical offsets)")
+            raise AbiDecodeError(
+                "non-canonical ABI data (trailing bytes, dirty padding or non-canonical offsets)"
+            )
     except AbiDecodeError:
         raise
     except (DecodingError, EncodingError, ValueError, TypeError, OverflowError) as exc:
@@ -134,7 +142,9 @@ class Contract:
                 seen = self._by_selector.get(sel)
                 if seen is not None:
                     if _signature(seen) != _signature(item):
-                        raise ValueError(f"{name}: selector {sel} is shared by {_signature(seen)} and {_signature(item)}")
+                        raise ValueError(
+                            f"{name}: selector {sel} is shared by {_signature(seen)} and {_signature(item)}"
+                        )
                     continue
                 self._functions.setdefault(item["name"], []).append(item)
                 self._by_selector[sel] = item
@@ -142,7 +152,9 @@ class Contract:
                 sel = to_hex(keccak(text=_signature(item))[:4])
                 seen = self._errors.get(sel)
                 if seen is not None and _signature(seen) != _signature(item):
-                    raise ValueError(f"{name}: error selector {sel} is shared by {_signature(seen)} and {_signature(item)}")
+                    raise ValueError(
+                        f"{name}: error selector {sel} is shared by {_signature(seen)} and {_signature(item)}"
+                    )
                 self._errors[sel] = item
                 self._errors_by_name[item["name"]] = item
             elif kind == "event":
@@ -153,7 +165,9 @@ class Contract:
         items = self._functions.get(fn, [])
         matches = [i for i in items if arity is None or len(i.get("inputs", [])) == arity]
         if not matches and items:
-            raise AbiEncodeError(f"{self.name}.{fn} takes {len(items[0].get('inputs', []))} argument(s), not {arity}")
+            raise AbiEncodeError(
+                f"{self.name}.{fn} takes {len(items[0].get('inputs', []))} argument(s), not {arity}"
+            )
         if not matches:
             raise AbiUnknownSelectorError(f"{self.name} has no function {fn}")
         if len(matches) > 1:
@@ -169,7 +183,9 @@ class Contract:
 
     def encode(self, fn: str, *args: object) -> str:
         item = self.function(fn, len(args))
-        return to_hex(keccak(text=_signature(item))[:4] + _encode_params(item.get("inputs", []), args))
+        return to_hex(
+            keccak(text=_signature(item))[:4] + _encode_params(item.get("inputs", []), args)
+        )
 
     def decode_input(self, data: str, strict: bool = True) -> tuple[str, dict[str, Any]]:
         raw = from_hex(data)
@@ -178,7 +194,10 @@ class Contract:
             raise AbiUnknownSelectorError(f"unknown selector {to_hex(raw[:4])} for {self.name}")
         inputs = item.get("inputs", [])
         values = _decode_params(inputs, raw[4:], strict)
-        return item["name"], {p.get("name") or f"arg{i}": v for i, (p, v) in enumerate(zip(inputs, values, strict=True))}
+        return item["name"], {
+            p.get("name") or f"arg{i}": v
+            for i, (p, v) in enumerate(zip(inputs, values, strict=True))
+        }
 
     def decode_output(self, fn: str, data: str, strict: bool = True) -> Any:
         outputs = self.function(fn).get("outputs", [])
@@ -210,7 +229,9 @@ class Contract:
         item = self._errors_by_name.get(name)
         if item is None:
             raise AbiEncodeError(f"{self.name} has no error {name}")
-        return to_hex(keccak(text=_signature(item))[:4] + _encode_params(item.get("inputs", []), args))
+        return to_hex(
+            keccak(text=_signature(item))[:4] + _encode_params(item.get("inputs", []), args)
+        )
 
     def decode_log(self, topics: list[str], data: str) -> tuple[str, dict[str, Any]] | None:
         if not topics:
@@ -222,10 +243,16 @@ class Contract:
         indexed = [p for p in inputs if p.get("indexed")]
         plain = [p for p in inputs if not p.get("indexed")]
         if len(topics) != 1 + len(indexed):
-            raise AbiDecodeError(f"{item['name']} expects {1 + len(indexed)} topics, got {len(topics)}")
+            raise AbiDecodeError(
+                f"{item['name']} expects {1 + len(indexed)} topics, got {len(topics)}"
+            )
         out: dict[str, Any] = {}
         for p, topic in zip(indexed, topics[1:], strict=True):
-            dynamic = p["type"] in ("string", "bytes") or p["type"].startswith("tuple") or p["type"].endswith("]")
+            dynamic = (
+                p["type"] in ("string", "bytes")
+                or p["type"].startswith("tuple")
+                or p["type"].endswith("]")
+            )
             raw_topic = from_hex(topic)
             if len(raw_topic) != 32:
                 raise AbiDecodeError("topic is not 32 bytes")
@@ -243,7 +270,9 @@ class Contract:
         for p in (p for p in inputs if p.get("indexed")):
             topics.append(to_hex(_encode_params([p], [values.get(p["name"], _zero(p))])))
         plain = [p for p in inputs if not p.get("indexed")]
-        return topics, to_hex(_encode_params(plain, [values.get(p["name"], _zero(p)) for p in plain]))
+        return topics, to_hex(
+            _encode_params(plain, [values.get(p["name"], _zero(p)) for p in plain])
+        )
 
 
 class ErrorDecoder:

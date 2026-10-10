@@ -3,6 +3,7 @@
 Mirrors safeView.ts in the TypeScript SDK; fixtures/vectors/safeview.json is the arbiter. This is hygiene, not a
 defence: the account caps are the real control.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,7 +31,7 @@ _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 _WEI = re.compile(r"[0-9]{1,40}")
 # Whitespace as JavaScript's \s sees it, plus the characters that would let a link close its wrapper or break out of a
 # string or code span the caller embeds it in.
-_LINK_BAD = re.compile("[\\s﻿<>\"`\\\\]")
+_LINK_BAD = re.compile('[\\s﻿<>"`\\\\]')
 _LINK_SCHEMES = ("http", "https", "ipfs")
 _PHASES = ("trading", "graduationPending", "graduated")
 _MAX_SAFE_INTEGER = 2**53 - 1
@@ -55,7 +56,9 @@ class UntrustedText:
 
 
 def _frame(field: str, text: str, unsafe: bool) -> UntrustedText:
-    return UntrustedText(field, text, f"<<untrusted:{field}>>{text}<</untrusted:{field}>>", True, unsafe)
+    return UntrustedText(
+        field, text, f"<<untrusted:{field}>>{text}<</untrusted:{field}>>", True, unsafe
+    )
 
 
 _LINK_HEAD = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]*)")
@@ -75,7 +78,9 @@ def _punycode_label_ok(label: str) -> bool:
     except (UnicodeError, ValueError, IndexError, OverflowError):
         return False
     return (
-        decoded != "" and any(ord(c) > 0x7F for c in decoded) and unicodedata.normalize("NFC", decoded) == decoded
+        decoded != ""
+        and any(ord(c) > 0x7F for c in decoded)
+        and unicodedata.normalize("NFC", decoded) == decoded
         and all(c == "-" or unicodedata.category(c)[0] in "LMN" for c in decoded)
     )
 
@@ -99,7 +104,9 @@ def _host_ok(authority: str) -> bool:
     if not all(_LABEL.fullmatch(lb) for lb in labels):
         return False
     if _NUMERIC_TAIL.fullmatch(labels[-1]):
-        return len(labels) == 4 and all(_IPV4_PART.fullmatch(lb) and int(lb) <= 255 for lb in labels)
+        return len(labels) == 4 and all(
+            _IPV4_PART.fullmatch(lb) and int(lb) <= 255 for lb in labels
+        )
     return all(_punycode_label_ok(lb) for lb in labels)
 
 
@@ -131,14 +138,20 @@ def wrap_untrusted(field: str, raw: str, max_chars: int = DEFAULT_MAX_CHARS) -> 
     ellipsis.
     """
     safe_field = _FIELD.sub("", str(field))
-    if isinstance(max_chars, bool) or not isinstance(max_chars, (int, float)) or not math.isfinite(max_chars):
+    if (
+        isinstance(max_chars, bool)
+        or not isinstance(max_chars, (int, float))
+        or not math.isfinite(max_chars)
+    ):
         limit = DEFAULT_MAX_CHARS
     else:
         limit = max(1, math.floor(max_chars))
     is_link = safe_field.startswith("link.")
     text = raw if isinstance(raw, str) else str(raw)
     bounded = pre_bound(join_surrogates(text), limit)
-    neutral = js_strip(neutralize_untrusted(unicodedata.normalize("NFKC", bounded), keep_urls=is_link))
+    neutral = js_strip(
+        neutralize_untrusted(unicodedata.normalize("NFKC", bounded), keep_urls=is_link)
+    )
     # Done last, so nothing removed above can splice a delimiter back together. A link gets it too, as defence in depth
     # (the plain-link check runs on the text before it, so a forged delimiter is rejected, not rewritten).
     no_delims = js_strip(neutral.replace("<<", "‹‹").replace(">>", "››"))
@@ -171,16 +184,28 @@ class TokenSafeView:
     def numeric(self) -> dict[str, str | int | bool | None]:
         """Only numbers, booleans, fixed labels and hex: safe to hand to a model as tool output."""
         return {
-            "token": self.token, "curve": self.curve, "phase": self.phase, "price_usdc": self.price_usdc,
-            "progress_bps": self.progress_bps, "current_snipe_bps": self.current_snipe_bps, "launch_block": self.launch_block,
-            "age_blocks": self.age_blocks, "creator": self.creator, "creator_is_agent_account": self.creator_is_agent_account,
-            "holders": self.holders, "volume24h_usdc": self.volume24h_usdc,
+            "token": self.token,
+            "curve": self.curve,
+            "phase": self.phase,
+            "price_usdc": self.price_usdc,
+            "progress_bps": self.progress_bps,
+            "current_snipe_bps": self.current_snipe_bps,
+            "launch_block": self.launch_block,
+            "age_blocks": self.age_blocks,
+            "creator": self.creator,
+            "creator_is_agent_account": self.creator_is_agent_account,
+            "holders": self.holders,
+            "volume24h_usdc": self.volume24h_usdc,
         }
 
 
 def _safe_count(v: object) -> int | None:
     """An API number is decorative: anything that is not a plain count becomes None."""
-    return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= _MAX_SAFE_INTEGER else None
+    return (
+        v
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= _MAX_SAFE_INTEGER
+        else None
+    )
 
 
 def _safe_wei(v: object) -> int | None:
@@ -218,25 +243,46 @@ async def read_token_safe_view(mf: AsyncClient, token: str) -> TokenSafeView:
         except Exception:
             return None  # the API is decorative here
 
-    phase_raw, price, progress, snipe, launch_block, name, symbol, info, api_result = await asyncio.gather(
-        rpc.read(BONDING_CURVE, curve, "phase", at=at), rpc.read(BONDING_CURVE, curve, "price", at=at),
-        rpc.read(BONDING_CURVE, curve, "progressBps", at=at), rpc.read(BONDING_CURVE, curve, "currentSnipeBps", at=at),
+    (
+        phase_raw,
+        price,
+        progress,
+        snipe,
+        launch_block,
+        name,
+        symbol,
+        info,
+        api_result,
+    ) = await asyncio.gather(
+        rpc.read(BONDING_CURVE, curve, "phase", at=at),
+        rpc.read(BONDING_CURVE, curve, "price", at=at),
+        rpc.read(BONDING_CURVE, curve, "progressBps", at=at),
+        rpc.read(BONDING_CURVE, curve, "currentSnipeBps", at=at),
         rpc.read(BONDING_CURVE, curve, "launchBlock", at=at),
-        rpc.read(LAUNCH_TOKEN, token, "name", at=at), rpc.read(LAUNCH_TOKEN, token, "symbol", at=at),
+        rpc.read(LAUNCH_TOKEN, token, "name", at=at),
+        rpc.read(LAUNCH_TOKEN, token, "symbol", at=at),
         rpc.read(FEE_MANAGER, book.fee_manager, "tokenInfo", token, at=at),
         api_token(),
     )
     phase_index = int(phase_raw)
     if not 0 <= phase_index < len(_PHASES):
-        raise UnexpectedChainStateError(f"The curve reported an unknown phase {phase_index}; this SDK version does not know it.")
+        raise UnexpectedChainStateError(
+            f"The curve reported an unknown phase {phase_index}; this SDK version does not know it."
+        )
     creator = str(info["creator"])
     agents = mf.network.agents
-    creator_is_agent = None if agents is None else await is_agent_account(rpc, agents, creator, at=at)
+    creator_is_agent = (
+        None if agents is None else await is_agent_account(rpc, agents, creator, at=at)
+    )
 
     # An API answer about some other token is ignored whole: its text must not be attributed to this one.
     api = api_result if isinstance(api_result, dict) else None
     addr = api.get("address") if api is not None else None
-    if not (isinstance(addr, str) and _ADDRESS.fullmatch(addr) is not None and addr.lower() == token.lower()):
+    if not (
+        isinstance(addr, str)
+        and _ADDRESS.fullmatch(addr) is not None
+        and addr.lower() == token.lower()
+    ):
         api = None
 
     links: dict[str, UntrustedText] = {}
@@ -248,7 +294,9 @@ async def read_token_safe_view(mf: AsyncClient, token: str) -> TokenSafeView:
             if not isinstance(key, str) or not isinstance(val, str) or val == "":
                 continue
             wrapped = wrap_untrusted(f"link.{_utf16_prefix(key, 40)}", val, 512)
-            label = wrapped.field[len("link."):]  # the sanitised label: what the model sees is what the record is keyed by
+            label = wrapped.field[
+                len("link.") :
+            ]  # the sanitised label: what the model sees is what the record is keyed by
             if label == "" or label in links:
                 continue
             links[label] = wrapped
@@ -257,16 +305,24 @@ async def read_token_safe_view(mf: AsyncClient, token: str) -> TokenSafeView:
     launch_block_n = int(launch_block)
     head = at
     return TokenSafeView(
-        token=token, curve=curve, phase=_PHASES[phase_index],
+        token=token,
+        curve=curve,
+        phase=_PHASES[phase_index],
         price_usdc=None if phase_index == PHASE_GRADUATED else format_decimal(int(price), 18),
-        progress_bps=int(progress), current_snipe_bps=int(snipe), launch_block=launch_block_n,
+        progress_bps=int(progress),
+        current_snipe_bps=int(snipe),
+        launch_block=launch_block_n,
         age_blocks=head - launch_block_n if head > launch_block_n else 0,
-        creator=creator, creator_is_agent_account=creator_is_agent,
+        creator=creator,
+        creator_is_agent_account=creator_is_agent,
         holders=_safe_count(api.get("holders") if api is not None else None),
         volume24h_usdc=None if volume is None else format_decimal(volume, 18),
         untrusted={
-            "name": wrap_untrusted("name", name), "symbol": wrap_untrusted("symbol", symbol),
-            "description": wrap_untrusted("description", description, 1_000) if isinstance(description, str) and description != "" else None,
+            "name": wrap_untrusted("name", name),
+            "symbol": wrap_untrusted("symbol", symbol),
+            "description": wrap_untrusted("description", description, 1_000)
+            if isinstance(description, str) and description != ""
+            else None,
             "links": links,
         },
     )

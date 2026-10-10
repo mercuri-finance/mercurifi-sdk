@@ -1,4 +1,5 @@
 """Errors the SDK raises on purpose. `code` is stable across versions and identical to the TypeScript SDK."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -49,7 +50,9 @@ class NotDeployedError(MercurifiError):
     code = "NOT_DEPLOYED"
 
     def __init__(self, network: str) -> None:
-        super().__init__(f"Mercurifi Agent Accounts are not deployed on {network} in this SDK version.")
+        super().__init__(
+            f"Mercurifi Agent Accounts are not deployed on {network} in this SDK version."
+        )
         self.network = network
 
 
@@ -65,7 +68,9 @@ class GasPriceTooHighError(MercurifiError):
     code = "GAS_PRICE_TOO_HIGH"
 
     def __init__(self, required_wei: int, cap_wei: int) -> None:
-        super().__init__(f"The network needs at least {required_wei} wei per gas, above your cap of {cap_wei}.")
+        super().__init__(
+            f"The network needs at least {required_wei} wei per gas, above your cap of {cap_wei}."
+        )
         self.required_wei = required_wei
         self.cap_wei = cap_wei
 
@@ -88,7 +93,9 @@ class ApiError(MercurifiError):
 
     code = "API_ERROR"
 
-    def __init__(self, status: int, api_code: str, message: str, retry_after_seconds: float | None) -> None:
+    def __init__(
+        self, status: int, api_code: str, message: str, retry_after_seconds: float | None
+    ) -> None:
         super().__init__(message)
         self.status = status
         self.api_code = api_code

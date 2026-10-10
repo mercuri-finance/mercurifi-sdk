@@ -1,4 +1,5 @@
 """Signers. The SDK never transmits, logs or persists a private key: it is not in repr, str, vars(), pickle or an error."""
+
 from __future__ import annotations
 
 import re
@@ -86,7 +87,10 @@ class LocalKeySigner(_Sealed):
         try:
             return self._sign(tx)
         except Exception as exc:  # eth_account frames hold the key: raise a fresh error outside, with no traceback into them
-            failure = MercurifiError(f"The signer failed: {redact_urls_in(first_line(str(exc) or type(exc).__name__))}", code="SIGNER_ERROR")
+            failure = MercurifiError(
+                f"The signer failed: {redact_urls_in(first_line(str(exc) or type(exc).__name__))}",
+                code="SIGNER_ERROR",
+            )
         raise failure
 
     def __repr__(self) -> str:
@@ -101,7 +105,10 @@ def local_key(private_key: str) -> LocalKeySigner:
     account = _account_from(private_key)
     private_key = None  # type: ignore[assignment]
     if account is None:
-        raise InvalidInputError("private_key", "expected a 32-byte hex private key as a string (0x plus 64 hex digits, non-zero, below the curve order)")
+        raise InvalidInputError(
+            "private_key",
+            "expected a 32-byte hex private key as a string (0x plus 64 hex digits, non-zero, below the curve order)",
+        )
     return LocalKeySigner(account)
 
 
@@ -182,7 +189,9 @@ class KmsSigner(_Sealed):
             recovered = self._recover(raw)
             if recovered is not None and recovered.lower() == self.address.lower():
                 return raw
-        raise _mismatch("The KMS signature does not recover to the configured address (wrong key or wrong digest).")
+        raise _mismatch(
+            "The KMS signature does not recover to the configured address (wrong key or wrong digest)."
+        )
 
     @staticmethod
     def _recover(raw: bytes) -> str | None:

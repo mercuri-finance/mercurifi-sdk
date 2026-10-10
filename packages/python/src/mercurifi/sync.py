@@ -8,6 +8,7 @@ Do not call a blocking method from inside a running event loop (it would block t
 not call one from a callback that runs on the SDK's loop thread (`on_warning`, `on_reconnect`): that raises instead of
 deadlocking.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,9 +29,7 @@ from .owner import AccountManager, OwnerClient
 T = TypeVar("T")
 
 
-_LOOP_THREAD_MESSAGE = (
-    "A blocking mercurifi call was made from the SDK's own event-loop thread (a callback?); this would deadlock. Use AsyncClient there."
-)
+_LOOP_THREAD_MESSAGE = "A blocking mercurifi call was made from the SDK's own event-loop thread (a callback?); this would deadlock. Use AsyncClient there."
 
 
 async def _await(awaitable: Any) -> Any:
@@ -84,7 +83,9 @@ class _Runner:
             return future.result()
         except (concurrent.futures.CancelledError, asyncio.CancelledError):
             if self.closed:
-                raise ClientClosedError("This mercurifi Client was closed while the call was running") from None
+                raise ClientClosedError(
+                    "This mercurifi Client was closed while the call was running"
+                ) from None
             raise
         except BaseException:
             future.cancel()  # Ctrl-C or a failure while waiting: do not leave the work running
@@ -157,7 +158,9 @@ class _BlockingIterator:
                     self._inflight = None
 
     async def _finish(self) -> None:
-        for task in list(self._task):  # unwind a pending __anext__ first: its `finally` blocks release the connection
+        for task in list(
+            self._task
+        ):  # unwind a pending __anext__ first: its `finally` blocks release the connection
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         aclose = getattr(self._agen, "aclose", None)
@@ -209,10 +212,13 @@ class _Sync:
             raise AttributeError(name)  # the facade is the public API only
         attr = getattr(self._target, name)
         if name == "api" and attr is not None:
-            return _Sync(attr, self._runner)  # client.api.get_account(account, live=True) blocks too
+            return _Sync(
+                attr, self._runner
+            )  # client.api.get_account(account, live=True) blocks too
         if inspect.iscoroutinefunction(attr):
             return lambda *a, **k: _wrap(self._runner.run(attr(*a, **k)), self._runner)
         if callable(attr):
+
             def call(*a: Any, **k: Any) -> Any:
                 result = attr(*a, **k)
                 if inspect.isawaitable(result):
@@ -233,7 +239,9 @@ class Client(_Sync):
         # The API key leaves `options` at once and sits in a _Secret (no repr, vars() or pickle) until create_client needs it.
         raw_key = options.pop("api_key", None)
         secret = _Secret(raw_key) if isinstance(raw_key, str) else None
-        passthrough = None if isinstance(raw_key, str) else raw_key  # None, or a bad value create_client will reject
+        passthrough = (
+            None if isinstance(raw_key, str) else raw_key
+        )  # None, or a bad value create_client will reject
         raw_key = None
         runner = _Runner()
         try:
@@ -263,7 +271,12 @@ class Client(_Sync):
     def __enter__(self) -> Client:
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         self.close()
 
 

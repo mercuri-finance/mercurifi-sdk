@@ -11,7 +11,11 @@ def canonical(value: object) -> str:
 
 
 def test_python_abis_match_the_shared_digest() -> None:
-    entries = sorted((p.stem, json.loads(p.read_text())) for p in ABI_DIR.glob("*.json") if not p.stem.startswith("_"))
+    entries = sorted(
+        (p.stem, json.loads(p.read_text()))
+        for p in ABI_DIR.glob("*.json")
+        if not p.stem.startswith("_")
+    )
     payload = "".join(f"{name}\n{canonical(abi)}\n" for name, abi in entries)
     digest = hashlib.sha256(payload.encode()).hexdigest()
     shared = json.loads((ROOT / "fixtures" / "abi-digest.json").read_text())

@@ -12,7 +12,9 @@ from .rpc import Rpc
 async def _check_code(rpc: Rpc, label: str, address: str, expected: str) -> None:
     code = await rpc.get_code(address)
     if code in ("0x", "") or to_hex(keccak(from_hex(code))).lower() != expected.lower():
-        raise NetworkMismatchError(f"The agent account {label} at {address} does not match the pinned code hash.")
+        raise NetworkMismatchError(
+            f"The agent account {label} at {address} does not match the pinned code hash."
+        )
 
 
 async def verify_network(rpc: Rpc, book: NetworkBook) -> None:
@@ -34,9 +36,13 @@ async def verify_network(rpc: Rpc, book: NetworkBook) -> None:
     registry = await rpc.read(AGENT_ACCOUNT_FACTORY, agents.factory, "registry")
     registry_factory = await rpc.read(AGENT_POLICY_REGISTRY, agents.registry, "FACTORY")
     if str(impl).lower() != agents.implementation.lower():
-        raise NetworkMismatchError(f"The factory reports implementation {impl}, not the pinned {agents.implementation}.")
+        raise NetworkMismatchError(
+            f"The factory reports implementation {impl}, not the pinned {agents.implementation}."
+        )
     if str(registry).lower() != agents.registry.lower():
-        raise NetworkMismatchError(f"The factory reports registry {registry}, not the pinned {agents.registry}.")
+        raise NetworkMismatchError(
+            f"The factory reports registry {registry}, not the pinned {agents.registry}."
+        )
     if str(registry_factory).lower() != agents.factory.lower():
         raise NetworkMismatchError(
             f"The policy registry at {agents.registry} belongs to factory {registry_factory}, not the pinned {agents.factory}."

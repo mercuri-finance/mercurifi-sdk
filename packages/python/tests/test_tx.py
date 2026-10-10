@@ -21,9 +21,21 @@ from mercurifi.signers import local_key
 from mercurifi.time import chain_deadline
 from mercurifi.tx import TxSender, WriteRequest
 
-from .helpers import ACCOUNT, OWNER_KEY, TOKEN, MockRpc, NodeError, Revert, local_client, local_json, local_rpc
+from .helpers import (
+    ACCOUNT,
+    OWNER_KEY,
+    TOKEN,
+    MockRpc,
+    NodeError,
+    Revert,
+    local_client,
+    local_json,
+    local_rpc,
+)
 
-V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "gas.json").read_text())
+V = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "gas.json").read_text()
+)
 BUY = AGENT_ACCOUNT.encode("buy", TOKEN, 1_000_000, 1, 1)
 SECRET_URL = "https://h.example/v2/SECRET"
 SECRET_KEY = OWNER_KEY[2:20]
@@ -40,7 +52,10 @@ def req(**over: Any) -> WriteRequest:
 @pytest.mark.parametrize("case", V["fees"])
 def test_fees(case: dict[str, Any]) -> None:
     out = case["out"]
-    assert fees_with_floor(int(case["baseFee"]), int(case["priority"])) == (int(out["maxFeePerGas"]), int(out["maxPriorityFeePerGas"]))
+    assert fees_with_floor(int(case["baseFee"]), int(case["priority"])) == (
+        int(out["maxFeePerGas"]),
+        int(out["maxPriorityFeePerGas"]),
+    )
 
 
 @pytest.mark.parametrize("case", V["cappedFees"])
@@ -51,7 +66,10 @@ def test_capped(case: dict[str, Any]) -> None:
         assert e.value.code == case["error"]
     else:
         out = case["out"]
-        assert fees_with_floor(int(case["baseFee"]), int(case["priority"]), int(case["cap"])) == (int(out["maxFeePerGas"]), int(out["maxPriorityFeePerGas"]))
+        assert fees_with_floor(int(case["baseFee"]), int(case["priority"]), int(case["cap"])) == (
+            int(out["maxFeePerGas"]),
+            int(out["maxPriorityFeePerGas"]),
+        )
 
 
 @pytest.mark.parametrize("case", V["gasLimit"])
@@ -70,7 +88,12 @@ async def test_floor_and_type2() -> None:
     mf = await _client(rpc)
     await mf.sender.send(local_key(OWNER_KEY), req())
     tx = sent_tx(rpc)
-    assert (tx["maxFeePerGas"], tx["gas"], tx["nonce"], tx["chainId"]) == (20_000_000_000, 180_000, 7, 31337)
+    assert (tx["maxFeePerGas"], tx["gas"], tx["nonce"], tx["chainId"]) == (
+        20_000_000_000,
+        180_000,
+        7,
+        31337,
+    )
 
 
 async def test_floors_when_node_reports_tiny_base_fee_and_tip() -> None:
@@ -95,7 +118,12 @@ async def test_preflight_revert_signs_nothing() -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
     # PeriodSpendExceeded is a registry error that bubbles through the account call (merged decoding).
-    rpc.revert(ACCOUNT, AGENT_ACCOUNT, "buy", AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 3_000_000))
+    rpc.revert(
+        ACCOUNT,
+        AGENT_ACCOUNT,
+        "buy",
+        AGENT_POLICY_REGISTRY.encode_error("PeriodSpendExceeded", 3_000_000),
+    )
     with pytest.raises(ContractRevertError, match="3 USDC") as e:
         await mf.sender.send(local_key(OWNER_KEY), req())
     assert rpc.sent == [] and e.value.__cause__ is None and e.value.__context__ is None
@@ -125,7 +153,10 @@ async def test_failed_attempt_rereads_nonce_even_before_sending() -> None:
         return "0x1"
 
     rpc.on("eth_maxPriorityFeePerGas", flaky)
-    rpc.on("eth_estimateGas", lambda p: (_ for _ in ()).throw(NodeError(-32000, "no")) if calls["n"] == 0 else "0x1")
+    rpc.on(
+        "eth_estimateGas",
+        lambda p: (_ for _ in ()).throw(NodeError(-32000, "no")) if calls["n"] == 0 else "0x1",
+    )
     with pytest.raises(MercurifiError):
         await mf.sender.send(local_key(OWNER_KEY), req())
     rpc.on("eth_estimateGas", lambda p: "0x30d40")
@@ -144,7 +175,9 @@ async def test_concurrent_sends_are_ordered() -> None:
     assert len(rpc.methods("eth_getTransactionCount")) == 1
 
 
-async def test_chain_time_not_local_clock(monkeypatch: pytest.MonkeyPatch) -> None:  # Review Focus 2
+async def test_chain_time_not_local_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # Review Focus 2
     import time as _time
 
     rpc = local_rpc()
@@ -166,15 +199,35 @@ async def test_chain_is_rechecked_before_each_send_and_nothing_is_signed_on_mism
 
 async def test_chain_is_rechecked_with_verify_false_on_the_local_book() -> None:
     rpc = MockRpc(31337)
-    mf = await create_client(local_network(local_json()), rpc_url="http://127.0.0.1:8545", rpc_transport=rpc.transport(), verify=False, on_warning=lambda m: None, api=None)
+    mf = await create_client(
+        local_network(local_json()),
+        rpc_url="http://127.0.0.1:8545",
+        rpc_transport=rpc.transport(),
+        verify=False,
+        on_warning=lambda m: None,
+        api=None,
+    )
     assert rpc.calls == []
     rpc.chain_id = 1
     with pytest.raises(NetworkMismatchError):
         await mf.sender.send(local_key(OWNER_KEY), req())
-    assert rpc.sent == [] and [m for m, _ in rpc.calls] == ["eth_getTransactionCount", "eth_chainId"]
+    assert rpc.sent == [] and [m for m, _ in rpc.calls] == [
+        "eth_getTransactionCount",
+        "eth_chainId",
+    ]
 
 
-@pytest.mark.parametrize("method", ["eth_chainId", "eth_call", "eth_estimateGas", "eth_getBlockByNumber", "eth_sendRawTransaction", "eth_getTransactionReceipt"])
+@pytest.mark.parametrize(
+    "method",
+    [
+        "eth_chainId",
+        "eth_call",
+        "eth_estimateGas",
+        "eth_getBlockByNumber",
+        "eth_sendRawTransaction",
+        "eth_getTransactionReceipt",
+    ],
+)
 async def test_transport_failure_is_a_credential_free_rpc_error(method: str) -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
@@ -201,21 +254,27 @@ async def test_non_sdk_exception_from_the_rpc_layer_is_redacted() -> None:
     mf.rpc.get_block = bad  # type: ignore[method-assign]
     with pytest.raises(MercurifiError) as e:
         await mf.sender.send(local_key(OWNER_KEY), req())
-    assert e.value.code == "RPC_ERROR" and "SECRET" not in str(e.value) and "h.example" in str(e.value)
+    assert (
+        e.value.code == "RPC_ERROR" and "SECRET" not in str(e.value) and "h.example" in str(e.value)
+    )
     assert e.value.__cause__ is None and e.value.__context__ is None
 
 
 async def test_preflight_also_redacts() -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
-    rpc.on("eth_call", lambda p: (_ for _ in ()).throw(NodeError(-32000, f"failed at {SECRET_URL}")))
+    rpc.on(
+        "eth_call", lambda p: (_ for _ in ()).throw(NodeError(-32000, f"failed at {SECRET_URL}"))
+    )
     with pytest.raises(MercurifiError) as e:
         await mf.sender.preflight(local_key(OWNER_KEY).address, req())
     assert "SECRET" not in str(e.value) and e.value.code == "RPC_ERROR"
     assert e.value.__cause__ is None and e.value.__context__ is None
 
 
-async def test_queued_send_is_preflighted_after_its_predecessor_and_never_signed_if_it_reverts() -> None:
+async def test_queued_send_is_preflighted_after_its_predecessor_and_never_signed_if_it_reverts() -> (
+    None
+):
     import asyncio
 
     rpc = local_rpc()
@@ -229,7 +288,9 @@ async def test_queued_send_is_preflighted_after_its_predecessor_and_never_signed
 
     rpc.read(ACCOUNT, AGENT_ACCOUNT, "buy", buy)
     s = local_key(OWNER_KEY)
-    first, second = await asyncio.gather(mf.sender.send(s, req()), mf.sender.send(s, req()), return_exceptions=True)
+    first, second = await asyncio.gather(
+        mf.sender.send(s, req()), mf.sender.send(s, req()), return_exceptions=True
+    )
     assert not isinstance(first, BaseException)
     assert isinstance(second, ContractRevertError)
     assert len(rpc.sent) == 1
@@ -238,7 +299,10 @@ async def test_queued_send_is_preflighted_after_its_predecessor_and_never_signed
 async def test_gas_fallback_only_on_node_estimation_errors() -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
-    rpc.on("eth_estimateGas", lambda p: (_ for _ in ()).throw(NodeError(-32000, "gas required exceeds allowance")))
+    rpc.on(
+        "eth_estimateGas",
+        lambda p: (_ for _ in ()).throw(NodeError(-32000, "gas required exceeds allowance")),
+    )
     await mf.sender.send(local_key(OWNER_KEY), req(may_graduate=True))
     assert sent_tx(rpc)["gas"] == 1_800_000
     rpc.on("eth_estimateGas", lambda p: (_ for _ in ()).throw(httpx.ReadError("socket hang up")))
@@ -252,14 +316,20 @@ async def test_gas_fallback_only_on_node_estimation_errors() -> None:
     assert len(rpc.sent) == 1
 
 
-_EST = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "estimate-errors.json").read_text())
+_EST = json.loads(
+    (
+        Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "estimate-errors.json"
+    ).read_text()
+)
 
 
 @pytest.mark.parametrize("case", _EST["cases"], ids=[c["message"][:30] for c in _EST["cases"]])
 async def test_gas_fallback_never_for_a_provider_rate_limit(case: dict[str, Any]) -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
-    rpc.on("eth_estimateGas", lambda p: (_ for _ in ()).throw(NodeError(case["code"], case["message"])))
+    rpc.on(
+        "eth_estimateGas", lambda p: (_ for _ in ()).throw(NodeError(case["code"], case["message"]))
+    )
     if case["fallback"]:
         await mf.sender.send(local_key(OWNER_KEY), req(may_graduate=True))
         assert sent_tx(rpc)["gas"] == 1_800_000
@@ -284,10 +354,23 @@ async def test_priority_fee_is_capped_by_default_and_by_option() -> None:
 async def test_invalid_timings_are_rejected() -> None:
     rpc = local_rpc()
     mf = await _client(rpc)
-    for over in ({"receipt_timeout": 0}, {"receipt_timeout": -1}, {"receipt_timeout": float("inf")}, {"poll_interval": 0}, {"poll_interval": float("nan")}):
+    for over in (
+        {"receipt_timeout": 0},
+        {"receipt_timeout": -1},
+        {"receipt_timeout": float("inf")},
+        {"poll_interval": 0},
+        {"poll_interval": float("nan")},
+    ):
         args: dict[str, Any] = {"receipt_timeout": 1.0, "poll_interval": 0.1, **over}
         with pytest.raises(MercurifiError) as e:
-            TxSender(mf.rpc, 31337, NonceManager(lambda a: _zero()), args["receipt_timeout"], args["poll_interval"], None)
+            TxSender(
+                mf.rpc,
+                31337,
+                NonceManager(lambda a: _zero()),
+                args["receipt_timeout"],
+                args["poll_interval"],
+                None,
+            )
         assert e.value.code == "INVALID_INPUT"
     with pytest.raises(MercurifiError):
         await local_client(local_rpc(), max_priority_fee_per_gas=0)
@@ -327,7 +410,11 @@ async def test_signer_failure_is_redacted_and_chained_to_nothing() -> None:
 
     with pytest.raises(MercurifiError) as e:
         await mf.sender.send(Bad(), req())
-    assert e.value.code == "SIGNER_ERROR" and "kms.example" in str(e.value) and "secret-key-path" not in str(e.value)
+    assert (
+        e.value.code == "SIGNER_ERROR"
+        and "kms.example" in str(e.value)
+        and "secret-key-path" not in str(e.value)
+    )
     assert e.value.__cause__ is None and e.value.__context__ is None
     assert rpc.sent == []
 
@@ -373,7 +460,9 @@ def test_nonce_locks_are_per_event_loop() -> None:
             await asyncio.sleep(0.001)
             return n
 
-        return list(await asyncio.gather(manager.with_nonce("0xAb", fn), manager.with_nonce("0xab", fn)))
+        return list(
+            await asyncio.gather(manager.with_nonce("0xAb", fn), manager.with_nonce("0xab", fn))
+        )
 
     for _ in range(2):  # a fresh loop per call, as a sync wrapper using asyncio.run would
         assert asyncio.run(two()) == [3, 4]

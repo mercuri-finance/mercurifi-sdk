@@ -3,20 +3,40 @@ from pathlib import Path
 
 import pytest
 
-from mercurifi.curve import LaunchConfig, buy_impact_bps, is_sell_out_quote, may_graduate_buy, quote_fresh_buy, sell_impact_bps
+from mercurifi.curve import (
+    LaunchConfig,
+    buy_impact_bps,
+    is_sell_out_quote,
+    may_graduate_buy,
+    quote_fresh_buy,
+    sell_impact_bps,
+)
 
-V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "curve.json").read_text())
-C = LaunchConfig.from_abi({k: (int(v) if isinstance(v, str) else v) for k, v in V["config"].items()})
+V = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "curve.json").read_text()
+)
+C = LaunchConfig.from_abi(
+    {k: (int(v) if isinstance(v, str) else v) for k, v in V["config"].items()}
+)
 
 
 @pytest.mark.parametrize("case", V["freshBuy"])
 def test_fresh_buy(case: dict[str, str]) -> None:
-    assert quote_fresh_buy(C, int(case["valueWei"])) == (int(case["tokensOut"]), int(case["usdcUsed"]), int(case["fee"]))
+    assert quote_fresh_buy(C, int(case["valueWei"])) == (
+        int(case["tokensOut"]),
+        int(case["usdcUsed"]),
+        int(case["fee"]),
+    )
 
 
 @pytest.mark.parametrize("case", V["sellOut"])
 def test_sell_out(case: dict[str, object]) -> None:
-    got = is_sell_out_quote(int(str(case["usdcIn"])), int(str(case["usdcUsed"])), int(str(case["tokensOut"])), int(str(case["tokensRemaining"])))
+    got = is_sell_out_quote(
+        int(str(case["usdcIn"])),
+        int(str(case["usdcUsed"])),
+        int(str(case["tokensOut"])),
+        int(str(case["tokensRemaining"])),
+    )
     assert got is case["out"]
 
 
@@ -38,15 +58,24 @@ def test_impact_roundings_mirror_agent_policy_lib() -> None:
 
 @pytest.mark.parametrize("case", V["impact"]["buy"])
 def test_buy_impact_vectors(case: dict[str, str]) -> None:
-    assert buy_impact_bps(int(case["net"]), int(case["tokensOut"]), int(case["price"])) == int(case["bps"])
+    assert buy_impact_bps(int(case["net"]), int(case["tokensOut"]), int(case["price"])) == int(
+        case["bps"]
+    )
 
 
 @pytest.mark.parametrize("case", V["impact"]["sell"])
 def test_sell_impact_vectors(case: dict[str, str]) -> None:
-    assert sell_impact_bps(int(case["gross"]), int(case["tokensIn"]), int(case["price"])) == int(case["bps"])
+    assert sell_impact_bps(int(case["gross"]), int(case["tokensIn"]), int(case["price"])) == int(
+        case["bps"]
+    )
 
 
 @pytest.mark.parametrize("case", V["mayGraduate"])
 def test_may_graduate_vectors(case: dict[str, object]) -> None:
-    got = may_graduate_buy(int(str(case["usdcIn"])), int(str(case["usdcUsed"])), int(str(case["tokensOut"])), int(str(case["tokensRemaining"])))
+    got = may_graduate_buy(
+        int(str(case["usdcIn"])),
+        int(str(case["usdcUsed"])),
+        int(str(case["tokensOut"])),
+        int(str(case["tokensRemaining"])),
+    )
     assert got is case["may"]

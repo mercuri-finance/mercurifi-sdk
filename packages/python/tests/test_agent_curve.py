@@ -32,13 +32,24 @@ from .helpers import (
 SIGNER = local_key(AGENT_KEY)
 
 
-async def setup(account: dict[str, Any] | None = None, **curve: Any) -> tuple[MockRpc, Any, AgentClient]:
+async def setup(
+    account: dict[str, Any] | None = None, **curve: Any
+) -> tuple[MockRpc, Any, AgentClient]:
     rpc = local_rpc()
     mock_account(rpc, owner=A(0x99), agent=SIGNER.address, **(account or {}))
     mock_curve(rpc, **curve)
     rpc.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
     rpc.read(ACCOUNT, AGENT_ACCOUNT, "sell", 0)
-    rpc.receipt_logs = [agent_action_log(agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=25_000_000, tokenDelta=1_000_000 * WAD, periodId=19_637)]
+    rpc.receipt_logs = [
+        agent_action_log(
+            agent=SIGNER.address,
+            action=1,
+            token=TOKEN,
+            usdcSpent=25_000_000,
+            tokenDelta=1_000_000 * WAD,
+            periodId=19_637,
+        )
+    ]
     mf = await local_client(rpc)
     return rpc, mf, await mf.agent(ACCOUNT, SIGNER, slippage=0.02)
 
@@ -58,7 +69,12 @@ async def test_buy_with_floor_and_chain_deadline() -> None:
     assert name == "buy"
     assert list(args.values()) == [TOKEN, 25_000_000, 980_000 * WAD, rpc.block["timestamp"] + 60]
     assert tx["gas"] == 180_000
-    assert (fill.action, fill.tokens_out, fill.usdc_spent, fill.launched) == ("buy", 1_000_000 * WAD, "25", None)
+    assert (fill.action, fill.tokens_out, fill.usdc_spent, fill.launched) == (
+        "buy",
+        1_000_000 * WAD,
+        "25",
+        None,
+    )
 
 
 async def test_graduating_buy_floor() -> None:
@@ -94,14 +110,23 @@ async def test_sell_more_than_the_balance_fails_locally() -> None:
 async def test_sell_all_while_pending() -> None:
     rpc, _, agent = await setup(phase=1, balance=5 * WAD, usdc_out=9_900_000_000_000_000_000)
     await agent.sell(TOKEN, amount="all")
-    assert list(sent_call(rpc, AGENT_ACCOUNT)[1].values()) == [TOKEN, 5 * WAD, 9_702_000, rpc.block["timestamp"] + 60]
+    assert list(sent_call(rpc, AGENT_ACCOUNT)[1].values()) == [
+        TOKEN,
+        5 * WAD,
+        9_702_000,
+        rpc.block["timestamp"] + 60,
+    ]
 
 
 async def test_sell_valued_at_high_water_refused_locally() -> None:
     # 100 USDC for 1,000 tokens, then a crash buy of 10 USDC for 10,000: the average is 0.01 but the high-water stays 0.1.
-    rpc, _, agent = await setup({"basis": (110_000_000, 11_000 * WAD, 10**23)}, balance=11_000 * WAD)
+    rpc, _, agent = await setup(
+        {"basis": (110_000_000, 11_000 * WAD, 10**23)}, balance=11_000 * WAD
+    )
     assert (await agent.position(TOKEN)).high_water == 10**23
-    err = await refused(agent.sell(TOKEN, amount_wei=2_000 * WAD), "TradeTooLarge")  # valued at 200 USDC (high-water), not 20 (average)
+    err = await refused(
+        agent.sell(TOKEN, amount_wei=2_000 * WAD), "TradeTooLarge"
+    )  # valued at 200 USDC (high-water), not 20 (average)
     assert err.phase == "local"
     assert rpc.sent == []
 
@@ -113,7 +138,9 @@ async def test_headroom_from_the_registry() -> None:
     assert h.period_ends_at == (19_637 + 1) * 86_400
     headroom_call = AGENT_POLICY_REGISTRY.encode("headroom", ACCOUNT).lower()
     calls = [p[0] for p in rpc.methods("eth_call")]
-    assert any(c["to"].lower() == REGISTRY.lower() and c["data"].lower() == headroom_call for c in calls)
+    assert any(
+        c["to"].lower() == REGISTRY.lower() and c["data"].lower() == headroom_call for c in calls
+    )
 
 
 async def test_refuses_non_account() -> None:
@@ -123,6 +150,7 @@ async def test_refuses_non_account() -> None:
 
 
 # --- the preflight mirrors the account ---------------------------------------------------------------------------------
+
 
 async def test_price_impact_with_the_same_bps_the_account_computes() -> None:
     rpc, _, agent = await setup(price=10**13)
@@ -134,7 +162,9 @@ async def test_price_impact_with_the_same_bps_the_account_computes() -> None:
 async def test_snipe_age_and_allowlist() -> None:
     _, _, agent = await setup(snipe=500)
     await refused(agent.buy(TOKEN, usdc="1"), "SnipeTaxTooHigh")
-    young = await setup({"policy": replace(DEFAULT_POLICY, min_token_age_blocks=1_000)})  # block 1000, launchBlock 100: age 900
+    young = await setup(
+        {"policy": replace(DEFAULT_POLICY, min_token_age_blocks=1_000)}
+    )  # block 1000, launchBlock 100: age 900
     await refused(young[2].buy(TOKEN, usdc="1"), "TokenTooNew")
     listed = await setup({"policy": replace(DEFAULT_POLICY, allowlist_only=True)})
     await refused(listed[2].buy(TOKEN, usdc="1"), "TokenNotAllowed")
@@ -145,15 +175,21 @@ async def test_max_trade_spend_headroom_and_token_cap() -> None:
     _, _, agent = await setup()
     await refused(agent.buy(TOKEN, usdc="101"), "TradeTooLarge")
     low = await setup({"headroom": (20_000_000, 500_000_000, 499, 3)})
-    assert (await refused(low[2].buy(TOKEN, usdc="25"), "PeriodSpendExceeded")).revert.args == [20_000_000]
+    assert (await refused(low[2].buy(TOKEN, usdc="25"), "PeriodSpendExceeded")).revert.args == [
+        20_000_000
+    ]
     capped = await setup()
     capped[0].read(REGISTRY, AGENT_POLICY_REGISTRY, "tokenSpent", 90_000_000)
-    assert (await refused(capped[2].buy(TOKEN, usdc="25"), "TokenCapExceeded")).revert.args == [10_000_000]
+    assert (await refused(capped[2].buy(TOKEN, usdc="25"), "TokenCapExceeded")).revert.args == [
+        10_000_000
+    ]
     assert low[0].sent == [] and capped[0].sent == []
 
 
 async def test_spend_checked_against_what_a_final_buy_really_uses() -> None:
-    rpc, _, agent = await setup({"headroom": (16_000_000, 500_000_000, 499, 3)}, used=lambda u: u - 10**19)
+    rpc, _, agent = await setup(
+        {"headroom": (16_000_000, 500_000_000, 499, 3)}, used=lambda u: u - 10**19
+    )
     await agent.buy(TOKEN, usdc="25")
     assert len(rpc.sent) == 1
 
@@ -172,14 +208,23 @@ async def test_sell_price_impact() -> None:
 
 async def test_agent_state_checks() -> None:
     await refused((await setup({"agent_active": False}))[2].buy(TOKEN, usdc="1"), "NotAgent")
-    await refused((await setup({"agent_expires_at": 1_600_000_000}))[2].buy(TOKEN, usdc="1"), "AgentExpired")
-    await refused((await setup({"agent_permissions": 2}))[2].buy(TOKEN, usdc="1"), "MissingPermission")
-    await refused((await setup({"headroom": (400_000_000, 500_000_000, 0, 3)}))[2].buy(TOKEN, usdc="1"), "ActionLimit")
+    await refused(
+        (await setup({"agent_expires_at": 1_600_000_000}))[2].buy(TOKEN, usdc="1"), "AgentExpired"
+    )
+    await refused(
+        (await setup({"agent_permissions": 2}))[2].buy(TOKEN, usdc="1"), "MissingPermission"
+    )
+    await refused(
+        (await setup({"headroom": (400_000_000, 500_000_000, 0, 3)}))[2].buy(TOKEN, usdc="1"),
+        "ActionLimit",
+    )
 
 
 async def test_agent_expiring_next_second_is_refused() -> None:
     now = 1_700_000_000
-    await refused((await setup({"agent_expires_at": now + 1}))[2].buy(TOKEN, usdc="1"), "AgentExpired")
+    await refused(
+        (await setup({"agent_expires_at": now + 1}))[2].buy(TOKEN, usdc="1"), "AgentExpired"
+    )
     ok = await setup({"agent_expires_at": now + 2})
     await ok[2].buy(TOKEN, usdc="1")
 
@@ -202,16 +247,48 @@ async def test_deadline_clamped_to_max_deadline_seconds() -> None:
 
 async def test_measured_fill_not_the_quote() -> None:
     rpc, _, agent = await setup()
-    rpc.receipt_logs = [agent_action_log(agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=24_000_000, tokenDelta=7 * WAD, basisValue=24_000_000, periodId=5)]
+    rpc.receipt_logs = [
+        agent_action_log(
+            agent=SIGNER.address,
+            action=1,
+            token=TOKEN,
+            usdcSpent=24_000_000,
+            tokenDelta=7 * WAD,
+            basisValue=24_000_000,
+            periodId=5,
+        )
+    ]
     fill = await agent.buy(TOKEN, usdc="25")
-    assert (fill.usdc_spent6, fill.token_delta, fill.basis_value6, fill.period_id) == (24_000_000, 7 * WAD, 24_000_000, 5)
+    assert (fill.usdc_spent6, fill.token_delta, fill.basis_value6, fill.period_id) == (
+        24_000_000,
+        7 * WAD,
+        24_000_000,
+        5,
+    )
 
 
 async def test_sell_fill_has_negative_token_delta() -> None:
     rpc, _, agent = await setup(balance=5 * WAD)
-    rpc.receipt_logs = [agent_action_log(agent=SIGNER.address, action=2, token=TOKEN, usdcReceived=9_000_000, tokenDelta=-(5 * WAD), basisValue=9_900_000, periodId=3)]
+    rpc.receipt_logs = [
+        agent_action_log(
+            agent=SIGNER.address,
+            action=2,
+            token=TOKEN,
+            usdcReceived=9_000_000,
+            tokenDelta=-(5 * WAD),
+            basisValue=9_900_000,
+            periodId=3,
+        )
+    ]
     fill = await agent.sell(TOKEN, amount="all")
-    assert (fill.action, fill.usdc_received6, fill.usdc_received, fill.tokens_in, fill.tokens, fill.basis_value6) == ("sell", 9_000_000, "9", 5 * WAD, "5", 9_900_000)
+    assert (
+        fill.action,
+        fill.usdc_received6,
+        fill.usdc_received,
+        fill.tokens_in,
+        fill.tokens,
+        fill.basis_value6,
+    ) == ("sell", 9_000_000, "9", 5 * WAD, "5", 9_900_000)
 
 
 async def test_no_agent_action_in_the_receipt() -> None:
@@ -244,10 +321,17 @@ async def test_half_of_what_is_left_may_graduate() -> None:
 
 
 async def test_token_age_is_compared_against_latest_plus_one() -> None:
-    ok = await setup({"policy": replace(DEFAULT_POLICY, min_token_age_blocks=901)})  # latest 1000, launchBlock 100: 901 once included
+    ok = await setup(
+        {"policy": replace(DEFAULT_POLICY, min_token_age_blocks=901)}
+    )  # latest 1000, launchBlock 100: 901 once included
     await ok[2].buy(TOKEN, usdc="1")
     assert len(ok[0].sent) == 1
-    await refused((await setup({"policy": replace(DEFAULT_POLICY, min_token_age_blocks=902)}))[2].buy(TOKEN, usdc="1"), "TokenTooNew")
+    await refused(
+        (await setup({"policy": replace(DEFAULT_POLICY, min_token_age_blocks=902)}))[2].buy(
+            TOKEN, usdc="1"
+        ),
+        "TokenTooNew",
+    )
 
 
 async def test_dust_sell_minimum_is_one_micro_usdc() -> None:
@@ -268,7 +352,13 @@ async def test_reads_are_pinned_to_one_block() -> None:
         return {c[1] for c in calls if c[0]["data"][:10].lower() not in trade}
 
     rpc, _, agent = await setup(balance=5 * WAD)
-    for i, run in enumerate((lambda: agent.buy(TOKEN, usdc="1"), lambda: agent.sell(TOKEN, amount="all"), agent.headroom)):
+    for i, run in enumerate(
+        (
+            lambda: agent.buy(TOKEN, usdc="1"),
+            lambda: agent.sell(TOKEN, amount="all"),
+            agent.headroom,
+        )
+    ):
         start = len(rpc.methods("eth_call"))
         await run()
         blocks = pinned(rpc.methods("eth_call")[start:])
@@ -287,8 +377,25 @@ async def test_unknown_action_code_is_an_error() -> None:
 
 async def test_other_accounts_action_ignored_and_duplicates_rejected() -> None:
     rpc, _, agent = await setup()
-    own = agent_action_log(agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=3_000_000, tokenDelta=2 * WAD, periodId=4)
-    other = log(AGENT_ACCOUNT, A(0xAB), "AgentAction", agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=99_000_000, tokenDelta=99 * WAD, periodId=9)
+    own = agent_action_log(
+        agent=SIGNER.address,
+        action=1,
+        token=TOKEN,
+        usdcSpent=3_000_000,
+        tokenDelta=2 * WAD,
+        periodId=4,
+    )
+    other = log(
+        AGENT_ACCOUNT,
+        A(0xAB),
+        "AgentAction",
+        agent=SIGNER.address,
+        action=1,
+        token=TOKEN,
+        usdcSpent=99_000_000,
+        tokenDelta=99 * WAD,
+        periodId=9,
+    )
     rpc.receipt_logs = [other, own]
     fill = await agent.buy(TOKEN, usdc="3")
     assert (fill.usdc_spent6, fill.period_id) == (3_000_000, 4)
@@ -310,8 +417,20 @@ async def test_amounts_are_checked_before_any_read() -> None:
 
 async def test_logs_without_an_address_are_skipped() -> None:
     rpc, _, agent = await setup()
-    own = agent_action_log(agent=SIGNER.address, action=1, token=TOKEN, usdcSpent=3_000_000, tokenDelta=2 * WAD, periodId=4)
-    rpc.receipt_logs = [{k: v for k, v in own.items() if k != "address"}, {"address": None, "topics": [], "data": "0x"}, {"address": ACCOUNT}, own]
+    own = agent_action_log(
+        agent=SIGNER.address,
+        action=1,
+        token=TOKEN,
+        usdcSpent=3_000_000,
+        tokenDelta=2 * WAD,
+        periodId=4,
+    )
+    rpc.receipt_logs = [
+        {k: v for k, v in own.items() if k != "address"},
+        {"address": None, "topics": [], "data": "0x"},
+        {"address": ACCOUNT},
+        own,
+    ]
     assert (await agent.buy(TOKEN, usdc="3")).period_id == 4
 
 

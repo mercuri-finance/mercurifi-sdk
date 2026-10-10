@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from .errors import GasPriceTooHighError, InvalidInputError
 
-MIN_MAX_FEE_PER_GAS = 20_000_000_000  # Arc drops transactions under 20 gwei without a receipt (spec Q6)
+MIN_MAX_FEE_PER_GAS = (
+    20_000_000_000  # Arc drops transactions under 20 gwei without a receipt (spec Q6)
+)
 # A buy that completes a curve graduates inline and needs >= 1M gas left at graduation (spec Q19, §4.11). Through the
 # account the contracts measure >= ~1.3M call gas (contracts AgentGas.t.sol); the SDK keeps 1.8M as its floor for margin.
 GRADUATION_GAS_LIMIT = 1_800_000
@@ -20,7 +22,9 @@ def fees_with_floor(base_fee: int, priority: int, cap: int | None = None) -> tup
     prio = min(priority, max_fee)
     if cap is not None:
         if cap < MIN_MAX_FEE_PER_GAS:
-            raise InvalidInputError("max_fee_per_gas_cap", "max_fee_per_gas_cap is below the Arc floor of 20 gwei")
+            raise InvalidInputError(
+                "max_fee_per_gas_cap", "max_fee_per_gas_cap is below the Arc floor of 20 gwei"
+            )
         required = base_fee + prio
         if required > cap:
             raise GasPriceTooHighError(required, cap)

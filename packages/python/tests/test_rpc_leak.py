@@ -1,6 +1,7 @@
 """Every public read and write preflight against a closed loopback port with a secret in the RPC URL's path: the
 secret must not appear in any error's text, traceback, attributes, cause or context (parity with TS rpc-leak.test.ts).
 Set-up answers come from a MockRpc; then requests go to the real (closed) 127.0.0.1:1."""
+
 from __future__ import annotations
 
 import traceback
@@ -11,7 +12,17 @@ import httpx
 
 from mercurifi.signers import local_key
 
-from .helpers import ACCOUNT, AGENT_KEY, OWNER_KEY, TOKEN, A, local_client, local_rpc, mock_account, mock_curve
+from .helpers import (
+    ACCOUNT,
+    AGENT_KEY,
+    OWNER_KEY,
+    TOKEN,
+    A,
+    local_client,
+    local_rpc,
+    mock_account,
+    mock_curve,
+)
 
 SECRET = "SUPERSECRETKEY123"
 URL = f"http://127.0.0.1:1/v2/{SECRET}"
@@ -25,7 +36,9 @@ class _Switch(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if self.closed:
-            return await self.real.handle_async_request(request)  # ConnectError from the real socket
+            return await self.real.handle_async_request(
+                request
+            )  # ConnectError from the real socket
         return await self.mock.handle_async_request(request)
 
     async def aclose(self) -> None:

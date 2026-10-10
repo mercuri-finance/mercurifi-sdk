@@ -20,7 +20,7 @@ publishes a release; each release needs its own approval.
   one comes with the matching change to the other, and the shared vectors in `fixtures/` keep them honest.
 - **Tests.** `cd packages/typescript && npm test && npm run typecheck`, and `cd packages/python && uv run pytest`. A
   change that touches transactions also passes the Anvil tier (see the README's Local development).
-- **Formatting.** Prettier is the standard for TypeScript, JavaScript, Markdown and JSON (`.prettierrc.json`; code at 100 columns, examples and Markdown at 80). Run `npm run format` in `packages/typescript`; CI runs `npm run format:check`. In examples and README snippets, leave a blank line between statements so each step reads on its own.
+- **Formatting.** Prettier is the standard for TypeScript, JavaScript, Markdown and JSON (`.prettierrc.json`; code at 100 columns, examples and Markdown at 80). Run `npm run format` in `packages/typescript`; CI runs `npm run format:check`. Python uses `ruff format` at 100 columns (`uv run ruff format .` in `packages/python`; CI runs `--check`). In examples and README snippets, leave a blank line between statements so each step reads on its own.
 - **No new runtime dependency** without a reason recorded in the pull request: the TypeScript package depends on viem
   only, the Python package on `eth-account`, `eth-abi`, `eth-utils` and `httpx`.
 - **Workflows.** `node scripts/check-workflows.mjs` must pass; actions are pinned by commit, and the release jobs keep

@@ -1,4 +1,5 @@
 """Decimal and basis-point helpers. Amounts are exact ints in base units; floats are never accepted for money."""
+
 from __future__ import annotations
 
 import math
@@ -21,7 +22,9 @@ _MAX_EXPONENT = 40
 _DECIMAL = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]+)?", re.ASCII)
 
 
-def parse_decimal(value: object, decimals: int, field: str, base_unit_hint: str | None = None) -> int:
+def parse_decimal(
+    value: object, decimals: int, field: str, base_unit_hint: str | None = None
+) -> int:
     """Parse a plain non-negative ASCII decimal string into base units; numbers are refused.
 
     More fractional digits than `decimals` are an error even when the extra digits are zeros
@@ -34,11 +37,15 @@ def parse_decimal(value: object, decimals: int, field: str, base_unit_hint: str 
             f'{field} must be a decimal string such as "25" or "0.5" (got {type(value).__name__}). '
             f"For base units use {hint} with an int.",
         )
-    text = value.strip(_WS)  # ASCII whitespace only; Unicode spaces, \x1f, \x85 and U+FEFF are rejected
+    text = value.strip(
+        _WS
+    )  # ASCII whitespace only; Unicode spaces, \x1f, \x85 and U+FEFF are rejected
     if len(text) > _MAX_TEXT:
         raise InvalidInputError(field, f"{field} is too long")
     if _DECIMAL.fullmatch(text) is None:
-        raise InvalidInputError(field, f'{field} must be a plain decimal string such as "25" or "0.5"')
+        raise InvalidInputError(
+            field, f'{field} must be a plain decimal string such as "25" or "0.5"'
+        )
     whole, _, frac = text.partition(".")
     if len(frac) > decimals:
         raise InvalidInputError(field, f"{field} has more than {decimals} decimal places")
@@ -87,16 +94,23 @@ def slippage_to_bps(s: object) -> int:
     if (
         isinstance(s, bool)
         or not isinstance(s, (int, float))
-        or (isinstance(s, float) and not math.isfinite(s))  # never float() an int: huge ints overflow
+        or (
+            isinstance(s, float) and not math.isfinite(s)
+        )  # never float() an int: huge ints overflow
         or s < 0
         or s >= MAX_SLIPPAGE
     ):
-        raise InvalidInputError("slippage", "slippage is a fraction: 0.02 means 2%. It must be at least 0 and below 0.5.")
+        raise InvalidInputError(
+            "slippage",
+            "slippage is a fraction: 0.02 means 2%. It must be at least 0 and below 0.5.",
+        )
     if s == 0:
         return 0  # normalises -0.0
     bps = round(s * 10_000)
     if abs(bps - s * 10_000) > 1e-6:
-        raise InvalidInputError("slippage", "slippage must be a whole number of basis points (steps of 0.0001)")
+        raise InvalidInputError(
+            "slippage", "slippage must be a whole number of basis points (steps of 0.0001)"
+        )
     return int(bps)
 
 
@@ -122,22 +136,32 @@ def _human(value: str | Decimal) -> object:
 def resolve_usdc6(usdc: str | Decimal | None, usdc6: int | None, field: str = "usdc") -> int:
     """Exactly one of `usdc` (decimal string or Decimal) or `usdc6` (int base units)."""
     if (usdc is None) == (usdc6 is None):
-        raise InvalidInputError(field, f"pass exactly one of {field} (decimal string) or {field}6 (int)")
+        raise InvalidInputError(
+            field, f"pass exactly one of {field} (decimal string) or {field}6 (int)"
+        )
     if usdc6 is not None:
         if isinstance(usdc6, bool) or not isinstance(usdc6, int) or usdc6 < 0:
-            raise InvalidInputError(f"{field}6", f"{field}6 must be an int of base units (1 USDC = 1000000)")
+            raise InvalidInputError(
+                f"{field}6", f"{field}6 must be an int of base units (1 USDC = 1000000)"
+            )
         return usdc6
     assert usdc is not None
     return parse_usdc(_human(usdc), field)
 
 
-def resolve_token_amount(amount: str | Decimal | None, amount_wei: int | None) -> int | Literal["all"]:
+def resolve_token_amount(
+    amount: str | Decimal | None, amount_wei: int | None
+) -> int | Literal["all"]:
     """Exactly one of `amount` (decimal string, Decimal or 'all') or `amount_wei` (int, 18 decimals)."""
     if (amount is None) == (amount_wei is None):
-        raise InvalidInputError("amount", "pass exactly one of amount (decimal string or 'all') or amount_wei (int)")
+        raise InvalidInputError(
+            "amount", "pass exactly one of amount (decimal string or 'all') or amount_wei (int)"
+        )
     if amount_wei is not None:
         if isinstance(amount_wei, bool) or not isinstance(amount_wei, int) or amount_wei < 0:
-            raise InvalidInputError("amount_wei", "amount_wei must be an int of 18-decimal base units")
+            raise InvalidInputError(
+                "amount_wei", "amount_wei must be an int of 18-decimal base units"
+            )
         return amount_wei
     assert amount is not None
     return "all" if amount == "all" else parse_tokens(_human(amount), "amount")

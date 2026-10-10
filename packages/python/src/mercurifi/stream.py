@@ -34,7 +34,9 @@ class StreamEvent:
 
 # The server's topic rules plus agent-account:0x…; account: is reserved
 # (docs/architecture/api.md) and private topics need a browser session. Event type strings are passed through.
-_TOPIC = re.compile(r"(head|trades|launches|governance|pools|pool-trades|(token|trader|agent-account):0x[0-9a-f]{40}|pool:0x[0-9a-f]{64})")
+_TOPIC = re.compile(
+    r"(head|trades|launches|governance|pools|pool-trades|(token|trader|agent-account):0x[0-9a-f]{40}|pool:0x[0-9a-f]{64})"
+)
 
 # Limits on untrusted input. The server's own events are far smaller.
 MAX_LINE_CHARS = 64 * 1024  # one line, and so the unterminated tail kept between chunks
@@ -61,11 +63,15 @@ def validate_topics(topics: list[str]) -> list[str]:
     for raw in topics:
         if not isinstance(raw, str):
             raise InvalidInputError("topics", "a topic must be a string")
-        t = str.translate(str.strip(raw, " \t\r\n"), _LOWER)  # ASCII-only lowercase: no Unicode case folding surprises
+        t = str.translate(
+            str.strip(raw, " \t\r\n"), _LOWER
+        )  # ASCII-only lowercase: no Unicode case folding surprises
         if t in ("orders", "follows"):
             raise InvalidInputError("topics", f"{t} is private and needs a browser session")
         if t.startswith("account:"):
-            raise InvalidInputError("topics", "account: is reserved; use agent-account:0x… for an agent account")
+            raise InvalidInputError(
+                "topics", "account: is reserved; use agent-account:0x… for an agent account"
+            )
         if _TOPIC.fullmatch(t) is None:
             raise InvalidInputError("topics", f"unknown topic {raw[:80]}")
         out.append(t)
@@ -73,7 +79,9 @@ def validate_topics(topics: list[str]) -> list[str]:
 
 
 def _too_large(what: str) -> StreamError:
-    return StreamError(f"The stream sent {what} over the size limit; the connection was dropped.", None)
+    return StreamError(
+        f"The stream sent {what} over the size limit; the connection was dropped.", None
+    )
 
 
 @dataclass
@@ -89,14 +97,18 @@ class _Parser:
     """Incremental SSE parser. Oversized lines or events raise StreamError instead of growing without bound."""
 
     def __init__(self) -> None:
-        self._decoder = codecs.getincrementaldecoder("utf-8-sig")(errors="replace")  # drops a leading BOM
+        self._decoder = codecs.getincrementaldecoder("utf-8-sig")(
+            errors="replace"
+        )  # drops a leading BOM
         self._buffer = ""
         self._ev = _Raw()
 
     def feed(self, chunk: bytes, final: bool = False) -> list[_Raw]:
         self._buffer += self._decoder.decode(chunk, final)
         if final and self._buffer.endswith("\r"):
-            self._buffer += "\n"  # a final CR held back as a possible CRLF half is a line end after all
+            self._buffer += (
+                "\n"  # a final CR held back as a possible CRLF half is a line end after all
+            )
         out: list[_Raw] = []
         buf = self._buffer
         pos = 0
@@ -142,7 +154,9 @@ class _Parser:
 def _parse_data(raw: str) -> Any:
     try:
         return json.loads(raw)
-    except ValueError:  # RecursionError on absurd nesting is a RuntimeError; the 256K cap keeps it far away
+    except (
+        ValueError
+    ):  # RecursionError on absurd nesting is a RuntimeError; the 256K cap keeps it far away
         return raw
     except RecursionError:
         return raw
@@ -193,11 +207,23 @@ def open_stream(
     is cancelled at exit, so keep it short. The HTTP client ignores environment proxies, `.netrc` and `SSL_CERT_*`
     variables (`trust_env=False`): the request carries an API key and must go where the address book says.
     """
-    if last_event_id is not None and not (isinstance(last_event_id, str) and _valid_id(last_event_id)):
+    if last_event_id is not None and not (
+        isinstance(last_event_id, str) and _valid_id(last_event_id)
+    ):
         raise InvalidInputError("last_event_id", "not a valid stream event id")
     return _run(
-        request, last_event_id, min_backoff, max_backoff, transport, sleep, random, max_reconnects, idle_timeout, healthy_after,
-        on_reconnect, now,
+        request,
+        last_event_id,
+        min_backoff,
+        max_backoff,
+        transport,
+        sleep,
+        random,
+        max_reconnects,
+        idle_timeout,
+        healthy_after,
+        on_reconnect,
+        now,
     )
 
 
@@ -260,16 +286,29 @@ async def _run(
 
     timeout = httpx.Timeout(10.0, read=None)
     try:
-        async with httpx.AsyncClient(transport=transport, timeout=timeout, follow_redirects=False, trust_env=False) as http:
+        async with httpx.AsyncClient(
+            transport=transport, timeout=timeout, follow_redirects=False, trust_env=False
+        ) as http:
             while True:
-                req_headers = {**headers, "Accept": "text/event-stream", "Accept-Encoding": "identity", **({"Last-Event-ID": last_id} if last_id else {})}
+                req_headers = {
+                    **headers,
+                    "Accept": "text/event-stream",
+                    "Accept-Encoding": "identity",
+                    **({"Last-Event-ID": last_id} if last_id else {}),
+                }
                 started = now()
                 idle_fired = False
                 response: httpx.Response | None = None
                 try:
                     try:
-                        response = await with_idle(http.send(http.build_request("GET", url, headers=req_headers), stream=True))
-                    except Exception as exc:  # the cause can carry the URL or key: only a fixed label leaves here
+                        response = await with_idle(
+                            http.send(
+                                http.build_request("GET", url, headers=req_headers), stream=True
+                            )
+                        )
+                    except (
+                        Exception
+                    ) as exc:  # the cause can carry the URL or key: only a fixed label leaves here
                         idle_fired = isinstance(exc, asyncio.TimeoutError)
                         response = None
                     if response is None:
@@ -284,7 +323,9 @@ async def _run(
                     if status == 429 or status >= 500:
                         retry_after = _retry_after(response.headers)
                         await response.aclose()
-                        hinted = min(jitter_up(retry_after), MAX_RETRY_AFTER) if retry_after > 0 else 0.0
+                        hinted = (
+                            min(jitter_up(retry_after), MAX_RETRY_AFTER) if retry_after > 0 else 0.0
+                        )
                         delay = max(backoff(attempt), hinted)
                         attempt += 1
                         notify(f"HTTP {status}", delay)
@@ -294,7 +335,9 @@ async def _run(
                         continue
                     if not 200 <= status < 300:
                         await response.aclose()
-                        raise StreamError(f"The stream at {host} was refused with HTTP {status}.", status)
+                        raise StreamError(
+                            f"The stream at {host} was refused with HTTP {status}.", status
+                        )
 
                     retry_s: float | None = None
                     ended = "stream ended"
@@ -309,7 +352,11 @@ async def _run(
                             done = True
                             chunk = b""
                         except Exception as exc:
-                            ended = "idle timeout" if isinstance(exc, asyncio.TimeoutError) else "stream error"
+                            ended = (
+                                "idle timeout"
+                                if isinstance(exc, asyncio.TimeoutError)
+                                else "stream error"
+                            )
                             break
                         raws = parser.feed(chunk, done)  # StreamError (oversize) propagates
                         for ev in raws:
@@ -318,7 +365,9 @@ async def _run(
                             if ev.data == "" and ev.event is None:
                                 continue
                             etype = ev.event if ev.event is not None else "message"
-                            if _EVENT_TYPE.fullmatch(etype) is None or (ev.id is not None and not _valid_id(ev.id)):
+                            if _EVENT_TYPE.fullmatch(etype) is None or (
+                                ev.id is not None and not _valid_id(ev.id)
+                            ):
                                 continue  # malformed: skipped, never trusted
                             if ev.id is not None:
                                 if ev.id in seen:
@@ -339,10 +388,14 @@ async def _run(
                     await sleep(delay)
                 finally:
                     if response is not None:
-                        await response.aclose()  # releases the connection on early exit, cancellation and every error
+                        await (
+                            response.aclose()
+                        )  # releases the connection on early exit, cancellation and every error
     finally:
         if observers:
-            await asyncio.sleep(0)  # let observers that never got to start begin, so no coroutine is dropped unawaited
+            await asyncio.sleep(
+                0
+            )  # let observers that never got to start begin, so no coroutine is dropped unawaited
             for task in list(observers):
                 task.cancel()
             await asyncio.gather(*observers, return_exceptions=True)

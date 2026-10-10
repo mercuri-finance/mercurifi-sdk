@@ -10,15 +10,29 @@ import pytest
 from eth_account import Account
 
 from mercurifi.errors import InvalidInputError, MercurifiError
-from mercurifi.signers import AgentKey, KmsSigner, LocalKeySigner, generate_agent_key, kms_signer, local_key
+from mercurifi.signers import (
+    AgentKey,
+    KmsSigner,
+    LocalKeySigner,
+    generate_agent_key,
+    kms_signer,
+    local_key,
+)
 
 from .helpers import OWNER_KEY
 
 SECRET = OWNER_KEY[2:20]
 N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 TX: dict[str, Any] = {
-    "type": 2, "chainId": 31337, "nonce": 1, "to": "0x0000000000000000000000000000000000000001", "value": 0, "data": "0x",
-    "gas": 21_000, "maxFeePerGas": 20_000_000_000, "maxPriorityFeePerGas": 1,
+    "type": 2,
+    "chainId": 31337,
+    "nonce": 1,
+    "to": "0x0000000000000000000000000000000000000001",
+    "value": 0,
+    "data": "0x",
+    "gas": 21_000,
+    "maxFeePerGas": 20_000_000_000,
+    "maxPriorityFeePerGas": 1,
 }
 
 
@@ -65,10 +79,19 @@ def _capture(supply: Any) -> BaseException:
 WINDOWS = [OWNER_KEY[i : i + 12] for i in range(2, 66, 12)]
 
 
-@pytest.mark.parametrize("make", [
-    lambda: OWNER_KEY + "\n", lambda: OWNER_KEY + "zz", lambda: OWNER_KEY[:-1], lambda: "0x" + format(N + 7, "064x"),
-    lambda: "0x" + "00" * 32, lambda: OWNER_KEY.replace("5", "g", 1), lambda: "  " + OWNER_KEY, lambda: OWNER_KEY[2:] + "\n",
-])
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda: OWNER_KEY + "\n",
+        lambda: OWNER_KEY + "zz",
+        lambda: OWNER_KEY[:-1],
+        lambda: "0x" + format(N + 7, "064x"),
+        lambda: "0x" + "00" * 32,
+        lambda: OWNER_KEY.replace("5", "g", 1),
+        lambda: "  " + OWNER_KEY,
+        lambda: OWNER_KEY[2:] + "\n",
+    ],
+)
 def test_rejected_key_never_reaches_frame_locals(make: Any) -> None:
     text = _frames_text(_capture(make))
     assert "local_key" in text  # the frames were walked
@@ -152,7 +175,9 @@ async def test_kms_adapter_matches_local_signing() -> None:
     raw = await kms_signer(Adapter()).sign_transaction(TX)
     assert raw == bytes(Account.sign_transaction(TX, OWNER_KEY).raw_transaction)
     with pytest.raises(MercurifiError, match="does not recover") as e:
-        await kms_signer(Adapter(address="0x0000000000000000000000000000000000000002")).sign_transaction(TX)
+        await kms_signer(
+            Adapter(address="0x0000000000000000000000000000000000000002")
+        ).sign_transaction(TX)
     assert e.value.code == "KMS_SIGNATURE_MISMATCH"
     assert SECRET not in repr(kms_signer(Adapter()))
 
@@ -165,14 +190,25 @@ async def test_kms_normalises_a_high_s_and_flips_parity() -> None:
 
 async def test_kms_finds_the_recovery_id_itself() -> None:
     for flip in (False, True):
-        raw = await kms_signer(Adapter(lambda r, s, p, flip=flip: (r, N - s if flip else s, None))).sign_transaction(TX)
+        raw = await kms_signer(
+            Adapter(lambda r, s, p, flip=flip: (r, N - s if flip else s, None))
+        ).sign_transaction(TX)
         assert Account.recover_transaction(raw) == Account.from_key(OWNER_KEY).address
 
 
-@pytest.mark.parametrize("mutate", [
-    lambda r, s, p: (0, s, p), lambda r, s, p: (r, 0, p), lambda r, s, p: (r, N, p), lambda r, s, p: (N, s, p),
-    lambda r, s, p: (N + 5, s, p), lambda r, s, p: (r, s, 2), lambda r, s, p: (True, s, p), lambda r, s, p: (r, s),
-])
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda r, s, p: (0, s, p),
+        lambda r, s, p: (r, 0, p),
+        lambda r, s, p: (r, N, p),
+        lambda r, s, p: (N, s, p),
+        lambda r, s, p: (N + 5, s, p),
+        lambda r, s, p: (r, s, 2),
+        lambda r, s, p: (True, s, p),
+        lambda r, s, p: (r, s),
+    ],
+)
 async def test_kms_rejects_malformed_signatures(mutate: Any) -> None:
     with pytest.raises(MercurifiError) as e:
         await kms_signer(Adapter(mutate)).sign_transaction(TX)

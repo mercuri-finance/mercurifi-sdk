@@ -30,7 +30,13 @@ def row(path: str, data: bytes) -> str:
     return f"{path},sha256={digest},{len(data)}"
 
 
-def make_wheel(tmp_path: Path, extra: dict[str, bytes] | None = None, unlisted: dict[str, bytes] | None = None, name: str = f"mercurifi-{V}-py3-none-any.whl", meta_version: str = V) -> Path:
+def make_wheel(
+    tmp_path: Path,
+    extra: dict[str, bytes] | None = None,
+    unlisted: dict[str, bytes] | None = None,
+    name: str = f"mercurifi-{V}-py3-none-any.whl",
+    meta_version: str = V,
+) -> Path:
     files = {
         "mercurifi/__init__.py": b'__version__ = "1.2.3"\n',
         "mercurifi/abi/x.json": b"[]",
@@ -85,7 +91,18 @@ def test_rejects_entries_outside_the_package(tmp_path: Path, path: str, message:
     assert any(message in p for p in problems), problems
 
 
-@pytest.mark.parametrize("name", ["entry_points.txt", "RECORD.jws", "RECORD.p7s", "top_level.txt", "direct_url.json", "INSTALLER", "sub/METADATA"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "entry_points.txt",
+        "RECORD.jws",
+        "RECORD.p7s",
+        "top_level.txt",
+        "direct_url.json",
+        "INSTALLER",
+        "sub/METADATA",
+    ],
+)
 def test_rejects_dist_info_files_beyond_the_allowlist(tmp_path: Path, name: str) -> None:
     payload = b"[console_scripts]\nevil = mercurifi:x\n" if name == "entry_points.txt" else b"x"
     problems = smoke.check_wheel(make_wheel(tmp_path, extra={f"{DIST}/{name}": payload}), V)
@@ -93,12 +110,17 @@ def test_rejects_dist_info_files_beyond_the_allowlist(tmp_path: Path, name: str)
 
 
 def test_accepts_the_license_under_dist_info(tmp_path: Path) -> None:
-    assert smoke.check_wheel(make_wheel(tmp_path, extra={f"{DIST}/licenses/LICENSE": b"MIT"}), V) == []
+    assert (
+        smoke.check_wheel(make_wheel(tmp_path, extra={f"{DIST}/licenses/LICENSE": b"MIT"}), V) == []
+    )
 
 
 def test_rejects_the_review_wheel_with_entry_points(tmp_path: Path) -> None:
     # Shape of the crafted wheel that once slipped past an earlier version of the check: a clean package plus a RECORD-listed entry_points.txt.
-    whl = make_wheel(tmp_path, extra={f"{DIST}/entry_points.txt": b"[console_scripts]\nmercurifi = mercurifi:main\n"})
+    whl = make_wheel(
+        tmp_path,
+        extra={f"{DIST}/entry_points.txt": b"[console_scripts]\nmercurifi = mercurifi:main\n"},
+    )
     assert any("entry_points.txt" in p for p in smoke.check_wheel(whl, V))
 
 
@@ -125,10 +147,16 @@ def test_rejects_a_wheel_without_record(tmp_path: Path) -> None:
 
 
 def test_rejects_a_version_mismatch(tmp_path: Path) -> None:
-    assert any("wheel file is" in p for p in smoke.check_wheel(make_wheel(tmp_path, name="mercurifi-9.9.9-py3-none-any.whl"), V))
+    assert any(
+        "wheel file is" in p
+        for p in smoke.check_wheel(make_wheel(tmp_path, name="mercurifi-9.9.9-py3-none-any.whl"), V)
+    )
     other = tmp_path / "m"
     other.mkdir()
-    assert any("METADATA version" in p for p in smoke.check_wheel(make_wheel(other, meta_version="9.9.9"), V))
+    assert any(
+        "METADATA version" in p
+        for p in smoke.check_wheel(make_wheel(other, meta_version="9.9.9"), V)
+    )
 
 
 def test_import_check_asserts_the_pyproject_version() -> None:

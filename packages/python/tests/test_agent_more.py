@@ -38,12 +38,27 @@ SIGNER = local_key(AGENT_KEY)
 SALT = "0x" + "cd" * 32
 HASH = "0x" + "92" * 32
 USDC = "0x3600000000000000000000000000000000000000"
-CONFIG = {"virtualUsdc": 6_000 * WAD, "virtualTokens": 1_066_666_666_666_666_666_666_666_666, "curveSupply": 800_000_000 * WAD,
-          "poolSupply": 200_000_000 * WAD, "launchFee": WAD, "maxInitialBuyTokens": 50_000_000 * WAD, "tradeFeeBps": 100,
-          "creatorShareBps": 5_000, "referrerShareBps": 2_000, "snipeStartBps": 9_900, "snipeBlocks": 120}
+CONFIG = {
+    "virtualUsdc": 6_000 * WAD,
+    "virtualTokens": 1_066_666_666_666_666_666_666_666_666,
+    "curveSupply": 800_000_000 * WAD,
+    "poolSupply": 200_000_000 * WAD,
+    "launchFee": WAD,
+    "maxInitialBuyTokens": 50_000_000 * WAD,
+    "tradeFeeBps": 100,
+    "creatorShareBps": 5_000,
+    "referrerShareBps": 2_000,
+    "snipeStartBps": 9_900,
+    "snipeBlocks": 120,
+}
 KEY = {"currency0": TOKEN, "currency1": USDC, "fee": 0, "tickSpacing": 60, "hooks": A(4)}
 CRASH_BASIS = (110_000_000, 11_000 * WAD, 10**23)
-BIG = replace(DEFAULT_POLICY, max_trade_usdc=1_000_000_000, period_spend_cap=5_000_000_000, per_token_period_cap=2_000_000_000)
+BIG = replace(
+    DEFAULT_POLICY,
+    max_trade_usdc=1_000_000_000,
+    period_spend_cap=5_000_000_000,
+    per_token_period_cap=2_000_000_000,
+)
 
 
 class FakeApi:
@@ -51,12 +66,20 @@ class FakeApi:
         self.calls: list[tuple[Any, Any]] = []
         self.uri = uri
 
-    async def upload_launch_metadata(self, meta: dict[str, Any], image: Any = None) -> dict[str, Any]:
+    async def upload_launch_metadata(
+        self, meta: dict[str, Any], image: Any = None
+    ) -> dict[str, Any]:
         self.calls.append((meta, image))
         return {"metadataURI": self.uri, "imageStatus": None}
 
 
-async def setup(api: Any = None, action: int = 3, account: dict[str, Any] | None = None, warnings: list[str] | None = None, **curve: Any) -> tuple[MockRpc, AgentClient]:
+async def setup(
+    api: Any = None,
+    action: int = 3,
+    account: dict[str, Any] | None = None,
+    warnings: list[str] | None = None,
+    **curve: Any,
+) -> tuple[MockRpc, AgentClient]:
     rpc = local_rpc()
     mock_account(rpc, owner=A(0x99), agent=SIGNER.address, **(account or {}))
     mock_curve(rpc, **curve)
@@ -68,7 +91,14 @@ async def setup(api: Any = None, action: int = 3, account: dict[str, Any] | None
         rpc.read(ACCOUNT, AGENT_ACCOUNT, fn, 0)
     rpc.read(ACCOUNT, AGENT_ACCOUNT, "sweepToOwner", None)
     rpc.receipt_logs = [
-        agent_action_log(agent=SIGNER.address, action=action, token=TOKEN, usdcSpent=11_000_000, tokenDelta=1_757_100 * WAD, periodId=19_637),
+        agent_action_log(
+            agent=SIGNER.address,
+            action=action,
+            token=TOKEN,
+            usdcSpent=11_000_000,
+            tokenDelta=1_757_100 * WAD,
+            periodId=19_637,
+        ),
         log(LF, LAUNCH_FACTORY, "TokenCreated", token=TOKEN, curve=CURVE, creator=ACCOUNT),
     ]
     extra: dict[str, Any] = {} if warnings is None else {"on_warning": warnings.append}
@@ -103,13 +133,26 @@ def request_of(rpc: MockRpc) -> dict[str, Any]:
 
 async def test_launch_pins_hash_exact_first_buy_and_chain_deadline() -> None:
     rpc, agent = await setup()
-    fill = await agent.launch("Example", "EX", metadata_uri="ipfs://m", initial_buy_usdc="10", salt=SALT)
+    fill = await agent.launch(
+        "Example", "EX", metadata_uri="ipfs://m", initial_buy_usdc="10", salt=SALT
+    )
     name, _, _ = sent_call(rpc, AGENT_ACCOUNT)
     assert name == "launch"
-    assert request_of(rpc) == {"name": "Example", "symbol": "EX", "metadataURI": "ipfs://m", "salt": SALT, "expectedConfigHash": HASH,
-                               "initialBuyUsdc": 10_000_000, "minTokensOut": 1_757_100_783_706_883_641_990_715, "deadline": rpc.block["timestamp"] + 60}
+    assert request_of(rpc) == {
+        "name": "Example",
+        "symbol": "EX",
+        "metadataURI": "ipfs://m",
+        "salt": SALT,
+        "expectedConfigHash": HASH,
+        "initialBuyUsdc": 10_000_000,
+        "minTokensOut": 1_757_100_783_706_883_641_990_715,
+        "deadline": rpc.block["timestamp"] + 60,
+    }
     assert fill.action == "launch"
-    assert fill.launched is not None and (fill.launched.token, fill.launched.curve) == (TOKEN, CURVE)
+    assert fill.launched is not None and (fill.launched.token, fill.launched.curve) == (
+        TOKEN,
+        CURVE,
+    )
 
 
 async def test_launch_without_salt_draws_a_random_one() -> None:
@@ -136,12 +179,20 @@ async def test_launch_checks_before_signing_in_the_accounts_order() -> None:
     with pytest.raises(InvalidInputError, match="longer than 256 bytes"):
         await agent.launch("Ok", "OK", metadata_uri="https://" + "x" * 250)
     # The account checks maxTradeUsdc (initial buy + fee) before the factory checks maxInitialBuyTokens.
-    await refused(agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="100"), "TradeTooLarge")
-    await refused(agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "TradeTooLarge")
+    await refused(
+        agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="100"), "TradeTooLarge"
+    )
+    await refused(
+        agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "TradeTooLarge"
+    )
     roomy_rpc, roomy = await setup(account={"policy": BIG})
-    await refused(roomy.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="900"), "InitialBuyTooLarge")
+    await refused(
+        roomy.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="900"), "InitialBuyTooLarge"
+    )
     spent_rpc, spent = await setup(account={"headroom": (5_000_000, 500_000_000, 499, 3)})
-    err = await refused(spent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10"), "PeriodSpendExceeded")
+    err = await refused(
+        spent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10"), "PeriodSpendExceeded"
+    )
     assert err.revert.args == [5_000_000]
     none_rpc, none = await setup(account={"headroom": (400_000_000, 500_000_000, 499, 0)})
     await refused(none.launch("Ok", "OK", metadata_uri=""), "LaunchLimit")
@@ -153,13 +204,17 @@ async def test_launch_limit_wins_over_the_trade_and_spend_caps() -> None:
     both_rpc, both = await setup(account={"headroom": (5_000_000, 500_000_000, 499, 0)})
     await refused(both.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "LaunchLimit")
     neither_rpc, neither = await setup(account={"headroom": (5_000_000, 500_000_000, 0, 0)})
-    await refused(neither.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "ActionLimit")
+    await refused(
+        neither.launch("Ok", "OK", metadata_uri="", initial_buy_usdc="10000"), "ActionLimit"
+    )
     assert both_rpc.sent == neither_rpc.sent == []
 
 
 async def test_launch_trade_limit_is_checked_before_the_amount_ceiling() -> None:
     _, agent = await setup()
-    await refused(agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc6=1 << 250), "TradeTooLarge")
+    await refused(
+        agent.launch("Ok", "OK", metadata_uri="", initial_buy_usdc6=1 << 250), "TradeTooLarge"
+    )
 
 
 async def test_launch_refused_without_permission_while_paused_or_launch_paused() -> None:
@@ -189,7 +244,9 @@ async def test_launch_uploads_through_api_or_refuses_chain_only() -> None:
     api = FakeApi()
     rpc, agent = await setup(api=api)
     image = ImageUpload(b"\x01\x02\x03", "image/png")
-    await agent.launch("Ok", "OK", description="hello", links={"x": "https://x.com/ok"}, image=image)
+    await agent.launch(
+        "Ok", "OK", description="hello", links={"x": "https://x.com/ok"}, image=image
+    )
     assert api.calls == [({"description": "hello", "links": {"x": "https://x.com/ok"}}, image)]
     assert request_of(rpc)["metadataURI"] == "https://api.example/v1/metadata/abc"
     with pytest.raises(InvalidInputError, match="either metadata_uri or"):
@@ -199,18 +256,26 @@ async def test_launch_uploads_through_api_or_refuses_chain_only() -> None:
 async def test_launch_does_not_upload_when_a_check_would_refuse_it() -> None:
     api = FakeApi()
     _, agent = await setup(api=api)
-    await refused(agent.launch("Ok", "OK", description="hello", initial_buy_usdc="100"), "TradeTooLarge")
+    await refused(
+        agent.launch("Ok", "OK", description="hello", initial_buy_usdc="100"), "TradeTooLarge"
+    )
     assert api.calls == []
 
 
 async def test_launch_fill_needs_token_created_by_this_account_for_this_token() -> None:
     rpc, agent = await setup()
     action = rpc.receipt_logs[0]
-    rpc.receipt_logs = [action, log(LF, LAUNCH_FACTORY, "TokenCreated", token=TOKEN, curve=CURVE, creator=A(0x55))]
+    rpc.receipt_logs = [
+        action,
+        log(LF, LAUNCH_FACTORY, "TokenCreated", token=TOKEN, curve=CURVE, creator=A(0x55)),
+    ]
     with pytest.raises(MercurifiError) as creator:
         await agent.launch("Ok", "OK", metadata_uri="")
     assert creator.value.code == "FILL_NOT_FOUND"
-    rpc.receipt_logs = [action, log(LF, LAUNCH_FACTORY, "TokenCreated", token=A(0x56), curve=CURVE, creator=ACCOUNT)]
+    rpc.receipt_logs = [
+        action,
+        log(LF, LAUNCH_FACTORY, "TokenCreated", token=A(0x56), curve=CURVE, creator=ACCOUNT),
+    ]
     with pytest.raises(MercurifiError) as other_token:
         await agent.launch("Ok", "OK", metadata_uri="")
     assert other_token.value.code == "FILL_NOT_FOUND"
@@ -222,8 +287,18 @@ async def test_launch_fill_needs_token_created_by_this_account_for_this_token() 
 
 # ---------------------------------------------------------------- metadata URI rules
 
-BAD = ["", "javascript:alert(1)", "data:text/plain;base64,AAAA", "http://insecure.example/m", "https://exa‮mple/m", "https://a b/m",
-       "https://" + "x" * 249, "https://user:pass@example.com/m.json", "ipfs://tok@host/m", "https://x.example/" + "é" * 120]
+BAD = [
+    "",
+    "javascript:alert(1)",
+    "data:text/plain;base64,AAAA",
+    "http://insecure.example/m",
+    "https://exa‮mple/m",
+    "https://a b/m",
+    "https://" + "x" * 249,
+    "https://user:pass@example.com/m.json",
+    "ipfs://tok@host/m",
+    "https://x.example/" + "é" * 120,
+]
 
 
 @pytest.mark.parametrize("uri", [None, 5, *BAD])
@@ -233,7 +308,17 @@ async def test_an_uploaded_uri_is_untrusted(uri: Any) -> None:
     with pytest.raises(MercurifiError) as e:
         await agent.launch("Ok", "OK", description="hi")
     assert e.value.code == "API_BAD_RESPONSE"
-    for secret in ("javascript", "alert", "insecure", "user:pass", "pass@", "tok@", "exa", "x" * 20, "é"):
+    for secret in (
+        "javascript",
+        "alert",
+        "insecure",
+        "user:pass",
+        "pass@",
+        "tok@",
+        "exa",
+        "x" * 20,
+        "é",
+    ):
         assert secret not in str(e.value)
     assert rpc.sent == []
 
@@ -323,7 +408,12 @@ async def test_paused_is_checked_before_the_graduation_phase() -> None:
 
 
 async def test_allowlist_applies_to_buys_only() -> None:
-    rpc, agent = await setup(action=4, phase=2, balance=5 * WAD, account={"policy": replace(DEFAULT_POLICY, allowlist_only=True)})
+    rpc, agent = await setup(
+        action=4,
+        phase=2,
+        balance=5 * WAD,
+        account={"policy": replace(DEFAULT_POLICY, allowlist_only=True)},
+    )
     quoter(rpc, lambda p: 1_000_000 if p["zeroForOne"] else 5 * WAD)
     await refused(agent.swap_exact_in(TOKEN, "buy", usdc="1"), "TokenNotAllowed")
     await agent.swap_exact_in(TOKEN, "sell", amount_wei=WAD)
@@ -334,7 +424,9 @@ async def test_pool_buy_above_limits_refused_locally() -> None:
     rpc, agent = await setup(action=4, phase=2)
     quoter(rpc, lambda p: 5_000 * WAD)
     await refused(agent.swap_exact_in(TOKEN, "buy", usdc="150"), "TradeTooLarge")
-    low_rpc, low = await setup(action=4, phase=2, account={"headroom": (5_000_000, 500_000_000, 499, 3)})
+    low_rpc, low = await setup(
+        action=4, phase=2, account={"headroom": (5_000_000, 500_000_000, 499, 3)}
+    )
     quoter(low_rpc, lambda p: 5_000 * WAD)
     err = await refused(low.swap_exact_in(TOKEN, "buy", usdc="10"), "PeriodSpendExceeded")
     assert err.revert.args == [5_000_000]
@@ -360,7 +452,9 @@ async def test_amounts_must_be_positive_and_fit_uint128_and_fields_must_not_mix(
 
 async def test_pool_sell_valued_at_high_water_refused_before_it_even_quotes() -> None:
     # Recorded 2,000 tokens at the 0.1 USDC high-water = 200 USDC, above the 100 USDC per-trade limit (the 20 USDC average does not count).
-    rpc, agent = await setup(action=5, account={"basis": CRASH_BASIS}, phase=2, balance=11_000 * WAD)
+    rpc, agent = await setup(
+        action=5, account={"basis": CRASH_BASIS}, phase=2, balance=11_000 * WAD
+    )
     rpc.read(A(3), GRADUATION_MANAGER, "poolKey", KEY)
     err = await refused(agent.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD), "TradeTooLarge")
     assert err.revert.args == [100_000_000]
@@ -374,13 +468,26 @@ async def test_pool_sell_adds_the_excess_share_of_the_proceeds_and_checks_sell_h
     fits_rpc, fits = await setup(action=5, account={"basis": basis}, phase=2, balance=800 * WAD)
     quoter(fits_rpc, lambda p: 120_000_000)
     await fits.swap_exact_in(TOKEN, "sell", amount_wei=800 * WAD)
-    assert args_of(fits_rpc) == [TOKEN, False, 800 * WAD, 117_600_000, fits_rpc.block["timestamp"] + 60]
+    assert args_of(fits_rpc) == [
+        TOKEN,
+        False,
+        800 * WAD,
+        117_600_000,
+        fits_rpc.block["timestamp"] + 60,
+    ]
     over_rpc, over = await setup(action=5, account={"basis": basis}, phase=2, balance=800 * WAD)
     quoter(over_rpc, lambda p: 200_000_000)  # 50 + 75 = 125 > 100
     await refused(over.swap_exact_in(TOKEN, "sell", amount_wei=800 * WAD), "TradeTooLarge")
-    short_rpc, short = await setup(action=5, account={"basis": basis, "headroom": (400_000_000, 90_000_000, 499, 3)}, phase=2, balance=800 * WAD)
+    short_rpc, short = await setup(
+        action=5,
+        account={"basis": basis, "headroom": (400_000_000, 90_000_000, 499, 3)},
+        phase=2,
+        balance=800 * WAD,
+    )
     quoter(short_rpc, lambda p: 120_000_000)
-    err = await refused(short.swap_exact_in(TOKEN, "sell", amount_wei=800 * WAD), "PeriodSellExceeded")
+    err = await refused(
+        short.swap_exact_in(TOKEN, "sell", amount_wei=800 * WAD), "PeriodSellExceeded"
+    )
     assert err.revert.args == [90_000_000]
     assert over_rpc.sent == short_rpc.sent == []
 
@@ -414,7 +521,9 @@ async def test_pool_sell_is_ordered_like_the_contract() -> None:
     foreign_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", {**KEY, "hooks": A(0x666)})
     with pytest.raises(MercurifiError, match="LaunchHook"):
         await foreign.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD)
-    costly_rpc, costly = await setup(action=5, account={"basis": (10**12, 1_000 * WAD, 0)}, phase=2, balance=WAD)
+    costly_rpc, costly = await setup(
+        action=5, account={"basis": (10**12, 1_000 * WAD, 0)}, phase=2, balance=WAD
+    )
     costly_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", KEY)
     await refused(costly.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD), "TradeTooLarge")
     assert foreign_rpc.sent == costly_rpc.sent == []
@@ -422,7 +531,9 @@ async def test_pool_sell_is_ordered_like_the_contract() -> None:
 
 async def test_explicit_sell_above_the_balance_is_refused_with_a_plain_message() -> None:
     # A small recorded cost keeps the sell under the per-trade cap, so the balance check is the one that fails.
-    pool_rpc, pool = await setup(action=5, account={"basis": (1, 11_000 * WAD, 0)}, phase=2, balance=WAD)
+    pool_rpc, pool = await setup(
+        action=5, account={"basis": (1, 11_000 * WAD, 0)}, phase=2, balance=WAD
+    )
     pool_rpc.read(A(3), GRADUATION_MANAGER, "poolKey", KEY)
     with pytest.raises(InvalidInputError, match="holds less of this token"):
         await pool.swap_exact_in(TOKEN, "sell", amount_wei=2_000 * WAD)
@@ -439,14 +550,28 @@ async def test_a_high_pool_impact_warns_but_does_not_block_and_a_small_one_is_qu
     # Constant product with 1,000 USDC of reserve: a 100 USDC buy moves the price by about 21%.
     reserve = 1_000_000_000
     heavy_warnings: list[str] = []
-    rpc, heavy = await setup(action=4, phase=2, warnings=heavy_warnings, account={"policy": replace(DEFAULT_POLICY, max_price_impact_bps=300)})
-    quoter(rpc, lambda p: p["exactAmount"] * reserve * WAD // (reserve + p["exactAmount"]) // 1_000_000)
+    rpc, heavy = await setup(
+        action=4,
+        phase=2,
+        warnings=heavy_warnings,
+        account={"policy": replace(DEFAULT_POLICY, max_price_impact_bps=300)},
+    )
+    quoter(
+        rpc, lambda p: p["exactAmount"] * reserve * WAD // (reserve + p["exactAmount"]) // 1_000_000
+    )
     await heavy.swap_exact_in(TOKEN, "buy", usdc="100")
     assert any("approximate" in w and "move the pool price by about 2" in w for w in heavy_warnings)
     assert len(rpc.sent) == 1
     light_warnings: list[str] = []
     light_rpc, light = await setup(action=4, phase=2, warnings=light_warnings)
-    quoter(light_rpc, lambda p: p["exactAmount"] * (100 * reserve) * WAD // (100 * reserve + p["exactAmount"]) // 1_000_000)
+    quoter(
+        light_rpc,
+        lambda p: p["exactAmount"]
+        * (100 * reserve)
+        * WAD
+        // (100 * reserve + p["exactAmount"])
+        // 1_000_000,
+    )
     await light.swap_exact_in(TOKEN, "buy", usdc="10")
     assert light_warnings == []
 
@@ -454,9 +579,16 @@ async def test_a_high_pool_impact_warns_but_does_not_block_and_a_small_one_is_qu
 async def test_estimate_of_a_falling_price_is_one_minus_inverse_k_squared() -> None:
     rpc, agent = await setup(phase=2)
     reserve = 1_000 * WAD
-    rpc.read(A(8), V4_QUOTER, "quoteExactInputSingle", lambda a: (a[0]["exactAmount"] * reserve // (reserve + a[0]["exactAmount"]), 0))
+    rpc.read(
+        A(8),
+        V4_QUOTER,
+        "quoteExactInputSingle",
+        lambda a: (a[0]["exactAmount"] * reserve // (reserve + a[0]["exactAmount"]), 0),
+    )
     mf = agent._mf  # noqa: SLF001
-    amount_in = 500 * WAD  # x = 0.5 of the reserve: the sqrt price moves by 1/1.5, the price by 1 - 1/2.25
+    amount_in = (
+        500 * WAD
+    )  # x = 0.5 of the reserve: the sqrt price moves by 1/1.5, the price by 1 - 1/2.25
     out = amount_in * reserve // (reserve + amount_in)
     down = await estimate_pool_impact_bps(mf.rpc, mf.network, KEY, True, amount_in, out, ACCOUNT)
     assert down is not None and 5_400 < down < 5_600
@@ -529,8 +661,19 @@ async def test_claim_and_sweep_go_through_the_gate() -> None:
 
 TS0 = 1_700_000_000
 CLAIM = AGENT_ACCOUNT.encode("claimFees")
-BUY_E: dict[str, Any] = {"function_name": "buy", "exact": {"token": TOKEN, "usdcIn": 25_000_000}, "at_least": {"minTokensOut": 900}}
-LAUNCH_FIELDS = {"name": "Ok", "symbol": "OK", "metadataURI": "ipfs://m", "salt": SALT, "initialBuyUsdc": 0, "minTokensOut": 0}
+BUY_E: dict[str, Any] = {
+    "function_name": "buy",
+    "exact": {"token": TOKEN, "usdcIn": 25_000_000},
+    "at_least": {"minTokensOut": 900},
+}
+LAUNCH_FIELDS = {
+    "name": "Ok",
+    "symbol": "OK",
+    "metadataURI": "ipfs://m",
+    "salt": SALT,
+    "initialBuyUsdc": 0,
+    "minTokensOut": 0,
+}
 LAUNCH_E: dict[str, Any] = {"function_name": "launch", "exact": LAUNCH_FIELDS}
 
 
@@ -539,7 +682,9 @@ def buy_data(token: str = TOKEN, min_out: int = 900, deadline: int = TS0 + 60) -
 
 
 def launch_data(deadline: int = TS0 + 60, **over: Any) -> str:
-    return AGENT_ACCOUNT.encode("launch", {**LAUNCH_FIELDS, "expectedConfigHash": HASH, "deadline": deadline, **over})
+    return AGENT_ACCOUNT.encode(
+        "launch", {**LAUNCH_FIELDS, "expectedConfigHash": HASH, "deadline": deadline, **over}
+    )
 
 
 def tx(data: str, **over: Any) -> dict[str, Any]:
@@ -567,7 +712,10 @@ async def test_send_built_refuses_a_buy_unless_every_argument_is_named_and_match
         (buy_data(min_out=1), BUY_E),  # lowered minimum
         (buy_data(token=A(0xCC)), BUY_E),  # a different token
         (buy_data(deadline=TS0 + 61), BUY_E),  # beyond the SDK's own window
-        (buy_data(deadline=TS0 + 3_000), {**BUY_E, "deadline": (0, 9_999_999_999)}),  # a caller window cannot widen
+        (
+            buy_data(deadline=TS0 + 3_000),
+            {**BUY_E, "deadline": (0, 9_999_999_999)},
+        ),  # a caller window cannot widen
     ]
     for data, e in refusals:
         with pytest.raises(BuildMismatchError):
@@ -590,7 +738,12 @@ async def test_send_built_refuses_a_flipped_swap_direction() -> None:
     rpc, agent = await setup()
     swap = AGENT_ACCOUNT.encode("swapExactIn", TOKEN, False, 5, 4, TS0 + 30)
     with pytest.raises(BuildMismatchError, match="buyToken"):
-        await agent.send_built(tx(swap), function_name="swapExactIn", exact={"token": TOKEN, "buyToken": True, "amountIn": 5}, at_least={"minAmountOut": 4})
+        await agent.send_built(
+            tx(swap),
+            function_name="swapExactIn",
+            exact={"token": TOKEN, "buyToken": True, "amountIn": 5},
+            at_least={"minAmountOut": 4},
+        )
     assert rpc.sent == []
 
 
@@ -601,8 +754,17 @@ async def test_send_built_launch_pins_the_chain_config_hash_and_its_own_window()
     with pytest.raises(BuildMismatchError, match="expectedConfigHash"):
         await agent.send_built(tx(launch_data(expectedConfigHash="0x" + "55" * 32)), **LAUNCH_E)
     with pytest.raises(BuildMismatchError, match="configHash"):
-        await agent.send_built(tx(launch_data()), function_name="launch", exact={**LAUNCH_FIELDS, "expectedConfigHash": "0x" + "55" * 32})
-    for over in ({"metadataURI": "https://evil.example/x"}, {"salt": "0x" + "77" * 32}, {"initialBuyUsdc": 1}, {"deadline": TS0 + 61}):
+        await agent.send_built(
+            tx(launch_data()),
+            function_name="launch",
+            exact={**LAUNCH_FIELDS, "expectedConfigHash": "0x" + "55" * 32},
+        )
+    for over in (
+        {"metadataURI": "https://evil.example/x"},
+        {"salt": "0x" + "77" * 32},
+        {"initialBuyUsdc": 1},
+        {"deadline": TS0 + 61},
+    ):
         with pytest.raises(BuildMismatchError):
             await agent.send_built(tx(launch_data(**over)), **LAUNCH_E)
     missing = {k: v for k, v in LAUNCH_FIELDS.items() if k != "salt"}
@@ -612,7 +774,11 @@ async def test_send_built_launch_pins_the_chain_config_hash_and_its_own_window()
     await agent.send_built(tx(launch_data()), **LAUNCH_E)
     assert len(rpc.sent) == 1
     # a caller-supplied hash equal to the chain's (any case) is accepted
-    await agent.send_built(tx(launch_data()), function_name="launch", exact={**LAUNCH_FIELDS, "expectedConfigHash": HASH.upper().replace("0X", "0x")})
+    await agent.send_built(
+        tx(launch_data()),
+        function_name="launch",
+        exact={**LAUNCH_FIELDS, "expectedConfigHash": HASH.upper().replace("0X", "0x")},
+    )
     assert len(rpc.sent) == 2
 
 
@@ -641,7 +807,9 @@ async def test_send_built_refuses_a_non_int_at_least_and_non_numeric_exact_befor
             await agent.send_built(tx(buy_data()), **{**BUY_E, "at_least": {"minTokensOut": bad}})
     for bad_exact in (True, 1.5, "0x10", ""):
         with pytest.raises(InvalidInputError):
-            await agent.send_built(tx(buy_data()), **{**BUY_E, "exact": {"token": TOKEN, "usdcIn": bad_exact}})
+            await agent.send_built(
+                tx(buy_data()), **{**BUY_E, "exact": {"token": TOKEN, "usdcIn": bad_exact}}
+            )
     assert rpc.sent == []
 
 
@@ -657,7 +825,9 @@ async def test_send_built_refuses_a_zero_length_deadline_window() -> None:
     assert rpc2.sent == []
     rpc3, agent3 = await setup()
     rpc3.read(ACCOUNT, AGENT_ACCOUNT, "buy", 0)
-    with pytest.raises(InvalidInputError):  # the caller's window ends before the chain's now: min > max after narrowing
+    with pytest.raises(
+        InvalidInputError
+    ):  # the caller's window ends before the chain's now: min > max after narrowing
         await agent3.send_built(tx(buy_data()), **BUY_E, deadline=(TS0 - 100, TS0 - 50))
     assert rpc3.sent == []
 
@@ -688,7 +858,9 @@ async def test_send_built_signs_the_exact_str_it_verified_and_refuses_a_str_subc
     assert rpc.sent == []
 
 
-_META = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "metadata.json").read_text())
+_META = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "metadata.json").read_text()
+)
 
 
 @pytest.mark.parametrize("case", _META["cases"], ids=[c["uri"][:40] for c in _META["cases"]])

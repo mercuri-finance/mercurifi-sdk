@@ -1,4 +1,5 @@
 """Test doubles: a scriptable JSON-RPC endpoint behind httpx.MockTransport, and a verified local client."""
+
 from __future__ import annotations
 
 import json
@@ -116,9 +117,23 @@ class MockRpc:
         try:
             result = self._dispatch(method, params)
         except _Revert as r:
-            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"code": 3, "message": "execution reverted", "data": r.data}})
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": 3, "message": "execution reverted", "data": r.data},
+                },
+            )
         except NodeError as e:
-            return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"code": e.code, "message": str(e)}})
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": e.code, "message": str(e)},
+                },
+            )
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
 
     def _call(self, tx: dict[str, Any]) -> str:
@@ -140,10 +155,15 @@ class MockRpc:
                 continue
             if not _topics_match(f.get("topics"), entry["topics"]):
                 continue
-            out.append({
-                "blockNumber": hex(self.block["number"]), "transactionHash": to_hex(keccak(i.to_bytes(32, "big"))),
-                "logIndex": hex(i), "removed": False, **entry,
-            })
+            out.append(
+                {
+                    "blockNumber": hex(self.block["number"]),
+                    "transactionHash": to_hex(keccak(i.to_bytes(32, "big"))),
+                    "logIndex": hex(i),
+                    "removed": False,
+                    **entry,
+                }
+            )
         return out
 
     def _dispatch(self, method: str, params: list[Any]) -> Any:
@@ -155,7 +175,12 @@ class MockRpc:
         if method == "eth_blockNumber":
             return hex(b["number"])
         if method == "eth_getBlockByNumber":
-            return {"number": hex(b["number"]), "timestamp": hex(b["timestamp"]), "baseFeePerGas": hex(b["base_fee"]), "transactions": []}
+            return {
+                "number": hex(b["number"]),
+                "timestamp": hex(b["timestamp"]),
+                "baseFeePerGas": hex(b["base_fee"]),
+                "transactions": [],
+            }
         if method == "eth_getCode":
             return self.codes.get(params[0].lower(), "0x")
         if method == "eth_getBalance":
@@ -173,15 +198,22 @@ class MockRpc:
             tx_hash = to_hex(keccak(from_hex(params[0])))
             self.sent.append(params[0])
             if self.receipt_mode != "none":
-                self._receipts[tx_hash] = {"status": self.receipt_mode, "logs": list(self.receipt_logs)}
+                self._receipts[tx_hash] = {
+                    "status": self.receipt_mode,
+                    "logs": list(self.receipt_logs),
+                }
             return tx_hash
         if method == "eth_getTransactionReceipt":
             r = self._receipts.get(params[0])
             if r is None:
                 return None
             return {
-                "transactionHash": params[0], "blockNumber": hex(b["number"] + 1), "status": "0x1" if r["status"] == "success" else "0x0",
-                "gasUsed": hex(120_000), "effectiveGasPrice": hex(21_000_000_000), "logs": r["logs"],
+                "transactionHash": params[0],
+                "blockNumber": hex(b["number"] + 1),
+                "status": "0x1" if r["status"] == "success" else "0x0",
+                "gasUsed": hex(120_000),
+                "effectiveGasPrice": hex(21_000_000_000),
+                "logs": r["logs"],
             }
         if method == "eth_getLogs":
             return self._get_logs(params[0])
@@ -190,11 +222,23 @@ class MockRpc:
 
 def local_json(**over: Any) -> dict[str, Any]:
     book = {
-        "chainId": 31337, "launchFactory": A(1), "feeManager": A(2), "graduationManager": A(3), "launchHook": A(4), "poolManager": A(5),
-        "permit2": A(6), "universalRouter": A(7), "v4Quoter": A(8), "usdc": "0x3600000000000000000000000000000000000000",
-        "agentFactory": A(9), "agentImplementation": A(10), "agentRegistry": REGISTRY,
-        "agentFactoryCodeHash": to_hex(keccak(from_hex(FACTORY_CODE))), "agentImplementationCodeHash": to_hex(keccak(from_hex(IMPL_CODE))),
-        "agentRegistryCodeHash": to_hex(keccak(from_hex(REGISTRY_CODE))), "deployBlock": 1,
+        "chainId": 31337,
+        "launchFactory": A(1),
+        "feeManager": A(2),
+        "graduationManager": A(3),
+        "launchHook": A(4),
+        "poolManager": A(5),
+        "permit2": A(6),
+        "universalRouter": A(7),
+        "v4Quoter": A(8),
+        "usdc": "0x3600000000000000000000000000000000000000",
+        "agentFactory": A(9),
+        "agentImplementation": A(10),
+        "agentRegistry": REGISTRY,
+        "agentFactoryCodeHash": to_hex(keccak(from_hex(FACTORY_CODE))),
+        "agentImplementationCodeHash": to_hex(keccak(from_hex(IMPL_CODE))),
+        "agentRegistryCodeHash": to_hex(keccak(from_hex(REGISTRY_CODE))),
+        "deployBlock": 1,
     }
     book.update(over)
     return book
@@ -213,7 +257,11 @@ def local_rpc() -> MockRpc:
 
 
 # The live testnet runtime code (fixtures/testnet-agent-code.json); keccak of each entry must equal the pinned hash.
-TESTNET_CODE: dict[str, Any] = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "testnet-agent-code.json").read_text(encoding="utf-8"))
+TESTNET_CODE: dict[str, Any] = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "testnet-agent-code.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 def pinned_testnet_rpc() -> MockRpc:
@@ -231,7 +279,13 @@ def pinned_testnet_rpc() -> MockRpc:
 
 
 async def local_client(rpc: MockRpc, **over: Any) -> AsyncClient:
-    opts: dict[str, Any] = {"rpc_url": "http://127.0.0.1:8545", "rpc_transport": rpc.transport(), "poll_interval": 0.001, "on_warning": lambda m: None, "api": None}
+    opts: dict[str, Any] = {
+        "rpc_url": "http://127.0.0.1:8545",
+        "rpc_transport": rpc.transport(),
+        "poll_interval": 0.001,
+        "on_warning": lambda m: None,
+        "api": None,
+    }
     opts.update(over)
     return await create_client(local_network(local_json()), **opts)
 
@@ -241,7 +295,14 @@ Log = Callable[..., dict[str, Any]]
 
 def log(contract: Contract, address: str, name: str, **values: Any) -> dict[str, Any]:
     topics, data = contract.encode_log(name, values)
-    return {"address": address, "topics": topics, "data": data, "blockNumber": "0x1", "transactionHash": "0x" + "00" * 32, "logIndex": "0x0"}
+    return {
+        "address": address,
+        "topics": topics,
+        "data": data,
+        "blockNumber": "0x1",
+        "transactionHash": "0x" + "00" * 32,
+        "logIndex": "0x0",
+    }
 
 
 FACTORY, LAUNCH_FACTORY = A(9), A(1)
@@ -249,42 +310,118 @@ WAD = 10**18
 ZERO = "0x" + "00" * 20
 #: The spec 4.5 beta ceilings. minTokenAgeBlocks is a floor on-chain, so the beta value is 0.
 CEILINGS_ABI = {
-    "maxTradeUsdc": 1_000_000_000, "periodSpendCap": 10_000_000_000, "perTokenPeriodCap": 2_000_000_000, "periodSellCap": 10_000_000_000,
-    "maxActionsPerPeriod": 5_000, "launchesPerPeriod": 20, "maxPriceImpactBps": 2_000, "maxSnipeBps": 9_900,
-    "minTokenAgeBlocks": 0, "maxDeadlineSeconds": 600, "allowlistOnly": False,
+    "maxTradeUsdc": 1_000_000_000,
+    "periodSpendCap": 10_000_000_000,
+    "perTokenPeriodCap": 2_000_000_000,
+    "periodSellCap": 10_000_000_000,
+    "maxActionsPerPeriod": 5_000,
+    "launchesPerPeriod": 20,
+    "maxPriceImpactBps": 2_000,
+    "maxSnipeBps": 9_900,
+    "minTokenAgeBlocks": 0,
+    "maxDeadlineSeconds": 600,
+    "allowlistOnly": False,
 }
 
 
-def mock_account(rpc: MockRpc, *, owner: str, agent: str, agent_active: bool = True, agent_expires_at: int = 1_800_000_000,
-                 agent_permissions: int = 63, policy: ChainPolicy = DEFAULT_POLICY, increase_delay: int = 3_600, epoch: int = 1,
-                 write_seq: int = 1, basis: tuple[int, int, int] = (0, 0, 0),
-                 headroom: tuple[int, int, int, int] = (400_000_000, 500_000_000, 499, 3)) -> None:
+def mock_account(
+    rpc: MockRpc,
+    *,
+    owner: str,
+    agent: str,
+    agent_active: bool = True,
+    agent_expires_at: int = 1_800_000_000,
+    agent_permissions: int = 63,
+    policy: ChainPolicy = DEFAULT_POLICY,
+    increase_delay: int = 3_600,
+    epoch: int = 1,
+    write_seq: int = 1,
+    basis: tuple[int, int, int] = (0, 0, 0),
+    headroom: tuple[int, int, int, int] = (400_000_000, 500_000_000, 499, 3),
+) -> None:
     """Factory, account and registry reads of one account. Registry calls take the account as args[0]."""
     rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "isAccount", lambda a: a[0].lower() == ACCOUNT.lower())
     rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "ceilings", CEILINGS_ABI)
     rpc.read(FACTORY, AGENT_ACCOUNT_FACTORY, "isPaused", False)
-    for fn, value in (("owner", owner), ("referrer", A(0x77)), ("REGISTRY", REGISTRY), ("basis", basis)):
+    for fn, value in (
+        ("owner", owner),
+        ("referrer", A(0x77)),
+        ("REGISTRY", REGISTRY),
+        ("basis", basis),
+    ):
         rpc.read(ACCOUNT, AGENT_ACCOUNT, fn, value)
-    registry_reads: tuple[tuple[str, Any], ...] = (("owner", owner), ("policy", policy.to_abi()), ("periodSeconds", 86_400), ("increaseDelay", increase_delay),
-                      ("ownerPaused", False), ("activeAgentCount", 1), ("epoch", epoch), ("writeSeq", write_seq), ("retired", False),
-                      ("headroom", headroom), ("usage", (19_637, 100_000_000, 0, 1, 0)), ("tokenAllowed", False), ("tokenSpent", 0),
-                      ("policyWrite", 0), ("agentWrite", 0), ("tokenWrite", 0), ("delayWrite", 0))
+    registry_reads: tuple[tuple[str, Any], ...] = (
+        ("owner", owner),
+        ("policy", policy.to_abi()),
+        ("periodSeconds", 86_400),
+        ("increaseDelay", increase_delay),
+        ("ownerPaused", False),
+        ("activeAgentCount", 1),
+        ("epoch", epoch),
+        ("writeSeq", write_seq),
+        ("retired", False),
+        ("headroom", headroom),
+        ("usage", (19_637, 100_000_000, 0, 1, 0)),
+        ("tokenAllowed", False),
+        ("tokenSpent", 0),
+        ("policyWrite", 0),
+        ("agentWrite", 0),
+        ("tokenWrite", 0),
+        ("delayWrite", 0),
+    )
     for fn, value in registry_reads:
         rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, fn, value)
-    rpc.read(REGISTRY, AGENT_POLICY_REGISTRY, "agent", lambda a: {"active": agent_active, "expiresAt": agent_expires_at, "permissions": agent_permissions}
-             if a[1].lower() == agent.lower() else {"active": False, "expiresAt": 0, "permissions": 0})
+    rpc.read(
+        REGISTRY,
+        AGENT_POLICY_REGISTRY,
+        "agent",
+        lambda a: {
+            "active": agent_active,
+            "expiresAt": agent_expires_at,
+            "permissions": agent_permissions,
+        }
+        if a[1].lower() == agent.lower()
+        else {"active": False, "expiresAt": 0, "permissions": 0},
+    )
     rpc.balances[ACCOUNT.lower()] = 1_000 * WAD
 
 
-def mock_curve(rpc: MockRpc, *, phase: int = 0, tokens_out: int = 1_000_000 * WAD, used: Callable[[int], int] | None = None,
-               sold: int = 100_000_000 * WAD, curve_supply: int = 800_000_000 * WAD, usdc_out: int = 9_900_000_000_000_000_000, balance: int = 0, price: int = 25_000_000_000_000,
-               snipe: int = 0) -> None:
-    rpc.read(LAUNCH_FACTORY, LAUNCH_FACTORY_ABI, "curveOf", lambda a: CURVE if a[0].lower() == TOKEN.lower() else ZERO)
+def mock_curve(
+    rpc: MockRpc,
+    *,
+    phase: int = 0,
+    tokens_out: int = 1_000_000 * WAD,
+    used: Callable[[int], int] | None = None,
+    sold: int = 100_000_000 * WAD,
+    curve_supply: int = 800_000_000 * WAD,
+    usdc_out: int = 9_900_000_000_000_000_000,
+    balance: int = 0,
+    price: int = 25_000_000_000_000,
+    snipe: int = 0,
+) -> None:
+    rpc.read(
+        LAUNCH_FACTORY,
+        LAUNCH_FACTORY_ABI,
+        "curveOf",
+        lambda a: CURVE if a[0].lower() == TOKEN.lower() else ZERO,
+    )
     rpc.read(CURVE, BONDING_CURVE, "phase", phase)
-    rpc.read(CURVE, BONDING_CURVE, "quoteBuy", lambda a: (tokens_out, used(a[0]) if used else a[0], a[0] // 100, 0))
+    rpc.read(
+        CURVE,
+        BONDING_CURVE,
+        "quoteBuy",
+        lambda a: (tokens_out, used(a[0]) if used else a[0], a[0] // 100, 0),
+    )
     rpc.read(CURVE, BONDING_CURVE, "quoteSell", lambda a: (usdc_out, 10**17))
-    for fn, value in (("sold", sold), ("curveSupply", curve_supply), ("price", price), ("currentSnipeBps", snipe),
-                      ("launchBlock", 100), ("progressBps", 1_250), ("token", TOKEN)):
+    for fn, value in (
+        ("sold", sold),
+        ("curveSupply", curve_supply),
+        ("price", price),
+        ("currentSnipeBps", snipe),
+        ("launchBlock", 100),
+        ("progressBps", 1_250),
+        ("token", TOKEN),
+    ):
         rpc.read(CURVE, BONDING_CURVE, fn, value)
     rpc.read(TOKEN, LAUNCH_TOKEN, "balanceOf", balance)
     rpc.read(TOKEN, LAUNCH_TOKEN, "name", "Example")
@@ -310,7 +447,9 @@ def _tx(rpc: MockRpc, i: int) -> dict[str, Any]:
     return dict(TypedTransaction.from_bytes(HexBytes(from_hex(rpc.sent[i]))).as_dict())
 
 
-def sent_call(rpc: MockRpc, contract: Contract, i: int = 0) -> tuple[str, dict[str, Any], dict[str, Any]]:
+def sent_call(
+    rpc: MockRpc, contract: Contract, i: int = 0
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
     tx = _tx(rpc, i)
     name, args = contract.decode_input(to_hex(bytes(tx["data"])))
     return name, args, tx

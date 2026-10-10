@@ -7,6 +7,7 @@ registry's verified `agentWallet`. The account is linked only through the regist
 
 Same behaviour as TypeScript's identity.ts; the shared vectors in fixtures/vectors/identity.json decide.
 """
+
 from __future__ import annotations
 
 import base64
@@ -41,20 +42,22 @@ class Erc8004Book:
 
 
 # Checked with eth_getCode on each network. Mainnet is listed but refused until Agent Accounts are recorded there.
-ERC8004_REGISTRIES: Mapping[str, Erc8004Book] = MappingProxyType({
-    "testnet": Erc8004Book(
-        5042002,
-        "0x8004A818BFB912233c491871b3d84c89A494BD9e",
-        "0x8004B663056A597Dffe9eCcC1965A193B7388713",
-        "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
-    ),
-    "mainnet": Erc8004Book(
-        5042,
-        "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
-        "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
-        "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58",
-    ),
-})
+ERC8004_REGISTRIES: Mapping[str, Erc8004Book] = MappingProxyType(
+    {
+        "testnet": Erc8004Book(
+            5042002,
+            "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+            "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+            "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
+        ),
+        "mainnet": Erc8004Book(
+            5042,
+            "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+            "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+            "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58",
+        ),
+    }
+)
 
 REGISTRATION_TYPE = "https://eips.ethereum.org/EIPS/eip-8004#registration-v1"
 """The registration-file `type` of the ERC-8004 version deployed on Arc (IdentityRegistry `getVersion()` 2.0.0)."""
@@ -72,20 +75,61 @@ _CANONICAL_BASE64 = re.compile(r"(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Z
 # The IdentityRegistry functions and events this module uses, written by hand from the ERC-8004 text and checked
 # against the deployed implementation's bytecode (every selector and event topic is present).
 IDENTITY_REGISTRY_ABI: list[dict[str, Any]] = [
-    {"type": "function", "name": "register", "stateMutability": "nonpayable", "inputs": [{"name": "agentURI", "type": "string"}],
-     "outputs": [{"name": "agentId", "type": "uint256"}]},
-    {"type": "function", "name": "setAgentURI", "stateMutability": "nonpayable",
-     "inputs": [{"name": "agentId", "type": "uint256"}, {"name": "newURI", "type": "string"}], "outputs": []},
-    {"type": "function", "name": "ownerOf", "stateMutability": "view", "inputs": [{"name": "tokenId", "type": "uint256"}], "outputs": [{"name": "", "type": "address"}]},
-    {"type": "function", "name": "tokenURI", "stateMutability": "view", "inputs": [{"name": "tokenId", "type": "uint256"}], "outputs": [{"name": "", "type": "string"}]},
-    {"type": "function", "name": "getAgentWallet", "stateMutability": "view", "inputs": [{"name": "agentId", "type": "uint256"}],
-     "outputs": [{"name": "", "type": "address"}]},
-    {"type": "event", "name": "Registered", "anonymous": False, "inputs": [
-        {"name": "agentId", "type": "uint256", "indexed": True}, {"name": "agentURI", "type": "string", "indexed": False},
-        {"name": "owner", "type": "address", "indexed": True}]},
-    {"type": "event", "name": "Transfer", "anonymous": False, "inputs": [
-        {"name": "from", "type": "address", "indexed": True}, {"name": "to", "type": "address", "indexed": True},
-        {"name": "tokenId", "type": "uint256", "indexed": True}]},
+    {
+        "type": "function",
+        "name": "register",
+        "stateMutability": "nonpayable",
+        "inputs": [{"name": "agentURI", "type": "string"}],
+        "outputs": [{"name": "agentId", "type": "uint256"}],
+    },
+    {
+        "type": "function",
+        "name": "setAgentURI",
+        "stateMutability": "nonpayable",
+        "inputs": [{"name": "agentId", "type": "uint256"}, {"name": "newURI", "type": "string"}],
+        "outputs": [],
+    },
+    {
+        "type": "function",
+        "name": "ownerOf",
+        "stateMutability": "view",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "address"}],
+    },
+    {
+        "type": "function",
+        "name": "tokenURI",
+        "stateMutability": "view",
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "string"}],
+    },
+    {
+        "type": "function",
+        "name": "getAgentWallet",
+        "stateMutability": "view",
+        "inputs": [{"name": "agentId", "type": "uint256"}],
+        "outputs": [{"name": "", "type": "address"}],
+    },
+    {
+        "type": "event",
+        "name": "Registered",
+        "anonymous": False,
+        "inputs": [
+            {"name": "agentId", "type": "uint256", "indexed": True},
+            {"name": "agentURI", "type": "string", "indexed": False},
+            {"name": "owner", "type": "address", "indexed": True},
+        ],
+    },
+    {
+        "type": "event",
+        "name": "Transfer",
+        "anonymous": False,
+        "inputs": [
+            {"name": "from", "type": "address", "indexed": True},
+            {"name": "to", "type": "address", "indexed": True},
+            {"name": "tokenId", "type": "uint256", "indexed": True},
+        ],
+    },
 ]
 IDENTITY_REGISTRY = Contract(IDENTITY_REGISTRY_ABI, "IdentityRegistry")
 _ZERO = "0x" + "00" * 20
@@ -95,7 +139,10 @@ def erc8004_registries(network: str) -> Erc8004Book:
     """The registry for a network. Like every other agent feature, a network without a recorded Agent Accounts deployment
     in this SDK (mainnet today) is refused with `NotDeployedError`."""
     if network not in ("testnet", "mainnet"):
-        raise InvalidInputError("network", 'ERC-8004 helpers support network "testnet" (and "mainnet" once Agent Accounts are deployed there).')
+        raise InvalidInputError(
+            "network",
+            'ERC-8004 helpers support network "testnet" (and "mainnet" once Agent Accounts are deployed there).',
+        )
     if NETWORKS[network].agents is None:
         raise NotDeployedError(network)
     return ERC8004_REGISTRIES[network]
@@ -107,11 +154,26 @@ def _utf8_len(value: str) -> int:
 
 def _has_control(value: str, allow_newline: bool = False) -> bool:
     """Control, format and lone-surrogate characters; `allow_newline` keeps "\\n" (descriptions)."""
-    return any(unicodedata.category(c) in ("Cc", "Cf", "Cs") for c in (value.replace("\n", "") if allow_newline else value))
+    return any(
+        unicodedata.category(c) in ("Cc", "Cf", "Cs")
+        for c in (value.replace("\n", "") if allow_newline else value)
+    )
 
 
-def _text(field: str, value: object, max_bytes: int, *, min_bytes: int = 0, allow_newline: bool = False, no_space: bool = False) -> str:
-    size = f"{field} must be {min_bytes}-{max_bytes} bytes (UTF-8)" if min_bytes > 0 else f"{field} must be a string of at most {max_bytes} bytes (UTF-8)"
+def _text(
+    field: str,
+    value: object,
+    max_bytes: int,
+    *,
+    min_bytes: int = 0,
+    allow_newline: bool = False,
+    no_space: bool = False,
+) -> str:
+    size = (
+        f"{field} must be {min_bytes}-{max_bytes} bytes (UTF-8)"
+        if min_bytes > 0
+        else f"{field} must be a string of at most {max_bytes} bytes (UTF-8)"
+    )
     if not isinstance(value, str):
         raise InvalidInputError(field, size)
     # Characters first, then length: a lone surrogate is reported as a control character, as in TypeScript.
@@ -148,14 +210,22 @@ def _services(value: object) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for i, s in enumerate(value):
         if not isinstance(s, Mapping):
-            raise InvalidInputError("services", f"services[{i}] must be {{name, endpoint, version?}}")
+            raise InvalidInputError(
+                "services", f"services[{i}] must be {{name, endpoint, version?}}"
+            )
         for key in s:
             if key not in ("name", "endpoint", "version"):
                 raise InvalidInputError("services", f"services[{i}] has an unknown field {key}")
         name = _text("services", s.get("name"), 64, min_bytes=1, no_space=True)
         if name.lower() == AGENT_ACCOUNT_SERVICE.lower():
-            raise InvalidInputError("services", f"services[{i}]: the name {AGENT_ACCOUNT_SERVICE} is reserved for the account entry")
-        entry = {"name": name, "endpoint": _text("services", s.get("endpoint"), 512, min_bytes=1, no_space=True)}
+            raise InvalidInputError(
+                "services",
+                f"services[{i}]: the name {AGENT_ACCOUNT_SERVICE} is reserved for the account entry",
+            )
+        entry = {
+            "name": name,
+            "endpoint": _text("services", s.get("endpoint"), 512, min_bytes=1, no_space=True),
+        }
         if s.get("version") is not None:
             entry["version"] = _text("services", s["version"], 32, min_bytes=1, no_space=True)
         out.append(entry)
@@ -184,7 +254,9 @@ def build_registration_file(
     book = erc8004_registries(network)
     acct = _account(account)
     checked_name = _text("name", name, 64, min_bytes=1)
-    desc = "" if description is None else _text("description", description, 2000, allow_newline=True)
+    desc = (
+        "" if description is None else _text("description", description, 2000, allow_newline=True)
+    )
     if image is not None:
         problem = metadata_uri_problem(image)
         if problem is not None:
@@ -196,18 +268,31 @@ def build_registration_file(
         raise InvalidInputError("active", "active must be a boolean")
     trust: list[str] = []
     if supported_trust is not None:
-        if isinstance(supported_trust, (str, bytes)) or not isinstance(supported_trust, Sequence) or any(t not in TRUST_MODELS for t in supported_trust):
-            raise InvalidInputError("supported_trust", f"supportedTrust entries must be {', '.join(TRUST_MODELS)}")
+        if (
+            isinstance(supported_trust, (str, bytes))
+            or not isinstance(supported_trust, Sequence)
+            or any(t not in TRUST_MODELS for t in supported_trust)
+        ):
+            raise InvalidInputError(
+                "supported_trust", f"supportedTrust entries must be {', '.join(TRUST_MODELS)}"
+            )
         trust = list(dict.fromkeys(supported_trust))
     # A JSON number: ids above 2^53 - 1 would lose precision in readers.
     aid = None if agent_id is None else _agent_id(agent_id, _MAX_SAFE_INTEGER)
     file: dict[str, Any] = {"type": REGISTRATION_TYPE, "name": checked_name, "description": desc}
     if image is not None:
         file["image"] = image
-    file["services"] = [{"name": AGENT_ACCOUNT_SERVICE, "endpoint": f"eip155:{book.chain_id}:{acct}"}, *extra]
+    file["services"] = [
+        {"name": AGENT_ACCOUNT_SERVICE, "endpoint": f"eip155:{book.chain_id}:{acct}"},
+        *extra,
+    ]
     file["x402Support"] = x402_support
     file["active"] = active
-    file["registrations"] = [] if aid is None else [{"agentId": aid, "agentRegistry": f"eip155:{book.chain_id}:{book.identity_registry}"}]
+    file["registrations"] = (
+        []
+        if aid is None
+        else [{"agentId": aid, "agentRegistry": f"eip155:{book.chain_id}:{book.identity_registry}"}]
+    )
     if trust:
         file["supportedTrust"] = trust
     return file
@@ -220,7 +305,9 @@ def registration_file_json(file: Mapping[str, Any]) -> str:
 
 def registration_data_uri(file: Mapping[str, Any]) -> str:
     """A fully on-chain agent URI: `data:application/json;base64,…` of the compact JSON (UTF-8)."""
-    return _DATA_PREFIX + base64.b64encode(registration_file_json(file).encode("utf-8")).decode("ascii")
+    return _DATA_PREFIX + base64.b64encode(registration_file_json(file).encode("utf-8")).decode(
+        "ascii"
+    )
 
 
 def agent_uri_problem(uri: object) -> str | None:
@@ -229,7 +316,7 @@ def agent_uri_problem(uri: object) -> str | None:
     if not isinstance(uri, str) or uri == "":
         return "it is empty or not a string"
     if uri.startswith(_DATA_PREFIX):
-        payload = uri[len(_DATA_PREFIX):]
+        payload = uri[len(_DATA_PREFIX) :]
         if payload == "" or _CANONICAL_BASE64.fullmatch(payload) is None:
             return "its base64 payload is empty or not canonical base64"
         if len(uri) > _MAX_DATA_URI_BYTES:
@@ -282,25 +369,36 @@ def agent_id_from_receipt(network: str, receipt: Mapping[str, Any]) -> Registere
         raise MercurifiError(f"{tx_hash} reverted; no agent was registered.", code="TX_REVERTED")
     decoded: list[tuple[str, dict[str, Any]]] = []
     for log in receipt.get("logs") or []:
-        if not isinstance(log, Mapping) or str(log.get("address", "")).lower() != book.identity_registry.lower():
+        if (
+            not isinstance(log, Mapping)
+            or str(log.get("address", "")).lower() != book.identity_registry.lower()
+        ):
             continue
         try:
-            hit = IDENTITY_REGISTRY.decode_log(list(log.get("topics") or []), str(log.get("data", "0x")))
+            hit = IDENTITY_REGISTRY.decode_log(
+                list(log.get("topics") or []), str(log.get("data", "0x"))
+            )
         except AbiDecodeError:
             continue
         if hit is not None:
             decoded.append(hit)
     registered = [args for name, args in decoded if name == "Registered"]
     if len(registered) > 1:
-        raise MercurifiError(f"{tx_hash} registered {len(registered)} agents; read each Registered log yourself.", code="MISSING_EVENT")
+        raise MercurifiError(
+            f"{tx_hash} registered {len(registered)} agents; read each Registered log yourself.",
+            code="MISSING_EVENT",
+        )
     if registered:
         r = registered[0]
-        return RegisteredAgent(int(r["agentId"]), to_checksum_address(r["owner"]), str(r["agentURI"]))
+        return RegisteredAgent(
+            int(r["agentId"]), to_checksum_address(r["owner"]), str(r["agentURI"])
+        )
     mints = [args for name, args in decoded if name == "Transfer" and int(args["from"], 16) == 0]
     if len(mints) != 1:
         count = "no" if not mints else str(len(mints))
         raise MercurifiError(
-            f"{tx_hash} has {count} agent registration event{'' if len(mints) == 1 else 's'} from the {network} IdentityRegistry.", code="MISSING_EVENT"
+            f"{tx_hash} has {count} agent registration event{'' if len(mints) == 1 else 's'} from the {network} IdentityRegistry.",
+            code="MISSING_EVENT",
         )
     return RegisteredAgent(int(mints[0]["tokenId"]), to_checksum_address(mints[0]["to"]), None)
 
@@ -322,14 +420,23 @@ async def get_agent(rpc: Rpc, network: str, agent_id: int) -> AgentIdentity:
     aid = _agent_id(agent_id)
     chain_id = await rpc.chain_id()
     if chain_id != book.chain_id:
-        raise NetworkMismatchError(f"The RPC is on chain {chain_id}, not {network} ({book.chain_id}).")
+        raise NetworkMismatchError(
+            f"The RPC is on chain {chain_id}, not {network} ({book.chain_id})."
+        )
     # Errors are raised outside the except blocks, so no __context__ keeps the original exception.
     failure: MercurifiError | None = None
     try:
         owner = await rpc.read(IDENTITY_REGISTRY, book.identity_registry, "ownerOf", aid)
     except RpcError as exc:
         # A revert (ERC721NonexistentToken) carries data; anything else is an RPC failure.
-        failure = rpc_error(exc) if exc.data is None else MercurifiError(f"There is no agent {aid} in the {network} IdentityRegistry.", code="AGENT_NOT_FOUND")
+        failure = (
+            rpc_error(exc)
+            if exc.data is None
+            else MercurifiError(
+                f"There is no agent {aid} in the {network} IdentityRegistry.",
+                code="AGENT_NOT_FOUND",
+            )
+        )
     if failure is not None:
         raise failure
     try:
@@ -343,7 +450,23 @@ async def get_agent(rpc: Rpc, network: str, agent_id: int) -> AgentIdentity:
 
 
 __all__ = [
-    "AGENT_ACCOUNT_SERVICE", "ERC8004_REGISTRIES", "IDENTITY_REGISTRY", "IDENTITY_REGISTRY_ABI", "REGISTRATION_TYPE", "TRUST_MODELS", "AgentIdentity",
-    "Erc8004Book", "IdentityNetwork", "RegisteredAgent", "agent_id_from_receipt", "agent_uri_problem", "build_registration_file", "encode_register",
-    "encode_set_agent_uri", "erc8004_registries", "get_agent", "registration_data_uri", "registration_file_json",
+    "AGENT_ACCOUNT_SERVICE",
+    "ERC8004_REGISTRIES",
+    "IDENTITY_REGISTRY",
+    "IDENTITY_REGISTRY_ABI",
+    "REGISTRATION_TYPE",
+    "TRUST_MODELS",
+    "AgentIdentity",
+    "Erc8004Book",
+    "IdentityNetwork",
+    "RegisteredAgent",
+    "agent_id_from_receipt",
+    "agent_uri_problem",
+    "build_registration_file",
+    "encode_register",
+    "encode_set_agent_uri",
+    "erc8004_registries",
+    "get_agent",
+    "registration_data_uri",
+    "registration_file_json",
 ]

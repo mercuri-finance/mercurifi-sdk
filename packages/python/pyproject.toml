@@ -39,10 +39,11 @@ strict = true
 files = ["src/mercurifi", "tests"]
 
 [tool.ruff]
-line-length = 210
+line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
-ignore = ["UP038"]
+# E501: the formatter sets the width; strings and comments it cannot wrap may run longer.
+ignore = ["UP038", "E501"]

@@ -1,4 +1,5 @@
 """The account's cost basis and its sell valuation, mirroring AgentAccount._recordedValue (TS basis.ts)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

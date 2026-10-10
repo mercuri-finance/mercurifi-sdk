@@ -1,4 +1,5 @@
 """Owner and registry calls built by the API: the shared fixtures/vectors/ownerbuild.json (TS verifyOwnerBuild.test.ts)."""
+
 from __future__ import annotations
 
 import copy
@@ -13,7 +14,9 @@ import pytest
 from mercurifi.build_verify import verify_built_owner_tx
 from mercurifi.errors import BuildMismatchError, InvalidInputError
 
-V = json.loads((Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "ownerbuild.json").read_text())
+V = json.loads(
+    (Path(__file__).resolve().parents[3] / "fixtures" / "vectors" / "ownerbuild.json").read_text()
+)
 OTHER = "0x00000000000000000000000000000000deadbeef"
 
 
@@ -21,16 +24,23 @@ def _base(name: str) -> dict[str, Any]:
     return copy.deepcopy(next(a for a in V["accept"] if a["name"] == name))
 
 
-def _verify(built: Mapping[str, Any], vec: Mapping[str, Any], exact: Any = None, **over: Any) -> tuple[str, dict[str, Any]]:
+def _verify(
+    built: Mapping[str, Any], vec: Mapping[str, Any], exact: Any = None, **over: Any
+) -> tuple[str, dict[str, Any]]:
     kw: dict[str, Any] = {
-        "chain_id": V["chainId"], "account": V["account"], "registry": V["registry"], "function_name": vec["function"],
+        "chain_id": V["chainId"],
+        "account": V["account"],
+        "registry": V["registry"],
+        "function_name": vec["function"],
         "exact": copy.deepcopy(vec["exact"]) if exact is None else exact,
     }
     kw.update(over)
     return verify_built_owner_tx(built, **kw)
 
 
-def _refused(built: Mapping[str, Any], vec: Mapping[str, Any], pattern: str, exact: Any = None, **over: Any) -> None:
+def _refused(
+    built: Mapping[str, Any], vec: Mapping[str, Any], pattern: str, exact: Any = None, **over: Any
+) -> None:
     with pytest.raises(BuildMismatchError) as e:
         _verify(built, vec, exact, **over)
     assert re.search(pattern, str(e.value), re.IGNORECASE), str(e.value)
@@ -68,7 +78,9 @@ def test_refuses_every_generic_tamper(vec: dict[str, Any]) -> None:
         del exact[k]
         _refused(b, vec, f"{k} of {vec['function']} is not covered", exact)
     _refused(b, vec, "has no argument extra", {**copy.deepcopy(vec["exact"]), "extra": "1"})
-    other = next(a for a in V["accept"] if a["function"] != vec["function"] and a["built"]["to"] == b["to"])
+    other = next(
+        a for a in V["accept"] if a["function"] != vec["function"] and a["built"]["to"] == b["to"]
+    )
     _refused(b, other, "asked for|not covered|has no argument")
 
 
@@ -115,7 +127,12 @@ def test_permission_names_or_bitmask_and_number_forms() -> None:
     add = _base("addAgent")
     exact = {**add["exact"], "permissions": 29, "expiresAt": 1_800_086_400}
     assert _verify(add["built"], add, exact)[1]["permissions"] == 29
-    for bad in ({"permissions": ["buy", "nope"]}, {"expiresAt": 1.5}, {"expiresAt": True}, {"expiresAt": "0x6b4b2400"}):
+    for bad in (
+        {"permissions": ["buy", "nope"]},
+        {"expiresAt": 1.5},
+        {"expiresAt": True},
+        {"expiresAt": "0x6b4b2400"},
+    ):
         with pytest.raises(InvalidInputError):
             _verify(add["built"], add, {**add["exact"], **bad})
     pause = _base("pauseAgents (registry)")

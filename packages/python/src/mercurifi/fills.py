@@ -1,4 +1,5 @@
 """The final result of one agent action, read from the account's own AgentAction log (spec 4.10)."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -73,27 +74,66 @@ def fill_from_receipt(receipt: Mapping[str, Any], account: str, launch_factory: 
     AccountWithdrawn is not an action. Exactly one AgentAction from this account must be present."""
     tx_hash = str(receipt.get("transactionHash"))
     logs = list(receipt.get("logs", []))
-    actions = [a for entry in logs if _emitter(entry) == account.lower()
-               if (a := _decode(AGENT_ACCOUNT, entry, "AgentAction")) is not None]
+    actions = [
+        a
+        for entry in logs
+        if _emitter(entry) == account.lower()
+        if (a := _decode(AGENT_ACCOUNT, entry, "AgentAction")) is not None
+    ]
     if len(actions) != 1:
-        raise MercurifiError(f"Expected one AgentAction from {account} in {tx_hash}, found {len(actions)}.", code="FILL_NOT_FOUND")
+        raise MercurifiError(
+            f"Expected one AgentAction from {account} in {tx_hash}, found {len(actions)}.",
+            code="FILL_NOT_FOUND",
+        )
     a = actions[0]
     code = int(a["action"])
     action = ACTIONS.get(code)
     if action is None:
         raise MercurifiError(
-            f"{account} reported an unknown action code {code} in {tx_hash}; this SDK version does not know it.", code="UNKNOWN_ACTION")
-    created = [c for entry in logs if _emitter(entry) == launch_factory.lower()
-               if (c := _decode(LAUNCH_FACTORY, entry, "TokenCreated")) is not None]
+            f"{account} reported an unknown action code {code} in {tx_hash}; this SDK version does not know it.",
+            code="UNKNOWN_ACTION",
+        )
+    created = [
+        c
+        for entry in logs
+        if _emitter(entry) == launch_factory.lower()
+        if (c := _decode(LAUNCH_FACTORY, entry, "TokenCreated")) is not None
+    ]
     # A launch must show the factory creating the very token the account reports, with the account as its creator.
-    made = next((c for c in created if str(c["token"]).lower() == str(a["token"]).lower() and str(c["creator"]).lower() == account.lower()), None)
+    made = next(
+        (
+            c
+            for c in created
+            if str(c["token"]).lower() == str(a["token"]).lower()
+            and str(c["creator"]).lower() == account.lower()
+        ),
+        None,
+    )
     if action == "launch" and made is None:
-        raise MercurifiError(f"The launch in {tx_hash} has no TokenCreated event for {a['token']} created by {account}.", code="FILL_NOT_FOUND")
+        raise MercurifiError(
+            f"The launch in {tx_hash} has no TokenCreated event for {a['token']} created by {account}.",
+            code="FILL_NOT_FOUND",
+        )
     delta = int(a["tokenDelta"])
     gas_used = _int(receipt.get("gasUsed", 0))
     return Fill(
-        action, account, a["agent"], a["token"], int(a["usdcSpent"]), int(a["usdcReceived"]), int(a["basisValue"]), delta,
-        max(delta, 0), max(-delta, 0), format_usdc6(int(a["usdcSpent"])), format_usdc6(int(a["usdcReceived"])), format_tokens(abs(delta)),
-        int(a["periodId"]), tx_hash, _int(receipt.get("blockNumber", 0)), gas_used, gas_used * _int(receipt.get("effectiveGasPrice", 0)),
+        action,
+        account,
+        a["agent"],
+        a["token"],
+        int(a["usdcSpent"]),
+        int(a["usdcReceived"]),
+        int(a["basisValue"]),
+        delta,
+        max(delta, 0),
+        max(-delta, 0),
+        format_usdc6(int(a["usdcSpent"])),
+        format_usdc6(int(a["usdcReceived"])),
+        format_tokens(abs(delta)),
+        int(a["periodId"]),
+        tx_hash,
+        _int(receipt.get("blockNumber", 0)),
+        gas_used,
+        gas_used * _int(receipt.get("effectiveGasPrice", 0)),
         Launched(made["token"], made["curve"]) if action == "launch" and made is not None else None,
     )
