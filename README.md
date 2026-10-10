@@ -62,6 +62,14 @@ Every on-chain action works with only an RPC URL. Add an API key (`X-Api-Key`, `
 
 Every error carries a stable `code` and a readable message. A call the account would refuse fails before anything is sent, as a `ContractRevertError` that names the revert. Branch on `code` and `revert.name`, never on message text, and never hand a message to a model.
 
+## ERC-8004 identity (optional)
+
+Both SDKs can build an [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) registration file that lists an agent account, plus the calldata to register it on Arc testnet. The owner wallet (an EOA) signs and sends it. The agent account cannot register itself, and it cannot sign (`isValidSignature` always fails), so it is never the registry's verified `agentWallet`. It appears only as a service entry in the file. See "ERC-8004 identity (optional)" in either package README.
+
+## Circle Wallets
+
+A Circle wallet, including a Circle Agent Wallet (a smart-contract account), can be an account's owner, because owner checks are `msg.sender`-based. It cannot be the agent key of a self-hosted agent, because it has no exportable key and signs through Circle's API. No adapter is provided.
+
 ## Local development
 
 - Prerequisites for the Anvil tier: Foundry's `anvil` and `forge` on the PATH, and a checkout of the agent contracts (`git clone --recurse-submodules https://github.com/mercuri-finance/mercuri-agent-contracts.git`). Point `MERCURIFI_CONTRACTS_DIR` at it (for example `export MERCURIFI_CONTRACTS_DIR=$HOME/src/agent-contracts`); `scripts/local-chain.sh` and `scripts/gen-abis.mjs` (except `--verify-digest`) stop with a clear message when it is unset.

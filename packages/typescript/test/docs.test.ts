@@ -65,3 +65,13 @@ describe('no stale "testnet only" claims', () => {
     '../../python/examples/quickstart_testnet.py', '../../python/examples/market_maker.py', '../../python/examples/launch_bot.py', '../../python/examples/llm_tools.py'];
   it.each(files)('%s', (p) => expect(read(p)).not.toMatch(/Testnet only|[Uu]se ['"`]{1,2}testnet['"`]{1,2}/));
 });
+
+describe('the ERC-8004 and Circle notes say who signs', () => {
+  it.each(['../../../README.md', '../README.md', '../../python/README.md'])('%s', (p) => {
+    const text = read(p);
+    for (const h of ['## ERC-8004 identity (optional)', '## Circle Wallets']) expect(text).toContain(h);
+    expect(text).toContain('`isValidSignature` always fails');
+    expect(text).toContain('no exportable');
+    expect(text).toMatch(/No adapter is provided|provides no Circle adapter/);
+  });
+});

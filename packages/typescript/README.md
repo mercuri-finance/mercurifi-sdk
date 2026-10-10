@@ -105,6 +105,35 @@ RPC provider URLs usually carry an API key in the path. The SDK shows only the h
 
 Install only `@mercurifi/sdk` (npm) or `mercurifi` (PyPI); see [docs/reserved-names.md](../../docs/reserved-names.md). Before upgrading, verify the provenance of the release as described in [docs/verify-provenance.md](../../docs/verify-provenance.md): npm provenance for the TypeScript package, PyPI attestations for the Python one. These checks are inert until publishing is approved. The TypeScript package has one runtime dependency (viem, pinned exactly).
 
+## ERC-8004 identity (optional)
+
+[ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) is an on-chain registry for agents. Each agent is an ERC-721 token in an IdentityRegistry, and its token URI points to a registration file that describes the agent and its endpoints. The helpers here build that file and the calldata. They never sign or send. Arc testnet only for now: on mainnet they throw `NotDeployedError` until a mainnet Agent Accounts deployment is recorded.
+
+Who signs: an ordinary wallet (EOA) sends the registration, normally the owner wallet. That wallet becomes the agent's owner in the registry. The agent account cannot register itself, because it only calls allowlisted Mercurifi contracts. It also cannot sign: its `isValidSignature` always fails, so it can never be the registry's verified `agentWallet` (`setAgentWallet` with the account as the wallet reverts). The account is linked through the registration file instead, as the service entry `MercurifiAgentAccount` with endpoint `eip155:<chainId>:<account>`. The registry's `agentWallet` stays the registering wallet.
+
+```ts
+import { createPublicClient, http, type Address, type TransactionReceipt } from 'viem';
+import { agentIdFromReceipt, buildRegistrationFile, encodeRegister, getAgent, registrationDataUri } from '@mercurifi/sdk';
+
+declare const account: Address; // your agent account
+declare const receipt: TransactionReceipt; // the receipt of the transaction your owner wallet sent
+const file = buildRegistrationFile({
+  network: 'testnet', account, name: 'Dip Buyer', description: 'Buys new Launch tokens inside its caps.',
+  services: [{ name: 'MCP', endpoint: 'https://mcp.example.com/' }],
+});
+// Embed the file on chain, or publish registrationFileJson(file) at an https:// or ipfs:// URI and pass that.
+const tx = encodeRegister({ network: 'testnet', agentURI: registrationDataUri(file) }); // { chainId, to, data, value: 0n }
+// Send tx from the owner wallet, then read the new agent from its receipt.
+const { agentId } = agentIdFromReceipt({ network: 'testnet', receipt });
+const agent = await getAgent(createPublicClient({ transport: http('https://rpc.testnet.arc.io') }), { network: 'testnet', agentId });
+```
+
+ERC-8004 asks the file to list its own registration. Once you have the `agentId`, build the file again with `agentId` and send `encodeSetAgentURI({ network, agentId, agentURI })` from the same wallet. `ERC8004_REGISTRIES` lists the Identity, Reputation and Validation registries on both networks. The agent URI and the file are public, and anyone can register any address in a file, so a listing proves nothing about who controls the account. Check the account's owner on chain.
+
+## Circle Wallets
+
+A Circle wallet can be an account's **owner**, including a Circle Agent Wallet, which is a smart-contract account. Every owner check is `msg.sender`-based, so the owner functions work from any address that can send a transaction. A Circle wallet cannot be the **agent key** of a self-hosted agent. It has no exportable private key, and it signs through Circle's API, so the SDK's signers cannot use it. The SDK provides no Circle adapter.
+
 ## More
 
 See the [repository README](../../README.md) and [docs/security-model.md](../../docs/security-model.md).

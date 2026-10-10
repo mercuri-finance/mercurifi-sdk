@@ -54,3 +54,11 @@ def test_no_stale_testnet_only_claims() -> None:
     assert len(files) >= 12
     for f in files:
         assert not re.search(r"Testnet only|[Uu]se ['\"`]{1,2}testnet['\"`]{1,2}", f.read_text()), f
+
+
+def test_readme_says_who_signs_for_erc8004_and_circle() -> None:
+    readme = (PKG / "README.md").read_text()
+    for heading in ("## ERC-8004 identity (optional)", "## Circle Wallets"):
+        assert heading in readme
+    assert "`isValidSignature` always fails" in readme and "no exportable" in readme and "provides no Circle adapter" in readme
+    assert "from mercurifi.identity import" in readme
