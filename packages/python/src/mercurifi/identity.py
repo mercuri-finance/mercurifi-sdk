@@ -23,7 +23,7 @@ from eth_utils.address import to_checksum_address
 from .agent import metadata_uri_problem
 from .codec import AbiDecodeError, Contract
 from .errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
-from .networks import MAINNET
+from .networks import NETWORKS
 from .redact import rpc_error
 from .rpc import Rpc, RpcError
 
@@ -40,7 +40,7 @@ class Erc8004Book:
     validation_registry: str
 
 
-# Checked with eth_getCode on each network. Mainnet is listed but refused until Agent Accounts are deployed there.
+# Checked with eth_getCode on each network. Mainnet is listed but refused until Agent Accounts are recorded there.
 ERC8004_REGISTRIES: Mapping[str, Erc8004Book] = MappingProxyType({
     "testnet": Erc8004Book(
         5042002,
@@ -92,12 +92,12 @@ _ZERO = "0x" + "00" * 20
 
 
 def erc8004_registries(network: str) -> Erc8004Book:
-    """The registry for a network. Testnet is open; mainnet stays refused (`NotDeployedError`) until this SDK records an
-    Agent Accounts deployment there, like every other agent feature."""
+    """The registry for a network. Like every other agent feature, a network without a recorded Agent Accounts deployment
+    in this SDK (mainnet today) is refused with `NotDeployedError`."""
     if network not in ("testnet", "mainnet"):
         raise InvalidInputError("network", 'ERC-8004 helpers support network "testnet" (and "mainnet" once Agent Accounts are deployed there).')
-    if network == "mainnet" and MAINNET.agents is None:
-        raise NotDeployedError("mainnet")
+    if NETWORKS[network].agents is None:
+        raise NotDeployedError(network)
     return ERC8004_REGISTRIES[network]
 
 
