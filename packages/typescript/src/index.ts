@@ -27,3 +27,9 @@ export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/
 export { verifyBuiltOwnerTx, type OwnerBuildExpectation, type OwnerFunction } from './api/verifyOwnerBuild.js';
 export { openStream, validateTopics, type ReconnectInfo, type StreamEvent, type StreamOptions } from './stream.js';
 export { wrapUntrusted, readTokenSafeView, type UntrustedText, type TokenSafeView } from './safeView.js';
+export {
+  ERC8004_REGISTRIES, REGISTRATION_TYPE, AGENT_ACCOUNT_SERVICE, TRUST_MODELS, identityRegistryAbi, erc8004Registries, buildRegistrationFile,
+  registrationFileJson, registrationDataUri, agentUriProblem, encodeRegister, encodeSetAgentURI, agentIdFromReceipt, getAgent,
+  type Erc8004Book, type IdentityNetwork, type TrustModel, type RegistrationService, type RegistrationFileParams, type RegistrationFile,
+  type IdentityCall, type RegisteredAgent, type IdentityReceiptLike, type AgentIdentity,
+} from './identity.js';
