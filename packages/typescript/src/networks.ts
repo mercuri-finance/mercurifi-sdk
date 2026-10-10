@@ -79,7 +79,16 @@ export const TESTNET: NetworkBook = Object.freeze({
     launchHook: '0x87e6BaBAc4598F99f4A0717ad294934455Fe60cc',
     ...SHARED,
   }),
-  agents: null,
+  /** From deployments/5042002.json in the agent contracts repository (github.com/mercuri-finance/mercuri-agent-contracts); deployBlock is the factory's. */
+  agents: Object.freeze({
+    factory: '0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd',
+    implementation: '0xD11567fDfc9833E39E7EEbB0964c7bB7f4FF40b5',
+    registry: '0xcfCDA6a022314eA7Ae995cCf88e4eeB3A8802C69',
+    factoryCodeHash: '0xe46101aa4d40c13670b4a3cc796e842f66a78b20270151a9ad8a71993a743674',
+    implementationCodeHash: '0xc17ea4822c95a725023978abfbeb6a5e0083cce436a8bcd8530f83af6c10fa6f',
+    registryCodeHash: '0x6e690cd8038c639bfefa2a0f7db40242a6d99610ddd5d517d5fcb3ff22cdde22',
+    deployBlock: 66495930n,
+  }),
 });
 
 export const NETWORKS = Object.freeze({ mainnet: MAINNET, testnet: TESTNET });

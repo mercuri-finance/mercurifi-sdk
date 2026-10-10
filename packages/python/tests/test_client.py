@@ -18,15 +18,37 @@ from mercurifi.networks import MAINNET, NETWORKS, TESTNET, is_loopback_url, loca
 from mercurifi.redact import RedactingFilter, redact_url, redact_urls_in
 from mercurifi.rpc import Rpc, RpcError
 
-from .helpers import REGISTRY, A, MockRpc, local_client, local_json, local_rpc
+from .helpers import REGISTRY, TESTNET_CODE, A, MockRpc, local_client, local_json, local_rpc, pinned_testnet_rpc
 
 LOCAL = "http://127.0.0.1:8545"
 BAD_HASH = "0x" + keccak(b"\x00").hex()
 
 
-async def test_testnet_without_agents() -> None:
-    mf = await create_client("testnet", rpc_transport=MockRpc(5042002).transport(), api=None)
+async def test_testnet_verifies_the_pinned_agent_deployment() -> None:
+    rpc = pinned_testnet_rpc()
+    mf = await create_client("testnet", rpc_transport=rpc.transport(), api=None)
     assert mf.network.chain_id == 5042002
+    assert mf.require_agents() is TESTNET.agents
+    assert [p[0].lower() for p in rpc.methods("eth_getCode")] == [TESTNET_CODE[k]["address"].lower() for k in ("factory", "implementation", "registry")]
+
+
+async def test_pins_the_live_testnet_runtime_code() -> None:
+    agents = TESTNET.agents
+    assert agents is not None
+    assert "0x" + keccak(hexstr=TESTNET_CODE["factory"]["code"]).hex() == agents.factory_code_hash
+    assert "0x" + keccak(hexstr=TESTNET_CODE["implementation"]["code"]).hex() == agents.implementation_code_hash
+    assert "0x" + keccak(hexstr=TESTNET_CODE["registry"]["code"]).hex() == agents.registry_code_hash
+    tampered = pinned_testnet_rpc()
+    tampered.codes[agents.implementation.lower()] = TESTNET_CODE["implementation"]["code"][:-2] + "00"
+    with pytest.raises(NetworkMismatchError, match="implementation .* code hash"):
+        await create_client("testnet", rpc_transport=tampered.transport(), api=None)
+    with pytest.raises(NetworkMismatchError):
+        await create_client("testnet", rpc_transport=MockRpc(TESTNET.chain_id).transport(), api=None)
+
+
+async def test_mainnet_has_no_agent_deployment() -> None:
+    assert MAINNET.agents is None
+    mf = await create_client("mainnet", rpc_url="https://rpc.example", rpc_transport=MockRpc(MAINNET.chain_id).transport(), api=None)
     with pytest.raises(NotDeployedError):
         mf.require_agents()
 
@@ -77,7 +99,7 @@ async def test_custom_books_only_local_loopback() -> None:
 
 async def test_api_key_network() -> None:
     with pytest.raises(NetworkMismatchError, match="other network"):
-        await create_client("testnet", api_key="mfk_live_x", rpc_transport=MockRpc(TESTNET.chain_id).transport(), api=None)
+        await create_client("testnet", api_key="mfk_live_x", rpc_transport=pinned_testnet_rpc().transport(), api=None)
 
 
 async def test_mock_filters_logs_by_address_and_positional_topics() -> None:
@@ -108,7 +130,9 @@ async def test_does_not_resolve_inherited_names_as_networks() -> None:
 
 
 async def test_pinned_books_have_no_invented_agent_addresses() -> None:
-    assert MAINNET.agents is None and TESTNET.agents is None
+    # Testnet carries the recorded deployment (checked against the live code above); mainnet has none.
+    assert MAINNET.agents is None and TESTNET.agents is not None
+    assert TESTNET.agents.deploy_block == 66495930
     assert MAINNET.default_rpc_url is None  # no default third-party RPC on mainnet
     assert "alchemy" not in repr(TESTNET).lower()
     with pytest.raises(TypeError):
@@ -116,7 +140,7 @@ async def test_pinned_books_have_no_invented_agent_addresses() -> None:
 
 
 async def test_rejects_malformed_rpc_url() -> None:
-    transport = MockRpc(TESTNET.chain_id).transport()
+    transport = pinned_testnet_rpc().transport()
     for url in ("not a url", "", "ftp://host", "http://", "http://host:99999", "://x"):
         with pytest.raises(InvalidInputError) as info:
             await create_client("testnet", rpc_url=url, rpc_transport=transport, api=None)
@@ -124,7 +148,7 @@ async def test_rejects_malformed_rpc_url() -> None:
 
 
 async def test_blank_api_key_has_its_own_message() -> None:
-    transport = MockRpc(TESTNET.chain_id).transport()
+    transport = pinned_testnet_rpc().transport()
     for key in ("", "  ", "\t\r\n"):
         with pytest.raises(InvalidInputError, match="api_key is empty"):
             await create_client("testnet", api_key=key, rpc_transport=transport, api=None)
@@ -133,7 +157,7 @@ async def test_blank_api_key_has_its_own_message() -> None:
 
 
 async def test_api_key_is_redacted_in_repr_and_not_picklable() -> None:
-    mf = await create_client("testnet", api_key="mfk_test_SECRETKEY", rpc_transport=MockRpc(TESTNET.chain_id).transport(), api=None)
+    mf = await create_client("testnet", api_key="mfk_test_SECRETKEY", rpc_transport=pinned_testnet_rpc().transport(), api=None)
     assert mf.settings.api_key == "mfk_test_SECRETKEY"
     for text in (repr(mf.settings), str(mf.settings), repr(mf)):
         assert "SECRETKEY" not in text and "mfk_test_" not in text
@@ -206,7 +230,7 @@ async def test_verify_false_only_for_the_local_book_with_a_loopback_rpc() -> Non
 
 
 async def test_option_validation() -> None:
-    transport = MockRpc(TESTNET.chain_id).transport()
+    transport = pinned_testnet_rpc().transport()
     bad: list[dict[str, Any]] = [
         {"deadline_seconds": 0}, {"deadline_seconds": 601}, {"deadline_seconds": True}, {"deadline_seconds": 1.5},
         {"receipt_timeout": 0}, {"receipt_timeout": True}, {"poll_interval": -1}, {"poll_interval": float("nan")},

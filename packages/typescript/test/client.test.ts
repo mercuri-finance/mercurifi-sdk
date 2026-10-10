@@ -1,26 +1,47 @@
-import { keccak256 } from 'viem';
+import { keccak256, type Hex } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import { agentAccountFactoryAbi, agentPolicyRegistryAbi } from '../src/abi/index.js';
 import { createClient } from '../src/client.js';
 import { redactUrl, redactUrlsIn } from '../src/redact.js';
 import { InvalidInputError, NetworkMismatchError, NotDeployedError } from '../src/errors.js';
-import { localNetwork, TESTNET } from '../src/networks.js';
+import { localNetwork, MAINNET, TESTNET } from '../src/networks.js';
 import { A, localJson, localRpc, REGISTRY } from './helpers/local.js';
 import { MockRpc } from './helpers/mockRpc.js';
+import { TESTNET_CODE, testnetRpc } from './helpers/testnet.js';
 
 const LOCAL = 'http://127.0.0.1:8545';
 
 describe('createClient', () => {
-  it('connects to testnet with the default RPC and reports agents as not deployed', async () => {
-    const rpc = new MockRpc(TESTNET.chainId);
+  it('connects to testnet with the default RPC and verifies the pinned agent deployment', async () => {
+    const rpc = testnetRpc();
     const mf = await createClient({ network: 'testnet', transport: rpc.transport() });
     expect(mf.network.chainId).toBe(5042002);
+    expect(mf.requireAgents()).toBe(TESTNET.agents);
+    expect(rpc.methods('eth_getCode').map(([a]) => String(a).toLowerCase())).toEqual(
+      [TESTNET_CODE.factory.address, TESTNET_CODE.implementation.address, TESTNET_CODE.registry.address].map((a) => a.toLowerCase()));
+  });
+
+  it('pins the live testnet runtime code: the fixture hashes to the book and a changed byte is refused', async () => {
+    const agents = TESTNET.agents!;
+    expect(keccak256(TESTNET_CODE.factory.code)).toBe(agents.factoryCodeHash);
+    expect(keccak256(TESTNET_CODE.implementation.code)).toBe(agents.implementationCodeHash);
+    expect(keccak256(TESTNET_CODE.registry.code)).toBe(agents.registryCodeHash);
+    const tampered = testnetRpc();
+    tampered.codes.set(agents.implementation.toLowerCase(), `${TESTNET_CODE.implementation.code.slice(0, -2)}00` as Hex);
+    await expect(createClient({ network: 'testnet', transport: tampered.transport() })).rejects.toThrow(/implementation .* code hash/);
+    const empty = new MockRpc(TESTNET.chainId);
+    await expect(createClient({ network: 'testnet', transport: empty.transport() })).rejects.toThrow(NetworkMismatchError);
+  });
+
+  it('keeps mainnet without an agent deployment', async () => {
+    expect(MAINNET.agents).toBeNull();
+    const mf = await createClient({ network: 'mainnet', rpcUrl: 'https://rpc.example', transport: new MockRpc(MAINNET.chainId).transport() });
     expect(() => mf.requireAgents()).toThrow(NotDeployedError);
   });
 
   it('reads the head block fresh every time (no viem block-number cache)', async () => {
-    const rpc = new MockRpc(TESTNET.chainId);
+    const rpc = testnetRpc();
     const mf = await createClient({ network: 'testnet', transport: rpc.transport() });
     const first = await mf.publicClient.getBlockNumber();
     rpc.block.number += 5n;

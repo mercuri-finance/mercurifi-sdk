@@ -11,7 +11,7 @@ from mercurifi.client import create_client
 from mercurifi.errors import InvalidInputError, StreamError
 from mercurifi.stream import StreamEvent, open_stream, validate_topics
 
-from .helpers import MockRpc
+from .helpers import pinned_testnet_rpc
 
 REQ = ("https://x.example/v1/stream?topics=launches", {"X-Api-Key": "mfk_test_k"})
 
@@ -361,13 +361,13 @@ async def test_client_stream() -> None:
             calls.append(topics)
             return REQ
 
-    mf = await create_client("testnet", rpc_transport=MockRpc(5042002).transport(), api=FakeApi())
+    mf = await create_client("testnet", rpc_transport=pinned_testnet_rpc().transport(), api=FakeApi())
     stream = mf.stream(["Trades", "agent-account:0x" + "B" * 40], transport=scripted(one("id: 1-0\nevent: trade\ndata: 1\n\n")), max_reconnects=0, sleep=no_sleep)
     assert len(await collect(stream)) == 1
     assert calls == [["trades", "agent-account:0x" + "b" * 40]]
     with pytest.raises(InvalidInputError, match="reserved"):
         mf.stream(["account:0x" + "b" * 40])
-    keyless = await create_client("testnet", rpc_transport=MockRpc(5042002).transport(), api=None)
+    keyless = await create_client("testnet", rpc_transport=pinned_testnet_rpc().transport(), api=None)
     with pytest.raises(InvalidInputError):
         keyless.stream(["trades"])
 

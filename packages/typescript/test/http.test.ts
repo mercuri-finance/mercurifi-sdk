@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { HttpApi } from '../src/api/http.js';
 import { createClient } from '../src/client.js';
 import { ApiError, InvalidInputError } from '../src/errors.js';
-import { MockRpc } from './helpers/mockRpc.js';
+import { testnetRpc } from './helpers/testnet.js';
 
 const ADDR = '0x00000000000000000000000000000000000000AA';
 const LOWER = '0x00000000000000000000000000000000000000aa';
@@ -97,10 +97,10 @@ describe('HttpApi', () => {
   });
 
   it('is the default API for a network with an API host, and can be turned off', async () => {
-    const mf = await createClient({ network: 'testnet', transport: new MockRpc(5042002).transport() });
+    const mf = await createClient({ network: 'testnet', transport: testnetRpc().transport() });
     expect(mf.api).toBeInstanceOf(HttpApi);
     expect(mf.api!.baseUrl).toBe('https://testnet-launch-api.mercuri.finance');
-    expect((await createClient({ network: 'testnet', api: null, transport: new MockRpc(5042002).transport() })).api).toBeNull();
+    expect((await createClient({ network: 'testnet', api: null, transport: testnetRpc().transport() })).api).toBeNull();
   });
 });
 
@@ -115,7 +115,7 @@ describe('HttpApi hardening', () => {
     expect(JSON.stringify(api)).not.toContain(KEY);
     expect(inspect(api, { depth: 6, showHidden: true })).not.toContain(KEY);
     expect(JSON.stringify(api)).toContain('[redacted]');
-    const mf = await createClient({ network: 'testnet', apiKey: 'mfk_test_clientsecret', transport: new MockRpc(5042002).transport() });
+    const mf = await createClient({ network: 'testnet', apiKey: 'mfk_test_clientsecret', transport: testnetRpc().transport() });
     expect(mf.settings.hasApiKey).toBe(true);
     for (const text of [JSON.stringify(mf.api), inspect(mf.api, { depth: 8, showHidden: true }), inspect(mf, { depth: 4 }), inspect(mf.settings)]) expect(text).not.toContain('clientsecret');
     expect(Object.values(mf.settings)).not.toContain('mfk_test_clientsecret');
@@ -123,7 +123,7 @@ describe('HttpApi hardening', () => {
 
   it.each(['mfk_test_k\n', ' mfk_test_k', 'mfk_test_\r\nX-Evil: 1', 'mfk_test_\0k', 'mfk_test_é', '', '  ', 'k'.repeat(257)])('refuses a malformed key without echoing it: %j', async (bad) => {
     expect(() => new HttpApi({ baseUrl: 'https://x.example', chainId: 1, apiKey: bad })).toThrow(InvalidInputError);
-    const err = await createClient({ network: 'testnet', apiKey: bad, transport: new MockRpc(5042002).transport() }).catch((e: unknown) => e) as Error;
+    const err = await createClient({ network: 'testnet', apiKey: bad, transport: testnetRpc().transport() }).catch((e: unknown) => e) as Error;
     expect(err).toBeInstanceOf(InvalidInputError);
     expect(err.message).not.toMatch(/X-Evil|é/);
     expect(err.message).not.toContain('k'.repeat(200));
@@ -218,9 +218,9 @@ describe('HttpApi hardening', () => {
   });
 
   it('builds the client with an explicit apiBaseUrl and refuses a plain-http one', async () => {
-    const mf = await createClient({ network: 'testnet', apiBaseUrl: 'https://api.example.org/', transport: new MockRpc(5042002).transport() });
+    const mf = await createClient({ network: 'testnet', apiBaseUrl: 'https://api.example.org/', transport: testnetRpc().transport() });
     expect(mf.api!.baseUrl).toBe('https://api.example.org');
-    await expect(createClient({ network: 'testnet', apiBaseUrl: 'http://api.example.org', transport: new MockRpc(5042002).transport() })).rejects.toThrow(/https/);
+    await expect(createClient({ network: 'testnet', apiBaseUrl: 'http://api.example.org', transport: testnetRpc().transport() })).rejects.toThrow(/https/);
   });
 
   it('follows Next-Cursor for listAccounts, and warns when it truncates', async () => {

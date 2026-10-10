@@ -13,7 +13,7 @@ from mercurifi.api import MAX_BODY_BYTES, HttpApi
 from mercurifi.client import create_client
 from mercurifi.errors import ApiError, InvalidInputError, MercurifiError
 
-from .helpers import MockRpc
+from .helpers import pinned_testnet_rpc
 
 ADDR = "0x00000000000000000000000000000000000000AA"
 LOWER = ADDR.lower()
@@ -122,9 +122,9 @@ async def test_https_only_and_default_api() -> None:
     with pytest.raises(Exception, match="https"):
         HttpApi("http://api.example", 1)
     HttpApi("http://127.0.0.1:8080", 1)  # loopback is allowed
-    mf = await create_client("testnet", rpc_transport=MockRpc(5042002).transport())
+    mf = await create_client("testnet", rpc_transport=pinned_testnet_rpc().transport())
     assert isinstance(mf.api, HttpApi) and mf.api.base_url == "https://testnet-launch-api.mercuri.finance"
-    off = await create_client("testnet", api=None, rpc_transport=MockRpc(5042002).transport())
+    off = await create_client("testnet", api=None, rpc_transport=pinned_testnet_rpc().transport())
     assert off.api is None
 
 
@@ -141,7 +141,7 @@ async def test_key_is_held_privately() -> None:
         pickle.dumps(vars(api)["_key"])
     with pytest.raises(TypeError):
         copy.deepcopy(vars(api)["_key"])
-    mf = await create_client("testnet", api_key="mfk_test_clientsecret", rpc_transport=MockRpc(5042002).transport())
+    mf = await create_client("testnet", api_key="mfk_test_clientsecret", rpc_transport=pinned_testnet_rpc().transport())
     for text in (repr(mf), repr(mf.api), repr(mf.settings), repr(vars(mf.api))):
         assert "clientsecret" not in text
 
@@ -280,10 +280,10 @@ async def test_retry_after_is_bounded_and_parsed_strictly() -> None:
 
 
 async def test_client_builds_with_an_explicit_base_url() -> None:
-    mf = await create_client("testnet", api_base_url="https://api.example.org/", rpc_transport=MockRpc(5042002).transport())
+    mf = await create_client("testnet", api_base_url="https://api.example.org/", rpc_transport=pinned_testnet_rpc().transport())
     assert mf.api is not None and mf.api.base_url == "https://api.example.org"
     with pytest.raises(InvalidInputError, match="https"):
-        await create_client("testnet", api_base_url="http://api.example.org", rpc_transport=MockRpc(5042002).transport())
+        await create_client("testnet", api_base_url="http://api.example.org", rpc_transport=pinned_testnet_rpc().transport())
 
 
 async def test_list_accounts_follows_cursors_and_warns_when_truncated() -> None:
@@ -321,7 +321,7 @@ async def test_malformed_api_keys_are_refused_without_echo(bad: str) -> None:
         HttpApi("https://x.example", 1, api_key=bad)
     assert bad.strip() not in str(e.value) or bad.strip() == ""
     with pytest.raises(InvalidInputError) as e2:
-        await create_client("testnet", api_key=bad, rpc_transport=MockRpc(5042002).transport())
+        await create_client("testnet", api_key=bad, rpc_transport=pinned_testnet_rpc().transport())
     assert "é" not in str(e2.value) and "X-Evil" not in str(e2.value)
 
 
