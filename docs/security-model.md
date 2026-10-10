@@ -10,7 +10,7 @@ Sells count against the sell cap at the **higher** of the position's current ave
 
 ## Deployment status
 
-**Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book). Nothing in this repository broadcasts to a real network.
+Agent Accounts are deployed on Arc mainnet and testnet: mainnet (chain 5042; factory `0x816C7269FDcf621b7d8cb99A5AfbE9daddBd3b58`) and testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). **No third-party audit has been performed yet; start with small amounts.** A network or address book without a recorded agent deployment throws `NotDeployedError` for agent operations. A local chain also works (chain 31337, loopback RPC, a local address book). Nothing in this repository broadcasts to a real network.
 
 ## Where things live
 

@@ -39,9 +39,12 @@ describe('the security model matches the contracts as built', () => {
     expect(model).toMatch(/high-water average cost/));
   it('names every immutable piece', () =>
     expect(model).toContain('Accounts, the policy registry and factories are immutable'));
-  it('states the testnet-only notice, gas figures and the API', () => {
+  it('states the deployment notice, gas figures and the API', () => {
     expect(model).toContain('NotDeployedError');
-    expect(model).toContain('Agent Accounts are deployed on Arc testnet');
+    expect(model).toContain('Agent Accounts are deployed on Arc mainnet and testnet');
+    expect(model).toContain(
+      'No third-party audit has been performed yet; start with small amounts.',
+    );
     expect(model).toContain('withdraw them');
     expect(model).toContain('older than 24 hours');
     expect(model).toContain('60 seconds on testnet');
@@ -60,7 +63,7 @@ describe('the security model matches the contracts as built', () => {
     ])
       expect(readme).toContain(row);
   });
-  it('keeps the handling notes and the testnet notice in the package README', () => {
+  it('keeps the handling notes and the deployment notice in the package README', () => {
     const readme = read('../README.md');
     for (const h of [
       '## Handling agent keys',
@@ -69,8 +72,11 @@ describe('the security model matches the contracts as built', () => {
       '## Supply chain',
     ])
       expect(readme).toContain(h);
-    expect(readme).toContain('Agent Accounts are deployed on Arc testnet');
-    expect(readme).toContain('stay empty until an owner-approved deployment');
+    expect(readme).toContain('Agent Accounts are deployed on Arc mainnet and testnet');
+    expect(readme).toContain(
+      'No third-party audit has been performed yet; start with small amounts.',
+    );
+    expect(readme).toContain('without a recorded agent deployment throws `NotDeployedError`');
     expect(readme).toContain('older than 24 hours');
     expect(readme).toContain('withdraw them');
     expect(readme).toContain('exportPrivateKey()');

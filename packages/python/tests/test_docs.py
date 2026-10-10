@@ -21,7 +21,7 @@ def test_readme_matches_the_contracts_as_built() -> None:
         assert row in readme
 
 
-def test_readme_keeps_the_handling_notes_and_the_testnet_notice() -> None:
+def test_readme_keeps_the_handling_notes_and_the_deployment_notice() -> None:
     readme = (PKG / "README.md").read_text()
     for heading in (
         "## Handling agent keys",
@@ -30,9 +30,9 @@ def test_readme_keeps_the_handling_notes_and_the_testnet_notice() -> None:
     ):
         assert heading in readme
     assert (
-        "Agent Accounts are deployed on Arc testnet" in readme
-        and "NotDeployedError" in readme
-        and "stay empty until an owner-approved deployment" in readme
+        "Agent Accounts are deployed on Arc mainnet and testnet" in readme
+        and "No third-party audit has been performed yet; start with small amounts." in readme
+        and "without a recorded agent deployment raises `NotDeployedError`" in readme
     )
     assert (
         "never in a markdown code fence" in readme

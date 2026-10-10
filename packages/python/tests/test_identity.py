@@ -14,7 +14,6 @@ from mercurifi.errors import (
     InvalidInputError,
     MercurifiError,
     NetworkMismatchError,
-    NotDeployedError,
 )
 from mercurifi.identity import (
     AGENT_ACCOUNT_SERVICE,
@@ -81,11 +80,24 @@ def test_uses_the_selectors_and_topics_found_in_the_deployed_implementation() ->
         assert to_hex(keccak(text=sig)) == topic
 
 
-def test_keeps_mainnet_refused_while_agent_accounts_are_not_deployed_there() -> None:
-    with pytest.raises(NotDeployedError):
-        erc8004_registries("mainnet")
-    with pytest.raises(NotDeployedError):
-        encode_register("mainnet", "https://a.example/a.json")
+def test_serves_mainnet_as_it_serves_testnet_now_that_agent_accounts_are_deployed_there() -> None:
+    assert erc8004_registries("mainnet") is ERC8004_REGISTRIES["mainnet"]
+    assert erc8004_registries("testnet") is ERC8004_REGISTRIES["testnet"]
+    mainnet = ERC8004_REGISTRIES["mainnet"]
+    for case in V["register"]:
+        assert encode_register("mainnet", case["agentURI"]) == {
+            "chainId": 5042,
+            "to": mainnet.identity_registry,
+            "data": case["data"],
+            "value": 0,
+        }
+    for case in V["setAgentURI"]:
+        assert encode_set_agent_uri("mainnet", int(case["agentId"]), case["agentURI"]) == {
+            "chainId": 5042,
+            "to": mainnet.identity_registry,
+            "data": case["data"],
+            "value": 0,
+        }
     with pytest.raises(InvalidInputError):
         erc8004_registries("local")
 

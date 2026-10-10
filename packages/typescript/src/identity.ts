@@ -40,7 +40,7 @@ export interface Erc8004Book {
 
 export type IdentityNetwork = 'testnet' | 'mainnet';
 
-/** Checked with eth_getCode on each network. Mainnet is listed but refused until Agent Accounts are recorded there. */
+/** Checked with eth_getCode on each network. Both carry a recorded Agent Accounts deployment. */
 export const ERC8004_REGISTRIES: Readonly<Record<IdentityNetwork, Erc8004Book>> = Object.freeze({
   testnet: Object.freeze({
     chainId: 5042002,
@@ -137,13 +137,13 @@ export const identityRegistryAbi = [
 
 /**
  * The registry for a network. Like every other agent feature, a network without a recorded Agent Accounts deployment
- * in this SDK (mainnet today) is refused with `NotDeployedError`.
+ * in this SDK is refused with `NotDeployedError`. Arc mainnet and testnet both carry one.
  */
 export const erc8004Registries = (network: IdentityNetwork): Erc8004Book => {
   if (network !== 'testnet' && network !== 'mainnet') {
     throw new InvalidInputError(
       'network',
-      'ERC-8004 helpers support network "testnet" (and "mainnet" once Agent Accounts are deployed there).',
+      'ERC-8004 helpers support network "testnet" or "mainnet".',
     );
   }
   if (NETWORKS[network].agents === null) throw new NotDeployedError(network);

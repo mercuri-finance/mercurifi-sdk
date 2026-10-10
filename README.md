@@ -12,8 +12,9 @@
 <h1 align="center">Mercurifi Agent Accounts · SDK</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_0.1.0--beta.1-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 0.1.0-beta.1"></a>
-  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_0.1.0b1-0A0A0A?style=flat-square" alt="PyPI mercurifi 0.1.0b1"></a>
+  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_0.1.0--beta.2-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 0.1.0-beta.2"></a>
+  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_0.1.0b2-0A0A0A?style=flat-square" alt="PyPI mercurifi 0.1.0b2"></a>
+  <a href="#deployment"><img src="https://img.shields.io/badge/Arc_mainnet-chain_5042-C3E6FF?style=flat-square" alt="Arc mainnet, chain 5042"></a>
   <a href="#deployment"><img src="https://img.shields.io/badge/Arc_testnet-chain_5042002-C3E6FF?style=flat-square" alt="Arc testnet, chain 5042002"></a>
   <a href="docs/verify-provenance.md"><img src="https://img.shields.io/badge/provenance-signed-0A0A0A?style=flat-square" alt="signed provenance"></a>
   <a href="packages/typescript/package.json"><img src="https://img.shields.io/badge/node-%E2%89%A520-0A0A0A?style=flat-square" alt="Node 20 or newer"></a>
@@ -47,16 +48,23 @@ npm install @mercurifi/sdk      # TypeScript / JavaScript, Node 20 or newer
 pip install --pre mercurifi     # Python 3.10 or newer
 ```
 
-Both are beta releases (`0.1.0-beta.1` on npm, `0.1.0b1` on PyPI). `pip` needs `--pre` to pick a beta. Each package is
+Both are beta releases (`0.1.0-beta.2` on npm, `0.1.0b2` on PyPI). `pip` needs `--pre` to pick a beta. Each package is
 built and published by this repository's release workflows, with signed provenance; see
 [Verify a release](#verify-a-release). Install only these two names: anything else is not ours
 ([docs/reserved-names.md](docs/reserved-names.md)).
 
 ## Deployment
 
-**Testnet only.** Agent Accounts are deployed on Arc testnet, version 1.0.0-beta.1. Mainnet agent addresses stay empty
-until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. A local
-chain also works (chain 31337, loopback RPC, a local address book).
+Agent Accounts are deployed on Arc mainnet and testnet, version 1.0.0-beta.1.
+**No third-party audit has been performed yet; start with small amounts.** A network or address book without a
+recorded agent deployment throws `NotDeployedError` for agent operations. A local chain also works (chain 31337,
+loopback RPC, a local address book).
+
+| Contract                      | Address (mainnet, chain 5042)                                                                                              | Mutability |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| AgentAccountFactory           | [`0x816C7269FDcf621b7d8cb99A5AfbE9daddBd3b58`](https://explorer.arc.io/address/0x816C7269FDcf621b7d8cb99A5AfbE9daddBd3b58) | immutable  |
+| AgentPolicyRegistry           | [`0x318A0e1353E812A36FC7C52a88Af8D6A96909483`](https://explorer.arc.io/address/0x318A0e1353E812A36FC7C52a88Af8D6A96909483) | immutable  |
+| AgentAccount (implementation) | [`0x36acC3Eb67571E592A45c88656c4B3c4f7Fb7beE`](https://explorer.arc.io/address/0x36acC3Eb67571E592A45c88656c4B3c4f7Fb7beE) | immutable  |
 
 | Contract                      | Address (testnet, chain 5042002)                                                                                                   | Mutability |
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------- |
@@ -249,7 +257,7 @@ stages the version; it goes public after a second approval with the maintainer's
 
 ```sh
 npm audit signatures                      # in a project that depends on @mercurifi/sdk
-npm view @mercurifi/sdk@0.1.0-beta.1 dist.attestations
+npm view @mercurifi/sdk@0.1.0-beta.2 dist.attestations
 ```
 
 On PyPI, each file's Provenance panel must name this repository and `release-pypi.yml`. The full steps are in

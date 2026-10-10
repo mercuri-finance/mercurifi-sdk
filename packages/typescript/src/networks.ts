@@ -35,7 +35,7 @@ export interface NetworkBook {
   apiBaseUrl: string | null;
   apiKeyPrefix: 'mfk_live_' | 'mfk_test_' | null;
   launch: LaunchBook;
-  /** null until an owner-approved factory deployment is recorded in this package. */
+  /** The recorded Agent Accounts deployment; null for a network without one (agent operations then throw NotDeployedError). */
   agents: AgentBook | null;
 }
 
@@ -62,7 +62,16 @@ export const MAINNET: NetworkBook = Object.freeze({
     launchHook: '0xe6D50A6e12f3883605A4456dCDEe50EE05fAE0Cc',
     ...SHARED,
   }),
-  agents: null,
+  /** From deployments/5042.json in the agent contracts repository (github.com/mercuri-finance/mercuri-agent-contracts); deployBlock is the factory's. */
+  agents: Object.freeze({
+    factory: '0x816C7269FDcf621b7d8cb99A5AfbE9daddBd3b58',
+    implementation: '0x36acC3Eb67571E592A45c88656c4B3c4f7Fb7beE',
+    registry: '0x318A0e1353E812A36FC7C52a88Af8D6A96909483',
+    factoryCodeHash: '0xf330874a70574c6e32974d15533fca284e478a8df759ac040ccf6b155160c060',
+    implementationCodeHash: '0x0c551e9171b333d8fd09774bd1f7c8d182fc0ed08e878c0dad531c3c6ca138e4',
+    registryCodeHash: '0xac3d05ca2aa1ca3e5027ee3785ffdb1edffbe9b820514bd62c99f90e2e374c65',
+    deployBlock: 25298319n,
+  }),
 });
 
 /** Arc testnet. Launch addresses from deployments/5042002.json in the Mercurifi Launch contracts repository (github.com/mercuri-finance/mercuri-launch-contracts). */

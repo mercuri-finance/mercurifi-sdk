@@ -1,6 +1,6 @@
 {
   "name": "@mercurifi/sdk",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "TypeScript SDK for Mercurifi Agent Accounts on Arc",
   "license": "MIT",
   "repository": {

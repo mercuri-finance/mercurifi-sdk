@@ -41,7 +41,7 @@ class Erc8004Book:
     validation_registry: str
 
 
-# Checked with eth_getCode on each network. Mainnet is listed but refused until Agent Accounts are recorded there.
+# Checked with eth_getCode on each network. Both carry a recorded Agent Accounts deployment.
 ERC8004_REGISTRIES: Mapping[str, Erc8004Book] = MappingProxyType(
     {
         "testnet": Erc8004Book(
@@ -137,11 +137,11 @@ _ZERO = "0x" + "00" * 20
 
 def erc8004_registries(network: str) -> Erc8004Book:
     """The registry for a network. Like every other agent feature, a network without a recorded Agent Accounts deployment
-    in this SDK (mainnet today) is refused with `NotDeployedError`."""
+    in this SDK is refused with `NotDeployedError`. Arc mainnet and testnet both carry one."""
     if network not in ("testnet", "mainnet"):
         raise InvalidInputError(
             "network",
-            'ERC-8004 helpers support network "testnet" (and "mainnet" once Agent Accounts are deployed there).',
+            'ERC-8004 helpers support network "testnet" or "mainnet".',
         )
     if NETWORKS[network].agents is None:
         raise NotDeployedError(network)

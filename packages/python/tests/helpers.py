@@ -24,7 +24,7 @@ from mercurifi.abi import LAUNCH_FACTORY as LAUNCH_FACTORY_ABI
 from mercurifi.client import AsyncClient, create_client
 from mercurifi.codec import Contract, from_hex, to_hex
 from mercurifi.errors import MercurifiError
-from mercurifi.networks import TESTNET, local_network
+from mercurifi.networks import MAINNET, TESTNET, NetworkBook, local_network
 from mercurifi.policy import DEFAULT_POLICY, ChainPolicy
 
 
@@ -256,26 +256,39 @@ def local_rpc() -> MockRpc:
     return rpc
 
 
+def _agent_code(name: str) -> dict[str, Any]:
+    path = Path(__file__).resolve().parents[3] / "fixtures" / name
+    result: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    return result
+
+
 # The live testnet runtime code (fixtures/testnet-agent-code.json); keccak of each entry must equal the pinned hash.
-TESTNET_CODE: dict[str, Any] = json.loads(
-    (Path(__file__).resolve().parents[3] / "fixtures" / "testnet-agent-code.json").read_text(
-        encoding="utf-8"
-    )
-)
+TESTNET_CODE: dict[str, Any] = _agent_code("testnet-agent-code.json")
+# The live mainnet runtime code (fixtures/mainnet-agent-code.json); keccak of each entry must equal the pinned hash.
+MAINNET_CODE: dict[str, Any] = _agent_code("mainnet-agent-code.json")
 
 
-def pinned_testnet_rpc() -> MockRpc:
-    """A MockRpc on chain 5042002 that passes start-up verification of the pinned testnet book (code hashes and wiring)."""
-    agents = TESTNET.agents
+def _pinned_rpc(book: NetworkBook, code: dict[str, Any]) -> MockRpc:
+    agents = book.agents
     assert agents is not None
-    rpc = MockRpc(TESTNET.chain_id)
-    rpc.codes[agents.factory.lower()] = TESTNET_CODE["factory"]["code"]
-    rpc.codes[agents.implementation.lower()] = TESTNET_CODE["implementation"]["code"]
-    rpc.codes[agents.registry.lower()] = TESTNET_CODE["registry"]["code"]
+    rpc = MockRpc(book.chain_id)
+    rpc.codes[agents.factory.lower()] = code["factory"]["code"]
+    rpc.codes[agents.implementation.lower()] = code["implementation"]["code"]
+    rpc.codes[agents.registry.lower()] = code["registry"]["code"]
     rpc.read(agents.factory, AGENT_ACCOUNT_FACTORY, "implementation", agents.implementation)
     rpc.read(agents.factory, AGENT_ACCOUNT_FACTORY, "registry", agents.registry)
     rpc.read(agents.registry, AGENT_POLICY_REGISTRY, "FACTORY", agents.factory)
     return rpc
+
+
+def pinned_testnet_rpc() -> MockRpc:
+    """A MockRpc on chain 5042002 that passes start-up verification of the pinned testnet book (code hashes and wiring)."""
+    return _pinned_rpc(TESTNET, TESTNET_CODE)
+
+
+def pinned_mainnet_rpc() -> MockRpc:
+    """A MockRpc on chain 5042 that passes start-up verification of the pinned mainnet book (code hashes and wiring)."""
+    return _pinned_rpc(MAINNET, MAINNET_CODE)
 
 
 async def local_client(rpc: MockRpc, **over: Any) -> AsyncClient:

@@ -9,12 +9,7 @@ import {
 } from 'viem';
 import { describe, expect, it } from 'vitest';
 
-import {
-  InvalidInputError,
-  MercurifiError,
-  NetworkMismatchError,
-  NotDeployedError,
-} from '../src/errors.js';
+import { InvalidInputError, MercurifiError, NetworkMismatchError } from '../src/errors.js';
 import {
   AGENT_ACCOUNT_SERVICE,
   agentIdFromReceipt,
@@ -93,11 +88,25 @@ describe('ERC-8004 registries and ABI (shared vectors)', () => {
       .map((i) => toEventSelector(i));
     expect(new Set(events)).toEqual(new Set(Object.values(v.events)));
   });
-  it('keeps mainnet refused while Agent Accounts are not deployed there', () => {
-    expect(() => erc8004Registries('mainnet')).toThrow(NotDeployedError);
-    expect(() =>
-      encodeRegister({ network: 'mainnet', agentURI: 'https://a.example/a.json' }),
-    ).toThrow(NotDeployedError);
+  it('serves mainnet as it serves testnet, now that Agent Accounts are deployed there', () => {
+    expect(erc8004Registries('mainnet')).toBe(ERC8004_REGISTRIES.mainnet);
+    expect(erc8004Registries('testnet')).toBe(ERC8004_REGISTRIES.testnet);
+    for (const { agentURI, data } of v.register)
+      expect(encodeRegister({ network: 'mainnet', agentURI })).toEqual({
+        chainId: 5042,
+        to: ERC8004_REGISTRIES.mainnet.identityRegistry,
+        data,
+        value: 0n,
+      });
+    for (const { agentId, agentURI, data } of v.setAgentURI)
+      expect(encodeSetAgentURI({ network: 'mainnet', agentId: BigInt(agentId), agentURI })).toEqual(
+        {
+          chainId: 5042,
+          to: ERC8004_REGISTRIES.mainnet.identityRegistry,
+          data,
+          value: 0n,
+        },
+      );
     expect(() => erc8004Registries('local' as never)).toThrow(InvalidInputError);
   });
   it('is exported from the package entry', () => {

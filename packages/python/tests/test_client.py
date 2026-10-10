@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import logging
 import pickle
@@ -19,11 +20,19 @@ from mercurifi.errors import (
     NetworkMismatchError,
     NotDeployedError,
 )
-from mercurifi.networks import MAINNET, NETWORKS, TESTNET, is_loopback_url, local_network
+from mercurifi.networks import (
+    LOCAL_CHAIN_ID,
+    MAINNET,
+    NETWORKS,
+    TESTNET,
+    is_loopback_url,
+    local_network,
+)
 from mercurifi.redact import RedactingFilter, redact_url, redact_urls_in
 from mercurifi.rpc import Rpc, RpcError
 
 from .helpers import (
+    MAINNET_CODE,
     REGISTRY,
     TESTNET_CODE,
     A,
@@ -31,6 +40,7 @@ from .helpers import (
     local_client,
     local_json,
     local_rpc,
+    pinned_mainnet_rpc,
     pinned_testnet_rpc,
 )
 
@@ -69,12 +79,54 @@ async def test_pins_the_live_testnet_runtime_code() -> None:
         )
 
 
-async def test_mainnet_has_no_agent_deployment() -> None:
-    assert MAINNET.agents is None
+async def test_mainnet_verifies_the_pinned_agent_deployment() -> None:
+    rpc = pinned_mainnet_rpc()
     mf = await create_client(
-        "mainnet",
-        rpc_url="https://rpc.example",
-        rpc_transport=MockRpc(MAINNET.chain_id).transport(),
+        "mainnet", rpc_url="https://rpc.example", rpc_transport=rpc.transport(), api=None
+    )
+    assert mf.network.chain_id == 5042
+    assert mf.require_agents() is MAINNET.agents
+    assert [p[0].lower() for p in rpc.methods("eth_getCode")] == [
+        MAINNET_CODE[k]["address"].lower() for k in ("factory", "implementation", "registry")
+    ]
+
+
+async def test_pins_the_live_mainnet_runtime_code() -> None:
+    agents = MAINNET.agents
+    assert agents is not None
+    assert MAINNET_CODE["chainId"] == MAINNET.chain_id
+    assert "0x" + keccak(hexstr=MAINNET_CODE["factory"]["code"]).hex() == agents.factory_code_hash
+    assert (
+        "0x" + keccak(hexstr=MAINNET_CODE["implementation"]["code"]).hex()
+        == agents.implementation_code_hash
+    )
+    assert "0x" + keccak(hexstr=MAINNET_CODE["registry"]["code"]).hex() == agents.registry_code_hash
+    tampered = pinned_mainnet_rpc()
+    tampered.codes[agents.implementation.lower()] = (
+        MAINNET_CODE["implementation"]["code"][:-2] + "00"
+    )
+    with pytest.raises(NetworkMismatchError, match="implementation .* code hash"):
+        await create_client(
+            "mainnet",
+            rpc_url="https://rpc.example",
+            rpc_transport=tampered.transport(),
+            api=None,
+        )
+    with pytest.raises(NetworkMismatchError):
+        await create_client(
+            "mainnet",
+            rpc_url="https://rpc.example",
+            rpc_transport=MockRpc(MAINNET.chain_id).transport(),
+            api=None,
+        )
+
+
+async def test_book_without_agents_raises_not_deployed() -> None:
+    book = dataclasses.replace(local_network(local_json()), agents=None)
+    mf = await create_client(
+        book,
+        rpc_url="http://127.0.0.1:8545",
+        rpc_transport=MockRpc(LOCAL_CHAIN_ID).transport(),
         api=None,
     )
     with pytest.raises(NotDeployedError):
@@ -170,11 +222,13 @@ async def test_does_not_resolve_inherited_names_as_networks() -> None:
 
 
 async def test_pinned_books_have_no_invented_agent_addresses() -> None:
-    # Testnet carries the recorded deployment (checked against the live code above); mainnet has none.
-    assert MAINNET.agents is None and TESTNET.agents is not None
+    # Both books carry the recorded deployment (checked against the live code above).
+    assert MAINNET.agents is not None and TESTNET.agents is not None
     assert TESTNET.agents.deploy_block == 66495930
+    assert MAINNET.agents.deploy_block == 25298319
     assert MAINNET.default_rpc_url is None  # no default third-party RPC on mainnet
     assert "alchemy" not in repr(TESTNET).lower()
+    assert "alchemy" not in repr(MAINNET).lower()
     with pytest.raises(TypeError):
         NETWORKS["x"] = TESTNET  # type: ignore[index]
 

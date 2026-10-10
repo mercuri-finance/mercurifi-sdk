@@ -8,7 +8,7 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Read [docs/security-model.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/security-model.md) before you give a key to a program.
 
-**Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet raise `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book).
+Agent Accounts are deployed on Arc mainnet and testnet: mainnet (chain 5042; factory `0x816C7269FDcf621b7d8cb99A5AfbE9daddBd3b58`) and testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). **No third-party audit has been performed yet; start with small amounts.** A network or address book without a recorded agent deployment raises `NotDeployedError` for agent operations. A local chain also works (chain 31337, loopback RPC, a local address book).
 
 ## Install
 
@@ -168,7 +168,7 @@ Install only `mercurifi` (PyPI) or `@mercurifi/sdk` (npm); see [docs/reserved-na
 
 ## ERC-8004 identity (optional)
 
-[ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) is an on-chain registry for agents. Each agent is an ERC-721 token in an IdentityRegistry, and its token URI points to a registration file that describes the agent and its endpoints. `mercurifi.identity` builds that file and the calldata. It never signs or sends. Arc testnet only for now: on mainnet it raises `NotDeployedError` until a mainnet Agent Accounts deployment is recorded.
+[ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) is an on-chain registry for agents. Each agent is an ERC-721 token in an IdentityRegistry, and its token URI points to a registration file that describes the agent and its endpoints. `mercurifi.identity` builds that file and the calldata. It never signs or sends. It works on Arc mainnet and testnet.
 
 Who signs: an ordinary wallet (EOA) sends the registration, normally the owner wallet. That wallet becomes the agent's owner in the registry. The agent account cannot register itself, because it only calls allowlisted Mercurifi contracts. It also cannot sign: its `isValidSignature` always fails, so it can never be the registry's verified `agentWallet` (`setAgentWallet` with the account as the wallet reverts). The account is linked through the registration file instead, as the service entry `MercurifiAgentAccount` with endpoint `eip155:<chainId>:<account>`. The registry's `agentWallet` stays the registering wallet.
 

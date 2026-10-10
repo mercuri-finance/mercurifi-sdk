@@ -8,7 +8,7 @@ import { InvalidInputError, NetworkMismatchError, NotDeployedError } from '../sr
 import { localNetwork, MAINNET, TESTNET } from '../src/networks.js';
 import { A, localJson, localRpc, REGISTRY } from './helpers/local.js';
 import { MockRpc } from './helpers/mockRpc.js';
-import { TESTNET_CODE, testnetRpc } from './helpers/testnet.js';
+import { MAINNET_CODE, mainnetRpc, TESTNET_CODE, testnetRpc } from './helpers/testnet.js';
 
 const LOCAL = 'http://127.0.0.1:8545';
 
@@ -46,12 +46,51 @@ describe('createClient', () => {
     ).rejects.toThrow(NetworkMismatchError);
   });
 
-  it('keeps mainnet without an agent deployment', async () => {
-    expect(MAINNET.agents).toBeNull();
+  it('connects to mainnet with an explicit RPC and verifies the pinned agent deployment', async () => {
+    const rpc = mainnetRpc();
     const mf = await createClient({
       network: 'mainnet',
       rpcUrl: 'https://rpc.example',
-      transport: new MockRpc(MAINNET.chainId).transport(),
+      transport: rpc.transport(),
+    });
+    expect(mf.network.chainId).toBe(5042);
+    expect(mf.requireAgents()).toBe(MAINNET.agents);
+    expect(MAINNET.agents!.deployBlock).toBe(25298319n);
+    expect(rpc.methods('eth_getCode').map(([a]) => String(a).toLowerCase())).toEqual(
+      [
+        MAINNET_CODE.factory.address,
+        MAINNET_CODE.implementation.address,
+        MAINNET_CODE.registry.address,
+      ].map((a) => a.toLowerCase()),
+    );
+  });
+
+  it('pins the live mainnet runtime code: the fixture hashes to the book and a changed byte is refused', async () => {
+    const agents = MAINNET.agents!;
+    expect(MAINNET_CODE.chainId).toBe(MAINNET.chainId);
+    expect(keccak256(MAINNET_CODE.factory.code)).toBe(agents.factoryCodeHash);
+    expect(keccak256(MAINNET_CODE.implementation.code)).toBe(agents.implementationCodeHash);
+    expect(keccak256(MAINNET_CODE.registry.code)).toBe(agents.registryCodeHash);
+    const tampered = mainnetRpc();
+    tampered.codes.set(
+      agents.implementation.toLowerCase(),
+      `${MAINNET_CODE.implementation.code.slice(0, -2)}00` as Hex,
+    );
+    const opts = { network: 'mainnet', rpcUrl: 'https://rpc.example' } as const;
+    await expect(createClient({ ...opts, transport: tampered.transport() })).rejects.toThrow(
+      /implementation .* code hash/,
+    );
+    const empty = new MockRpc(MAINNET.chainId);
+    await expect(createClient({ ...opts, transport: empty.transport() })).rejects.toThrow(
+      NetworkMismatchError,
+    );
+  });
+
+  it('throws NotDeployedError for agent operations on a book without an agent deployment', async () => {
+    const mf = await createClient({
+      network: { ...localNetwork(localJson()), agents: null },
+      rpcUrl: LOCAL,
+      transport: new MockRpc(31337).transport(),
     });
     expect(() => mf.requireAgents()).toThrow(NotDeployedError);
   });
