@@ -106,7 +106,7 @@ describe('check-workflows gate', () => {
   describe('release workflows: build and publish jobs', () => {
     const npm = () => real('release-npm.yml');
     const pypi = () => real('release-pypi.yml');
-    const publishStep = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts\n';
+    const publishStep = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts\n';
     it.each([
       ['an install step', publishStep.replace('npm publish', 'npm ci && npm publish')],
       ['a chained command', publishStep.replace('--ignore-scripts', '--ignore-scripts; curl https://evil.example')],
@@ -164,7 +164,7 @@ describe('check-workflows gate', () => {
   describe('crafted bypasses (set 1)', () => {
     const base = () => real('release-npm.yml');
     const ci = () => real('ci.yml');
-    const PUB = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts\n';
+    const PUB = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts\n';
     const G = "    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance' && github.triggering_actor == 'mercurifinance'\n";
     const swap = (text: string, a: string, b: string) => {
       expect(text.includes(a)).toBe(true);
@@ -189,7 +189,7 @@ describe('check-workflows gate', () => {
       ['P quoted job and scope names', 'ci.yml', () => `${ci()}\n  'evil':\n    runs-on: ubuntu-latest\n    permissions:\n      "id-token": write\n    steps:\n      - run: echo\n`, /id-token: write belongs only/],
       ['Q a duplicate run key', 'release-npm.yml', () => swap(base(), PUB, PUB.replace('      - run: npm publish', '      - run: npm publish pkg/x.tgz\n        run: curl evil\n        name: x\n      - run: npm publish')), /duplicate key run/],
       // Near variants.
-      ['a double-quoted run continued on a deeper line', 'release-npm.yml', () => swap(base(), PUB, '      - run: "npm publish pkg/x.tgz --provenance --access public --ignore-scripts\n          ; curl evil"\n'), /quoted scalar must close on its line/],
+      ['a double-quoted run continued on a deeper line', 'release-npm.yml', () => swap(base(), PUB, '      - run: "npm publish pkg/x.tgz --provenance --access public --tag latest --ignore-scripts\n          ; curl evil"\n'), /quoted scalar must close on its line/],
       ['a plain build-job run continued on a deeper line', 'ci.yml', () => swap(ci(), '      - run: npm test\n', '      - run: npm test\n          && curl evil\n'), /continued on deeper-indented lines/],
       ['a single-line flow job', 'ci.yml', () => `${ci()}\n  evil: { runs-on: ubuntu-latest, steps: [ { run: echo } ] }\n`, /write each job as a block mapping/],
       ['flow-style jobs', 'ci.yml', () => ci().replace(/\njobs:\n[\s\S]*$/, '\njobs: { evil: { runs-on: ubuntu-latest } }\n'), /write jobs as a block mapping/],
@@ -216,7 +216,7 @@ describe('check-workflows gate', () => {
   describe('crafted bypasses (set 2)', () => {
     const base = () => real('release-npm.yml');
     const ci = () => real('ci.yml');
-    const PUB = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts\n';
+    const PUB = '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts\n';
     const G = "    if: github.repository_owner == 'mercuri-finance' && github.actor == 'mercurifinance' && github.triggering_actor == 'mercurifinance'\n";
     const TOP = 'permissions:\n  contents: read\n\njobs';
     const LAST = '          echo "$RUNNER_TEMP/ci/bin" >> "$GITHUB_PATH"\n';
@@ -249,7 +249,8 @@ describe('check-workflows gate', () => {
       ['R17 the guard wrapped in an expression', 'release-npm.yml', () => swap(base(), G, `    if: \${{ ${G.trim().slice(4)} }}\n`), /if: must be exactly/],
       ['R18 a self-hosted runner', 'release-npm.yml', () => swap(base(), '    runs-on: ubuntu-latest\n    timeout-minutes: 15', '    runs-on: self-hosted\n    timeout-minutes: 15'), /runs on ubuntu-latest/],
       ['R19 an absolute download path', 'release-npm.yml', () => swap(base(), '          path: pkg\n', '          path: /home/runner\n'), /download path must be relative/],
-      ['R21 an absolute tarball path', 'release-npm.yml', () => swap(base(), PUB, '      - run: npm publish /tmp/x.tgz --provenance --access public --ignore-scripts\n'), /npm publish <tarball>\.tgz/],
+      ['R21b another dist-tag', 'release-npm.yml', () => swap(base(), PUB, '      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag next --ignore-scripts\n'), /npm publish <tarball>\.tgz/],
+      ['R21 an absolute tarball path', 'release-npm.yml', () => swap(base(), PUB, '      - run: npm publish /tmp/x.tgz --provenance --access public --tag latest --ignore-scripts\n'), /npm publish <tarball>\.tgz/],
       ['R25 a U+2028 in the publish run', 'release-npm.yml', () => swap(base(), PUB, `${PUB.trimEnd()}\u2028          ; curl evil\n`), /U\+2028/],
       ['R26 a top-level env (npm config)', 'release-npm.yml', () => swap(base(), TOP, `env:\n  npm_config_ignore_scripts: 'false'\n  npm_config_provenance: 'false'\n\n${TOP}`), /top-level env is not allowed/],
       ['R29 a job key differing only by case', 'ci.yml', () => swap(ci(), '  python:\n    name: Python\n', '  python:\n    name: Python\n    Permissions:\n      id-token: write\n'), /Permissions differs from the key permissions only by case/],

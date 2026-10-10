@@ -77,4 +77,4 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       # Trusted publishing: the OIDC token is minted for this job only; no long-lived npm token is stored.
-      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --ignore-scripts
+      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts

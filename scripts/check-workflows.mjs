@@ -27,8 +27,9 @@ const PUBLISH_ACTIONS = new Set(['pypa/gh-action-pypi-publish']);
 // artifact of the run (the SBOM too), and another name could hand the publish step a different file.
 const PUBLISH_ARTIFACTS = new Map([['release-npm.yml', 'npm-package'], ['release-pypi.yml', 'pypi-dist']]);
 // npm publish of the downloaded tarball, in one fixed form: a relative .tgz path (globs allowed, no ..), provenance,
-// public access (the package is scoped, so npm would otherwise refuse the first publish) and no lifecycle scripts.
-const PUBLISH_RUN = /^npm publish (?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --ignore-scripts$/;
+// public access (the package is scoped, so npm would otherwise refuse the first publish), an explicit latest tag (npm 11
+// refuses a prerelease without --tag, and latest must move off the name-reserving 0.0.0) and no lifecycle scripts.
+const PUBLISH_RUN = /^npm publish (?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --tag latest --ignore-scripts$/;
 const TOP_KEYS = new Set(['name', 'run-name', 'on', 'permissions', 'concurrency', 'jobs']);
 // Workflow syntax keys and permission scopes; a key that differs from one of these only by case is refused, so a
 // case-insensitive reader (GitHub's or a later one) cannot see a key this gate skipped.
@@ -366,7 +367,7 @@ export function checkWorkflow(file, text) {
         // One line, read raw (comments included): a shell would still run what follows a quoted "#".
         const c = run.raw.trim();
         if (BLOCK_SCALAR.test(run.value)) problems.push(`${where}: a publish job runs one single-line npm publish (found: a ${c} block)`);
-        else if (!PUBLISH_RUN.test(c)) problems.push(`${where}: a publish job runs only npm publish <tarball>.tgz --provenance --access public --ignore-scripts (found: ${c})`);
+        else if (!PUBLISH_RUN.test(c)) problems.push(`${where}: a publish job runs only npm publish <tarball>.tgz --provenance --access public --tag latest --ignore-scripts (found: ${c})`);
         else publishSteps++;
       }
     }
