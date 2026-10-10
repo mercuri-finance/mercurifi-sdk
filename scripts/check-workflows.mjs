@@ -26,10 +26,11 @@ const PUBLISH_ACTIONS = new Set(['pypa/gh-action-pypi-publish']);
 // The one artifact each release workflow's publish job may download: without a name, download-artifact fetches every
 // artifact of the run (the SBOM too), and another name could hand the publish step a different file.
 const PUBLISH_ARTIFACTS = new Map([['release-npm.yml', 'npm-package'], ['release-pypi.yml', 'pypi-dist']]);
-// npm publish of the downloaded tarball, in one fixed form: a relative .tgz path (globs allowed, no ..), provenance,
+// npm stage publish of the downloaded tarball, in one fixed form: a ./ relative .tgz path (globs allowed, no ..; without
+// ./ npm reads pkg/x.tgz as a GitHub user/repo), provenance,
 // public access (the package is scoped, so npm would otherwise refuse the first publish), an explicit latest tag (npm 11
 // refuses a prerelease without --tag, and latest must move off the name-reserving 0.0.0) and no lifecycle scripts.
-const PUBLISH_RUN = /^npm publish (?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --tag latest --ignore-scripts$/;
+const PUBLISH_RUN = /^npm stage publish \.\/(?![^ ]*\.\.)[\w-]+(?:\/[\w.*-]+)*\.tgz --provenance --access public --tag latest --ignore-scripts$/;
 const TOP_KEYS = new Set(['name', 'run-name', 'on', 'permissions', 'concurrency', 'jobs']);
 // Workflow syntax keys and permission scopes; a key that differs from one of these only by case is refused, so a
 // case-insensitive reader (GitHub's or a later one) cannot see a key this gate skipped.
@@ -366,8 +367,8 @@ export function checkWorkflow(file, text) {
       if (run !== undefined) {
         // One line, read raw (comments included): a shell would still run what follows a quoted "#".
         const c = run.raw.trim();
-        if (BLOCK_SCALAR.test(run.value)) problems.push(`${where}: a publish job runs one single-line npm publish (found: a ${c} block)`);
-        else if (!PUBLISH_RUN.test(c)) problems.push(`${where}: a publish job runs only npm publish <tarball>.tgz --provenance --access public --tag latest --ignore-scripts (found: ${c})`);
+        if (BLOCK_SCALAR.test(run.value)) problems.push(`${where}: a publish job runs one single-line npm stage publish (found: a ${c} block)`);
+        else if (!PUBLISH_RUN.test(c)) problems.push(`${where}: a publish job runs only npm stage publish ./<tarball>.tgz --provenance --access public --tag latest --ignore-scripts (found: ${c})`);
         else publishSteps++;
       }
     }

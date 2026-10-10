@@ -71,10 +71,11 @@ jobs:
         with:
           name: npm-package
           path: pkg
-      # Node 24 ships npm >= 11.5.1, which trusted publishing needs. No cache.
+      # Node 24.21.0 ships npm 11.19.0, the first npm with `npm stage publish`. No cache.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '24'
+          node-version: '24.21.0'
           registry-url: 'https://registry.npmjs.org'
-      # Trusted publishing: the OIDC token is minted for this job only; no long-lived npm token is stored.
-      - run: npm publish pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts
+      # Trusted publishing: the OIDC token is minted for this job only; no long-lived npm token is stored. The version is
+      # staged, not published: it goes live only when the owner runs npm stage approve with 2FA.
+      - run: npm stage publish ./pkg/mercurifi-sdk-*.tgz --provenance --access public --tag latest --ignore-scripts
