@@ -8,9 +8,9 @@ Fixed periods allow up to twice every cap across a period boundary. Keep holding
 
 Sells count against the sell cap at the **higher** of the position's current average cost and its high-water average cost (the highest average it has had after any buy, reset only when the position is fully sold). A stolen key therefore cannot buy a crashed token cheaply to drag the average down and then sell the account's older, dearer holdings under a stretched cap, for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 
-## No deployment yet
+## Deployment status
 
-**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them throw `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book). Nothing in this repository broadcasts to a real network.
+**Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book). Nothing in this repository broadcasts to a real network.
 
 ## Where things live
 

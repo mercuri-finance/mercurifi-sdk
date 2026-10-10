@@ -1,6 +1,5 @@
 # Mercurifi Agent Accounts example. Read docs/security-model.md first: agent keys can lose money within your caps.
-# OWNER_KEY=0x… python examples/quickstart_testnet.py <launch token>   (runs once a testnet deployment is recorded; then fund OWNER_KEY at https://faucet.circle.com, Arc testnet)
-# No Agent Accounts deployment exists on any public network yet, so agent calls raise NotDeployedError until one is recorded.
+# OWNER_KEY=0x… python examples/quickstart_testnet.py <launch token>   (fund OWNER_KEY at https://faucet.circle.com, Arc testnet, first)
 import asyncio
 import os
 import sys

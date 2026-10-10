@@ -32,7 +32,7 @@ describe('the security model matches the contracts as built', () => {
   it('names every immutable piece', () => expect(model).toContain('Accounts, the policy registry and factories are immutable'));
   it('states the testnet-only notice, gas figures and the API', () => {
     expect(model).toContain('NotDeployedError');
-    expect(model).toContain('No Agent Accounts deployment exists on any public network yet');
+    expect(model).toContain('Agent Accounts are deployed on Arc testnet');
     expect(model).toContain('withdraw them');
     expect(model).toContain('older than 24 hours');
     expect(model).toContain('60 seconds on testnet');
@@ -49,7 +49,7 @@ describe('the security model matches the contracts as built', () => {
   it('keeps the handling notes and the testnet notice in the package README', () => {
     const readme = read('../README.md');
     for (const h of ['## Handling agent keys', '## Untrusted text for models', '## Logging and secrets', '## Supply chain']) expect(readme).toContain(h);
-    expect(readme).toContain('No Agent Accounts deployment exists on any public network yet');
+    expect(readme).toContain('Agent Accounts are deployed on Arc testnet');
     expect(readme).toContain('stay empty until an owner-approved deployment');
     expect(readme).toContain('older than 24 hours');
     expect(readme).toContain('withdraw them');
@@ -59,11 +59,11 @@ describe('the security model matches the contracts as built', () => {
   });
 });
 
-describe('no stale "testnet only" claims', () => {
+describe('no stale "not deployed yet" claims now that testnet is recorded', () => {
   const files = ['../../../README.md', '../README.md', '../../../docs/security-model.md', '../../../docs/releasing.md', '../../python/README.md',
     '../examples/quickstart-testnet.ts', '../examples/market-maker.ts', '../examples/launch-bot.ts', '../examples/llm-tools.ts',
     '../../python/examples/quickstart_testnet.py', '../../python/examples/market_maker.py', '../../python/examples/launch_bot.py', '../../python/examples/llm_tools.py'];
-  it.each(files)('%s', (p) => expect(read(p)).not.toMatch(/Testnet only|[Uu]se ['"`]{1,2}testnet['"`]{1,2}/));
+  it.each(files)('%s', (p) => expect(read(p)).not.toMatch(/No Agent Accounts deployment exists|deployment is recorded\)|runs once a testnet deployment|until one is recorded|## No deployment yet/));
 });
 
 describe('the ERC-8004 and Circle notes say who signs', () => {

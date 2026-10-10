@@ -25,7 +25,7 @@ def test_readme_keeps_the_handling_notes_and_the_testnet_notice() -> None:
     readme = (PKG / "README.md").read_text()
     for heading in ("## Handling agent keys", "## Untrusted text for models", "## Untrusted text and Unicode data"):
         assert heading in readme
-    assert "No Agent Accounts deployment exists on any public network yet" in readme and "NotDeployedError" in readme and "stay empty until an owner-approved deployment" in readme
+    assert "Agent Accounts are deployed on Arc testnet" in readme and "NotDeployedError" in readme and "stay empty until an owner-approved deployment" in readme
     assert "never in a markdown code fence" in readme or "Never put it in a markdown code fence" in readme
 
 
@@ -45,7 +45,7 @@ def test_readme_quickstart_is_the_example() -> None:
     assert body in readme
 
 
-def test_no_stale_testnet_only_claims() -> None:
+def test_no_stale_not_deployed_claims() -> None:
     import re
 
     root = PKG.parents[1]
@@ -53,7 +53,7 @@ def test_no_stale_testnet_only_claims() -> None:
              *(PKG / "examples").glob("*.py"), *(PKG.parent / "typescript" / "examples").glob("*.ts")]
     assert len(files) >= 12
     for f in files:
-        assert not re.search(r"Testnet only|[Uu]se ['\"`]{1,2}testnet['\"`]{1,2}", f.read_text()), f
+        assert not re.search(r"No Agent Accounts deployment exists|deployment is recorded\)|runs once a testnet deployment|until one is recorded|## No deployment yet", f.read_text()), f
 
 
 def test_readme_says_who_signs_for_erc8004_and_circle() -> None:

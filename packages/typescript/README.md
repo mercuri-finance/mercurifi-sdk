@@ -6,7 +6,7 @@ A stolen agent key can still lose money through bad trades: buying an attacker's
 
 Read [docs/security-model.md](../../docs/security-model.md) before you give a key to a program.
 
-**No deployment yet.** No Agent Accounts deployment exists on any public network yet. Testnet and mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on them throw `NotDeployedError`; today only a local chain works (chain 31337, loopback RPC, a local address book).
+**Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book).
 
 ## Install
 
@@ -16,7 +16,7 @@ npm install @mercurifi/sdk
 
 Not yet published; until then build from the repository checkout (`cd packages/typescript && npm ci && npm run build`). Node 20 or newer. The one runtime dependency is `viem`.
 
-## Quickstart (runs once a testnet deployment is recorded)
+## Quickstart (Arc testnet)
 
 ```ts
 import type { Address } from 'viem';
