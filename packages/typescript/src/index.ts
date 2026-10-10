@@ -7,29 +7,137 @@ export * from './networks.js';
 export { verifyNetwork } from './verify.js';
 export * from './api/types.js';
 export { redactUrl, redactUrlsIn, rpcError } from './redact.js';
-export { createClient, MercurifiClient, type CreateClientOptions, type ClientSettings } from './client.js';
-export { decodeRevert, extractRevertData, ERROR_MESSAGES, ContractRevertError, TxRevertedError, localRevert, type DecodedRevert } from './revert.js';
-export { localKey, generateAgentKey, kmsSigner, type Signer, type KmsAdapter, type AgentKey } from './signers.js';
-export { feesWithFloor, gasLimitFor, MIN_MAX_FEE_PER_GAS, MAX_PRIORITY_FEE_PER_GAS, GRADUATION_GAS_LIMIT } from './gas.js';
+export {
+  createClient,
+  MercurifiClient,
+  type CreateClientOptions,
+  type ClientSettings,
+} from './client.js';
+export {
+  decodeRevert,
+  extractRevertData,
+  ERROR_MESSAGES,
+  ContractRevertError,
+  TxRevertedError,
+  localRevert,
+  type DecodedRevert,
+} from './revert.js';
+export {
+  localKey,
+  generateAgentKey,
+  kmsSigner,
+  type Signer,
+  type KmsAdapter,
+  type AgentKey,
+} from './signers.js';
+export {
+  feesWithFloor,
+  gasLimitFor,
+  MIN_MAX_FEE_PER_GAS,
+  MAX_PRIORITY_FEE_PER_GAS,
+  GRADUATION_GAS_LIMIT,
+} from './gas.js';
 export { NonceManager } from './nonce.js';
 export { chainDeadline } from './time.js';
 export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';
-export { OwnerClient, AccountManager, type CreateAccountParams, type CreatedAccount, type ChangeResult, type AgentGrant, type WithdrawParams } from './owner.js';
-export { listQueued, decodeQueuedPayload, effectiveEta, QUEUE_KINDS, QUEUE_EVENTS, type QueuedChange, type QueuedDetail, type QueuedStatus } from './queue.js';
+export {
+  OwnerClient,
+  AccountManager,
+  type CreateAccountParams,
+  type CreatedAccount,
+  type ChangeResult,
+  type AgentGrant,
+  type WithdrawParams,
+} from './owner.js';
+export {
+  listQueued,
+  decodeQueuedPayload,
+  effectiveEta,
+  QUEUE_KINDS,
+  QUEUE_EVENTS,
+  type QueuedChange,
+  type QueuedDetail,
+  type QueuedStatus,
+} from './queue.js';
 export type { AccountState, AgentInfo } from './reads.js';
-export { AgentClient, type BuyParams, type SellParams, type LaunchParams, type SwapParams, type SweepParams, type Headroom, type Position } from './agent.js';
-export { readPoolKey, quoteExactIn, estimatePoolImpactBps, UINT128_MAX, type PoolKey } from './pool.js';
-export { readBasis, recordedSellValue6, curveSellValue6, poolSellValue6, HIGH_WATER_SCALE, type Basis } from './basis.js';
+export {
+  AgentClient,
+  type BuyParams,
+  type SellParams,
+  type LaunchParams,
+  type SwapParams,
+  type SweepParams,
+  type Headroom,
+  type Position,
+} from './agent.js';
+export {
+  readPoolKey,
+  quoteExactIn,
+  estimatePoolImpactBps,
+  UINT128_MAX,
+  type PoolKey,
+} from './pool.js';
+export {
+  readBasis,
+  recordedSellValue6,
+  curveSellValue6,
+  poolSellValue6,
+  HIGH_WATER_SCALE,
+  type Basis,
+} from './basis.js';
 export { fillFromReceipt, type Fill, type ReceiptLike } from './fills.js';
-export { isSellOutQuote, quoteFreshBuy, buyImpactBps, sellImpactBps, mayGraduateBuy, PHASE, type LaunchConfigValue } from './curve.js';
+export {
+  isSellOutQuote,
+  quoteFreshBuy,
+  buyImpactBps,
+  sellImpactBps,
+  mayGraduateBuy,
+  PHASE,
+  type LaunchConfigValue,
+} from './curve.js';
 export { HttpApi, type HttpApiOptions } from './api/http.js';
 export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/verifyBuild.js';
-export { verifyBuiltOwnerTx, type OwnerBuildExpectation, type OwnerFunction } from './api/verifyOwnerBuild.js';
-export { openStream, validateTopics, type ReconnectInfo, type StreamEvent, type StreamOptions } from './stream.js';
-export { wrapUntrusted, readTokenSafeView, type UntrustedText, type TokenSafeView } from './safeView.js';
 export {
-  ERC8004_REGISTRIES, REGISTRATION_TYPE, AGENT_ACCOUNT_SERVICE, TRUST_MODELS, identityRegistryAbi, erc8004Registries, buildRegistrationFile,
-  registrationFileJson, registrationDataUri, agentUriProblem, encodeRegister, encodeSetAgentURI, agentIdFromReceipt, getAgent,
-  type Erc8004Book, type IdentityNetwork, type TrustModel, type RegistrationService, type RegistrationFileParams, type RegistrationFile,
-  type IdentityCall, type RegisteredAgent, type IdentityReceiptLike, type AgentIdentity,
+  verifyBuiltOwnerTx,
+  type OwnerBuildExpectation,
+  type OwnerFunction,
+} from './api/verifyOwnerBuild.js';
+export {
+  openStream,
+  validateTopics,
+  type ReconnectInfo,
+  type StreamEvent,
+  type StreamOptions,
+} from './stream.js';
+export {
+  wrapUntrusted,
+  readTokenSafeView,
+  type UntrustedText,
+  type TokenSafeView,
+} from './safeView.js';
+export {
+  ERC8004_REGISTRIES,
+  REGISTRATION_TYPE,
+  AGENT_ACCOUNT_SERVICE,
+  TRUST_MODELS,
+  identityRegistryAbi,
+  erc8004Registries,
+  buildRegistrationFile,
+  registrationFileJson,
+  registrationDataUri,
+  agentUriProblem,
+  encodeRegister,
+  encodeSetAgentURI,
+  agentIdFromReceipt,
+  getAgent,
+  type Erc8004Book,
+  type IdentityNetwork,
+  type TrustModel,
+  type RegistrationService,
+  type RegistrationFileParams,
+  type RegistrationFile,
+  type IdentityCall,
+  type RegisteredAgent,
+  type IdentityReceiptLike,
+  type AgentIdentity,
 } from './identity.js';

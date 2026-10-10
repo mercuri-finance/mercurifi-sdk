@@ -11,7 +11,10 @@ export const GRADUATION_GAS_LIMIT = 1_800_000n;
 export const MAX_PRIORITY_FEE_PER_GAS = 100_000_000_000n;
 const MARGIN_PERCENT = 120n;
 
-export interface Fees { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+export interface Fees {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
 
 /**
  * EIP-1559 fees with headroom for one base-fee doubling, never under Arc's floor, priority never above max.
@@ -24,7 +27,11 @@ export const feesWithFloor = (baseFee: bigint, priority: bigint, cap?: bigint): 
   if (maxFeePerGas < MIN_MAX_FEE_PER_GAS) maxFeePerGas = MIN_MAX_FEE_PER_GAS;
   let maxPriorityFeePerGas = priority > maxFeePerGas ? maxFeePerGas : priority;
   if (cap !== undefined) {
-    if (cap < MIN_MAX_FEE_PER_GAS) throw new InvalidInputError('maxFeePerGasCap', 'maxFeePerGasCap is below the Arc floor of 20 gwei');
+    if (cap < MIN_MAX_FEE_PER_GAS)
+      throw new InvalidInputError(
+        'maxFeePerGasCap',
+        'maxFeePerGasCap is below the Arc floor of 20 gwei',
+      );
     const required = baseFee + maxPriorityFeePerGas;
     if (required > cap) throw new GasPriceTooHighError(required, cap);
     if (maxFeePerGas > cap) maxFeePerGas = cap;

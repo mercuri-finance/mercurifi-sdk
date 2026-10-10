@@ -20,22 +20,33 @@ export interface LaunchConfigValue {
 }
 
 /** True when a quoteBuy result is the buy that completes the curve (and so graduates inline). Same rule as the web app. */
-export const isSellOutQuote = (i: { usdcIn: bigint; usdcUsed: bigint; tokensOut: bigint; tokensRemaining: bigint }): boolean =>
-  i.usdcUsed < i.usdcIn || i.tokensOut >= i.tokensRemaining;
+export const isSellOutQuote = (i: {
+  usdcIn: bigint;
+  usdcUsed: bigint;
+  tokensOut: bigint;
+  tokensRemaining: bigint;
+}): boolean => i.usdcUsed < i.usdcIn || i.tokensOut >= i.tokensRemaining;
 
 /**
  * Whether a buy may complete the curve by the time it is included. Beyond the exact rule above, a buy that takes half or more of
  * what is left is flagged too: other buys can land first and shrink the remainder, and a graduating buy that runs out of gas
  * reverts the whole trade.
  */
-export const mayGraduateBuy = (i: { usdcIn: bigint; usdcUsed: bigint; tokensOut: bigint; tokensRemaining: bigint }): boolean =>
-  isSellOutQuote(i) || i.tokensOut >= i.tokensRemaining / 2n;
+export const mayGraduateBuy = (i: {
+  usdcIn: bigint;
+  usdcUsed: bigint;
+  tokensOut: bigint;
+  tokensRemaining: bigint;
+}): boolean => isSellOutQuote(i) || i.tokensOut >= i.tokensRemaining / 2n;
 
 /**
  * BondingCurve._quoteBuy on a fresh curve with no tax: the launch's initial buy, which runs tax-exempt in the launch
  * block before any other trade, so the result is exact (the config hash pins the parameters).
  */
-export const quoteFreshBuy = (config: LaunchConfigValue, valueWei: bigint): { tokensOut: bigint; usdcUsed: bigint; fee: bigint } => {
+export const quoteFreshBuy = (
+  config: LaunchConfigValue,
+  valueWei: bigint,
+): { tokensOut: bigint; usdcUsed: bigint; fee: bigint } => {
   const feeBps = BigInt(config.tradeFeeBps);
   let fee = (valueWei * feeBps) / BPS;
   const net = valueWei - fee;

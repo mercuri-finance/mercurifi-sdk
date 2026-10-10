@@ -39,13 +39,26 @@ describe('no RPC URL in any error (closed loopback port, secret path)', () => {
     mockCurve(rpc);
     const mock = rpc.transport()({ retryCount: 0 } as never);
     let closed = false;
-    const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const fetchFn = async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
       if (closed) return globalThis.fetch(input, init); // ECONNREFUSED from the runtime itself
-      const { id, method, params } = JSON.parse(String(init?.body)) as { id: number; method: string; params: unknown[] };
+      const { id, method, params } = JSON.parse(String(init?.body)) as {
+        id: number;
+        method: string;
+        params: unknown[];
+      };
       const result = await mock.request({ method, params } as never);
       return new Response(JSON.stringify({ jsonrpc: '2.0', id, result }), { status: 200 });
     };
-    const mf = await createClient({ network: localNetwork(localJson()), rpcUrl: URL_, transport: rpcTransport(URL_, fetchFn), pollMs: 1, onWarning: () => undefined });
+    const mf = await createClient({
+      network: localNetwork(localJson()),
+      rpcUrl: URL_,
+      transport: rpcTransport(URL_, fetchFn),
+      pollMs: 1,
+      onWarning: () => undefined,
+    });
     const agent = await mf.agent({ account: ACCOUNT, signer: agentKey });
     const ownerClient = mf.owner(owner);
     const m = await ownerClient.manage(ACCOUNT);
@@ -90,7 +103,10 @@ describe('no RPC URL in any error (closed loopback port, secret path)', () => {
     ];
     const leaks: string[] = [];
     for (const [name, f] of calls) {
-      const err = await f().then(() => new Error(`${name} did not fail`), (e: unknown) => e);
+      const err = await f().then(
+        () => new Error(`${name} did not fail`),
+        (e: unknown) => e,
+      );
       if (everything(err).includes(SECRET)) leaks.push(name);
       expect(err, name).toBeInstanceOf(Error);
       expect((err as Error).message, name).not.toMatch(/did not fail/);

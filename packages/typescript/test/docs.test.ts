@@ -6,12 +6,19 @@ const LOSS_BOUND =
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8');
 
 describe('docs carry the loss bound verbatim', () => {
-  it.each(['../../../README.md', '../README.md', '../../../docs/security-model.md'])('%s', (p) => expect(read(p)).toContain(LOSS_BOUND));
-  it.each(['quickstart-testnet', 'market-maker', 'launch-bot', 'llm-tools'])('example %s links the security model', (n) =>
-    expect(read(`../examples/${n}.ts`)).toContain('docs/security-model.md'));
-  it('quickstart stays about ten lines of code', () => {
-    const code = read('../examples/quickstart-testnet.ts').split('\n').filter((l) => l.trim() !== '' && !l.trim().startsWith('//'));
-    expect(code.length).toBeLessThanOrEqual(12);
+  it.each(['../../../README.md', '../README.md', '../../../docs/security-model.md'])('%s', (p) =>
+    expect(read(p)).toContain(LOSS_BOUND),
+  );
+  it.each(['quickstart-testnet', 'market-maker', 'launch-bot', 'llm-tools'])(
+    'example %s links the security model',
+    (n) => expect(read(`../examples/${n}.ts`)).toContain('docs/security-model.md'),
+  );
+  it('quickstart stays about ten statements', () => {
+    // Statements, not lines: Prettier wraps long calls over several lines.
+    const code = read('../examples/quickstart-testnet.ts')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'));
+    expect(code.filter((l) => l.trimEnd().endsWith(';')).length).toBeLessThanOrEqual(12);
   });
   it('the README quickstart is the example', () => {
     const example = read('../examples/quickstart-testnet.ts');
@@ -28,8 +35,10 @@ describe('the security model matches the contracts as built', () => {
     expect(model).toContain('AgentPolicyRegistry');
     expect(model).toMatch(/no admin and no owner of its own/);
   });
-  it('explains the high-water sell valuation', () => expect(model).toMatch(/high-water average cost/));
-  it('names every immutable piece', () => expect(model).toContain('Accounts, the policy registry and factories are immutable'));
+  it('explains the high-water sell valuation', () =>
+    expect(model).toMatch(/high-water average cost/));
+  it('names every immutable piece', () =>
+    expect(model).toContain('Accounts, the policy registry and factories are immutable'));
   it('states the testnet-only notice, gas figures and the API', () => {
     expect(model).toContain('NotDeployedError');
     expect(model).toContain('Agent Accounts are deployed on Arc testnet');
@@ -44,11 +53,22 @@ describe('the security model matches the contracts as built', () => {
   });
   it('maps every SDK method to the contract it calls', () => {
     const readme = read('../README.md');
-    for (const row of ['registry `setPolicy`', 'factory `createAccount`', 'registry `acceptOwnership`']) expect(readme).toContain(row);
+    for (const row of [
+      'registry `setPolicy`',
+      'factory `createAccount`',
+      'registry `acceptOwnership`',
+    ])
+      expect(readme).toContain(row);
   });
   it('keeps the handling notes and the testnet notice in the package README', () => {
     const readme = read('../README.md');
-    for (const h of ['## Handling agent keys', '## Untrusted text for models', '## Logging and secrets', '## Supply chain']) expect(readme).toContain(h);
+    for (const h of [
+      '## Handling agent keys',
+      '## Untrusted text for models',
+      '## Logging and secrets',
+      '## Supply chain',
+    ])
+      expect(readme).toContain(h);
     expect(readme).toContain('Agent Accounts are deployed on Arc testnet');
     expect(readme).toContain('stay empty until an owner-approved deployment');
     expect(readme).toContain('older than 24 hours');
@@ -60,16 +80,33 @@ describe('the security model matches the contracts as built', () => {
 });
 
 describe('no stale "not deployed yet" claims now that testnet is recorded', () => {
-  const files = ['../../../README.md', '../README.md', '../../../docs/security-model.md', '../../../docs/releasing.md', '../../python/README.md',
-    '../examples/quickstart-testnet.ts', '../examples/market-maker.ts', '../examples/launch-bot.ts', '../examples/llm-tools.ts',
-    '../../python/examples/quickstart_testnet.py', '../../python/examples/market_maker.py', '../../python/examples/launch_bot.py', '../../python/examples/llm_tools.py'];
-  it.each(files)('%s', (p) => expect(read(p)).not.toMatch(/No Agent Accounts deployment exists|deployment is recorded\)|runs once a testnet deployment|until one is recorded|## No deployment yet/));
+  const files = [
+    '../../../README.md',
+    '../README.md',
+    '../../../docs/security-model.md',
+    '../../../docs/releasing.md',
+    '../../python/README.md',
+    '../examples/quickstart-testnet.ts',
+    '../examples/market-maker.ts',
+    '../examples/launch-bot.ts',
+    '../examples/llm-tools.ts',
+    '../../python/examples/quickstart_testnet.py',
+    '../../python/examples/market_maker.py',
+    '../../python/examples/launch_bot.py',
+    '../../python/examples/llm_tools.py',
+  ];
+  it.each(files)('%s', (p) =>
+    expect(read(p)).not.toMatch(
+      /No Agent Accounts deployment exists|deployment is recorded\)|runs once a testnet deployment|until one is recorded|## No deployment yet/,
+    ),
+  );
 });
 
 describe('the ERC-8004 and Circle notes say who signs', () => {
   it.each(['../../../README.md', '../README.md', '../../python/README.md'])('%s', (p) => {
     const text = read(p);
-    for (const h of ['## ERC-8004 identity (optional)', '## Circle Wallets']) expect(text).toContain(h);
+    for (const h of ['## ERC-8004 identity (optional)', '## Circle Wallets'])
+      expect(text).toContain(h);
     expect(text).toContain('`isValidSignature` always fails');
     expect(text).toContain('no exportable');
     expect(text).toMatch(/No adapter is provided|provides no Circle adapter/);

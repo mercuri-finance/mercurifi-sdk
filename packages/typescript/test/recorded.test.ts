@@ -6,15 +6,27 @@ import { fillFromReceipt } from '../src/fills.js';
 import { decodeRevert } from '../src/revert.js';
 
 const DIR = new URL('../../../fixtures/recorded/', import.meta.url);
-const files = readdirSync(DIR).filter((f) => f.endsWith('.json')).sort();
-const str = (v: unknown) => JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)));
+const files = readdirSync(DIR)
+  .filter((f) => f.endsWith('.json'))
+  .sort();
+const str = (v: unknown) =>
+  JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)));
 
 describe('recorded Anvil fixtures', () => {
   it('exist', () => {
-    expect(files).toEqual(expect.arrayContaining([
-      'fill-buy.json', 'fill-launch.json', 'fill-sell.json', 'fill-sell-high-water.json',
-      'revert-launch-limit.json', 'revert-missing-permission.json', 'revert-snipe.json', 'revert-stale.json', 'revert-trade-too-large.json',
-    ]));
+    expect(files).toEqual(
+      expect.arrayContaining([
+        'fill-buy.json',
+        'fill-launch.json',
+        'fill-sell.json',
+        'fill-sell-high-water.json',
+        'revert-launch-limit.json',
+        'revert-missing-permission.json',
+        'revert-snipe.json',
+        'revert-stale.json',
+        'revert-trade-too-large.json',
+      ]),
+    );
   });
   it('names the declaring contract in every recorded revert', () => {
     const reverts = files.filter((f) => f.startsWith('revert-'));
@@ -28,11 +40,19 @@ describe('recorded Anvil fixtures', () => {
     const r = JSON.parse(readFileSync(new URL(f, DIR), 'utf8'));
     if (r.kind === 'fill') {
       const fill = fillFromReceipt(
-        { ...r.receipt, blockNumber: BigInt(r.receipt.blockNumber), gasUsed: BigInt(r.receipt.gasUsed), effectiveGasPrice: BigInt(r.receipt.effectiveGasPrice) },
-        r.account as Address, r.launchFactory as Address,
+        {
+          ...r.receipt,
+          blockNumber: BigInt(r.receipt.blockNumber),
+          gasUsed: BigInt(r.receipt.gasUsed),
+          effectiveGasPrice: BigInt(r.receipt.effectiveGasPrice),
+        },
+        r.account as Address,
+        r.launchFactory as Address,
       );
       const { action, token, usdcSpent6, usdcReceived6, tokenDelta, basisValue6, launched } = fill;
-      expect(str({ action, token, usdcSpent6, usdcReceived6, tokenDelta, basisValue6, launched })).toEqual(r.expected);
+      expect(
+        str({ action, token, usdcSpent6, usdcReceived6, tokenDelta, basisValue6, launched }),
+      ).toEqual(r.expected);
     } else {
       expect(r.kind).toBe('revert');
       const d = decodeRevert(r.data as Hex);

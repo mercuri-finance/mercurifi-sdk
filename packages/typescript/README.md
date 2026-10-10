@@ -1,10 +1,12 @@
+![Mercurifi Agent Accounts SDK — Your agent trades. Only you withdraw.](https://raw.githubusercontent.com/mercuri-finance/mercurifi-sdk/main/assets/banner-light.png)
+
 # @mercurifi/sdk
 
 TypeScript SDK for Mercurifi Agent Accounts on Arc: an account that holds USDC and Launch tokens, and agent keys that trade for it inside caps the owner sets.
 
 A stolen agent key can still lose money through bad trades: buying an attacker's token, or selling the account's holdings into a price the attacker pushed down. **That loss is bounded by the account's caps, not prevented.** Per period, the bound is the USDC spend cap plus the sell cap, which is measured at the account's own cost basis. It keeps accruing every period until the key is revoked or expires.
 
-Read [docs/security-model.md](../../docs/security-model.md) before you give a key to a program.
+Read [docs/security-model.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/security-model.md) before you give a key to a program.
 
 **Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet throw `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book).
 
@@ -23,14 +25,37 @@ import type { Address } from 'viem';
 import { createClient, generateAgentKey, localKey } from '@mercurifi/sdk';
 
 const mf = await createClient({ network: 'testnet' });
+
+// The owner wallet creates the account, funds it and gives the agent key gas.
 const owner = mf.owner(localKey(process.env.OWNER_KEY!));
-const key = generateAgentKey(); // demo only: a real bot stores the key in a secret manager and reads it at the call site
-const { account } = await owner.createAccount({ firstAgent: { address: key.address } });
+
+// Demo only: a real bot stores the key in a secret manager
+// and reads it at the call site.
+const key = generateAgentKey();
+
+const { account } = await owner.createAccount({
+  firstAgent: { address: key.address },
+});
+
 await owner.deposit(account, { usdc: '20' });
+
 await owner.fundGas(key.address, { usdc: '0.5' });
-const agent = await mf.agent({ account, signer: localKey(key.exportPrivateKey()) });
-const fill = await agent.buy({ token: process.argv[2] as Address, usdc: '5', slippage: 0.02 });
-console.log(`bought ${fill.tokens} tokens for ${fill.usdcSpent} USDC in ${fill.txHash}`);
+
+// The agent key trades for the account.
+const agent = await mf.agent({
+  account,
+  signer: localKey(key.exportPrivateKey()),
+});
+
+const fill = await agent.buy({
+  token: process.argv[2] as Address,
+  usdc: '5',
+  slippage: 0.02,
+});
+
+console.log(
+  `bought ${fill.tokens} tokens for ${fill.usdcSpent} USDC in ${fill.txHash}`,
+);
 ```
 
 More in `examples/`: `market-maker.ts`, `launch-bot.ts` and `llm-tools.ts` (tool definitions for a model, numbers only). The market maker reacts to curve `trade` events; after graduation a token trades in a pool and those arrive as separate `pool_trade` events.
@@ -49,24 +74,24 @@ Sells count against the sell cap at the higher of the position's current average
 
 ## API
 
-| Method | What it does | Calls | Permission |
-|---|---|---|---|
-| `owner.createAccount` | Creates an account with a policy and an optional first agent | factory `createAccount` | owner wallet |
-| `owner.deposit`, `owner.fundGas` | Sends native USDC to the account, or to an agent key for gas | plain transfer | owner wallet |
-| `manage(account).addAgent` / `setAgent` / `rotateAgent` / `revokeAgent` | Agent keys; additions and widenings are queued behind the delay | registry | owner |
-| `manage(account).previewPolicy` / `setPolicy` | Policy; narrowing now, widening queued | registry `setPolicy` | owner |
-| `manage(account).setTokenAllowed`, `setIncreaseDelay`, `transferOwnership` | Allowlist, delay, ownership (queued when widening) | registry | owner |
-| `manage(account).listQueued` / `executeQueued` / `cancelQueued` | The delayed-widening queue, with `pending`, `ready`, `expired`, `cancelled` and `stale` items | registry (reads and logs) | owner (execute: anyone) |
-| `owner.acceptOwnership` | Completes a queued transfer | registry `acceptOwnership` | the new owner |
-| `manage(account).pauseAgents` | Stops every agent at once and voids the queue | registry | owner |
-| `manage(account).withdraw` / `withdrawMany` | Moves funds to the owner | account | owner |
-| `agent.buy` / `agent.sell` | Curve trades | account | `buy` / `sell` |
-| `agent.launch` | Launches a token with the account as creator | account | `launch` |
-| `agent.swapExactIn` | Graduated-pool swap | account | `swap` |
-| `agent.claimFees` | Claims creator and referral fees into the account | account | `claim` |
-| `agent.sweepToOwner` | Moves USDC or a Launch token to the owner | account | `sweep` |
-| `agent.headroom` / `position` / `status` | What is left this period, a token position with its cost basis and high-water, the key's standing | registry and account (reads) | none |
-| `mf.token(address)` | Agent-safe view of a Launch token (see below) | factory, curve, fee manager (reads) | none |
+| Method                                                                     | What it does                                                                                      | Calls                               | Permission              |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------------- |
+| `owner.createAccount`                                                      | Creates an account with a policy and an optional first agent                                      | factory `createAccount`             | owner wallet            |
+| `owner.deposit`, `owner.fundGas`                                           | Sends native USDC to the account, or to an agent key for gas                                      | plain transfer                      | owner wallet            |
+| `manage(account).addAgent` / `setAgent` / `rotateAgent` / `revokeAgent`    | Agent keys; additions and widenings are queued behind the delay                                   | registry                            | owner                   |
+| `manage(account).previewPolicy` / `setPolicy`                              | Policy; narrowing now, widening queued                                                            | registry `setPolicy`                | owner                   |
+| `manage(account).setTokenAllowed`, `setIncreaseDelay`, `transferOwnership` | Allowlist, delay, ownership (queued when widening)                                                | registry                            | owner                   |
+| `manage(account).listQueued` / `executeQueued` / `cancelQueued`            | The delayed-widening queue, with `pending`, `ready`, `expired`, `cancelled` and `stale` items     | registry (reads and logs)           | owner (execute: anyone) |
+| `owner.acceptOwnership`                                                    | Completes a queued transfer                                                                       | registry `acceptOwnership`          | the new owner           |
+| `manage(account).pauseAgents`                                              | Stops every agent at once and voids the queue                                                     | registry                            | owner                   |
+| `manage(account).withdraw` / `withdrawMany`                                | Moves funds to the owner                                                                          | account                             | owner                   |
+| `agent.buy` / `agent.sell`                                                 | Curve trades                                                                                      | account                             | `buy` / `sell`          |
+| `agent.launch`                                                             | Launches a token with the account as creator                                                      | account                             | `launch`                |
+| `agent.swapExactIn`                                                        | Graduated-pool swap                                                                               | account                             | `swap`                  |
+| `agent.claimFees`                                                          | Claims creator and referral fees into the account                                                 | account                             | `claim`                 |
+| `agent.sweepToOwner`                                                       | Moves USDC or a Launch token to the owner                                                         | account                             | `sweep`                 |
+| `agent.headroom` / `position` / `status`                                   | What is left this period, a token position with its cost basis and high-water, the key's standing | registry and account (reads)        | none                    |
+| `mf.token(address)`                                                        | Agent-safe view of a Launch token (see below)                                                     | factory, curve, fee manager (reads) | none                    |
 
 ## Using the API
 
@@ -103,7 +128,7 @@ RPC provider URLs usually carry an API key in the path. The SDK shows only the h
 
 ## Supply chain
 
-Install only `@mercurifi/sdk` (npm) or `mercurifi` (PyPI); see [docs/reserved-names.md](../../docs/reserved-names.md). Before upgrading, verify the provenance of the release as described in [docs/verify-provenance.md](../../docs/verify-provenance.md): npm provenance for the TypeScript package, PyPI attestations for the Python one. These checks are inert until publishing is approved. The TypeScript package has one runtime dependency (viem, pinned exactly).
+Install only `@mercurifi/sdk` (npm) or `mercurifi` (PyPI); see [docs/reserved-names.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/reserved-names.md). Before upgrading, verify the provenance of the release as described in [docs/verify-provenance.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/verify-provenance.md): npm provenance for the TypeScript package, PyPI attestations for the Python one. These checks are inert until publishing is approved. The TypeScript package has one runtime dependency (viem, pinned exactly).
 
 ## ERC-8004 identity (optional)
 
@@ -112,20 +137,48 @@ Install only `@mercurifi/sdk` (npm) or `mercurifi` (PyPI); see [docs/reserved-na
 Who signs: an ordinary wallet (EOA) sends the registration, normally the owner wallet. That wallet becomes the agent's owner in the registry. The agent account cannot register itself, because it only calls allowlisted Mercurifi contracts. It also cannot sign: its `isValidSignature` always fails, so it can never be the registry's verified `agentWallet` (`setAgentWallet` with the account as the wallet reverts). The account is linked through the registration file instead, as the service entry `MercurifiAgentAccount` with endpoint `eip155:<chainId>:<account>`. The registry's `agentWallet` stays the registering wallet.
 
 ```ts
-import { createPublicClient, http, type Address, type TransactionReceipt } from 'viem';
-import { agentIdFromReceipt, buildRegistrationFile, encodeRegister, getAgent, registrationDataUri } from '@mercurifi/sdk';
+import {
+  createPublicClient,
+  http,
+  type Address,
+  type TransactionReceipt,
+} from 'viem';
+import {
+  agentIdFromReceipt,
+  buildRegistrationFile,
+  encodeRegister,
+  getAgent,
+  registrationDataUri,
+} from '@mercurifi/sdk';
 
-declare const account: Address; // your agent account
-declare const receipt: TransactionReceipt; // the receipt of the transaction your owner wallet sent
+// Your agent account.
+declare const account: Address;
+
+// The receipt of the transaction your owner wallet sent.
+declare const receipt: TransactionReceipt;
+
 const file = buildRegistrationFile({
-  network: 'testnet', account, name: 'Dip Buyer', description: 'Buys new Launch tokens inside its caps.',
+  network: 'testnet',
+  account,
+  name: 'Dip Buyer',
+  description: 'Buys new Launch tokens inside its caps.',
   services: [{ name: 'MCP', endpoint: 'https://mcp.example.com/' }],
 });
-// Embed the file on chain, or publish registrationFileJson(file) at an https:// or ipfs:// URI and pass that.
-const tx = encodeRegister({ network: 'testnet', agentURI: registrationDataUri(file) }); // { chainId, to, data, value: 0n }
+
+// Embed the file on chain, or publish registrationFileJson(file)
+// at an https:// or ipfs:// URI and pass that.
+const tx = encodeRegister({
+  network: 'testnet',
+  agentURI: registrationDataUri(file),
+}); // { chainId, to, data, value: 0n }
+
 // Send tx from the owner wallet, then read the new agent from its receipt.
 const { agentId } = agentIdFromReceipt({ network: 'testnet', receipt });
-const agent = await getAgent(createPublicClient({ transport: http('https://rpc.testnet.arc.io') }), { network: 'testnet', agentId });
+
+const agent = await getAgent(
+  createPublicClient({ transport: http('https://rpc.testnet.arc.io') }),
+  { network: 'testnet', agentId },
+);
 ```
 
 ERC-8004 asks the file to list its own registration. Once you have the `agentId`, build the file again with `agentId` and send `encodeSetAgentURI({ network, agentId, agentURI })` from the same wallet. `ERC8004_REGISTRIES` lists the Identity, Reputation and Validation registries on both networks. The agent URI and the file are public, and anyone can register any address in a file, so a listing proves nothing about who controls the account. Check the account's owner on chain.
@@ -136,4 +189,4 @@ A Circle wallet can be an account's **owner**, including a Circle Agent Wallet, 
 
 ## More
 
-See the [repository README](../../README.md) and [docs/security-model.md](../../docs/security-model.md).
+See the [repository README](https://github.com/mercuri-finance/mercurifi-sdk#readme) and [docs/security-model.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/security-model.md).

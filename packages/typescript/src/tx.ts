@@ -1,6 +1,18 @@
-import { hexToNumber, TransactionReceiptNotFoundError, type Address, type Hex, type PublicClient, type TransactionReceipt } from 'viem';
+import {
+  hexToNumber,
+  TransactionReceiptNotFoundError,
+  type Address,
+  type Hex,
+  type PublicClient,
+  type TransactionReceipt,
+} from 'viem';
 
-import { InvalidInputError, MercurifiError, NetworkMismatchError, TxDroppedError } from './errors.js';
+import {
+  InvalidInputError,
+  MercurifiError,
+  NetworkMismatchError,
+  TxDroppedError,
+} from './errors.js';
 import { feesWithFloor, gasLimitFor, GRADUATION_GAS_LIMIT } from './gas.js';
 import type { NonceManager } from './nonce.js';
 import { redactUrlsIn, rpcError } from './redact.js';
@@ -16,7 +28,11 @@ export interface WriteRequest {
   label: string;
 }
 
-export interface SentTx { hash: Hex; receipt: TransactionReceipt; preflightData: Hex }
+export interface SentTx {
+  hash: Hex;
+  receipt: TransactionReceipt;
+  preflightData: Hex;
+}
 
 export interface SenderDeps {
   client: PublicClient;
@@ -47,7 +63,8 @@ const isNodeAnswer = (error: unknown): boolean => {
   for (let depth = 0; current !== null && typeof current === 'object' && depth < 16; depth += 1) {
     const c = current as { code?: unknown; name?: unknown; message?: unknown; details?: unknown };
     if (typeof c.code === 'number' && RATE_LIMIT_CODES.has(c.code)) return false;
-    if ([c.message, c.details].some((t) => typeof t === 'string' && RATE_LIMIT_TEXT.test(t))) return false;
+    if ([c.message, c.details].some((t) => typeof t === 'string' && RATE_LIMIT_TEXT.test(t)))
+      return false;
     // UnknownRpcError (code -1) is viem's wrapper for failures that were not a JSON-RPC answer (socket errors, bad bodies).
     if (typeof c.code === 'number' && c.name !== 'UnknownRpcError') answered = true;
     current = (current as { cause?: unknown }).cause;
@@ -67,7 +84,8 @@ export class TxSender {
   constructor(private readonly deps: SenderDeps) {
     for (const field of ['pollMs', 'receiptTimeoutMs'] as const) {
       const value = deps[field];
-      if (!Number.isSafeInteger(value) || value < 1) throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
+      if (!Number.isSafeInteger(value) || value < 1)
+        throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
     }
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
@@ -82,7 +100,9 @@ export class TxSender {
     const raw = (await this.deps.client.request({ method: 'eth_chainId' })) as Hex;
     const served = hexToNumber(raw);
     if (served !== this.deps.chainId) {
-      throw new NetworkMismatchError(`The RPC now serves chain ${served}, but this client was verified for chain ${this.deps.chainId}. Nothing was signed.`);
+      throw new NetworkMismatchError(
+        `The RPC now serves chain ${served}, but this client was verified for chain ${this.deps.chainId}. Nothing was signed.`,
+      );
     }
   }
 
@@ -98,7 +118,10 @@ export class TxSender {
   private async preflightRaw(from: Address, req: WriteRequest): Promise<Hex> {
     try {
       const { data } = await this.deps.client.call({
-        account: from, to: req.to, data: req.data, value: req.value,
+        account: from,
+        to: req.to,
+        data: req.data,
+        value: req.value,
         gas: req.mayGraduate === true ? GRADUATION_GAS_LIMIT : undefined,
       });
       return data ?? '0x';
@@ -112,12 +135,15 @@ export class TxSender {
   async send(signer: Signer, req: WriteRequest): Promise<SentTx> {
     let outcome: { hash: Hex; receipt: TransactionReceipt; preflightData: Hex };
     try {
-      outcome = await this.deps.nonces.withNonce(signer.address, (nonce) => this.attempt(signer, req, nonce));
+      outcome = await this.deps.nonces.withNonce(signer.address, (nonce) =>
+        this.attempt(signer, req, nonce),
+      );
     } catch (error) {
       throw rpcError(error);
     }
     const { hash, receipt, preflightData } = outcome;
-    if (receipt.status !== 'success') throw new TxRevertedError(hash, await this.replay(signer.address, req, receipt.blockNumber));
+    if (receipt.status !== 'success')
+      throw new TxRevertedError(hash, await this.replay(signer.address, req, receipt.blockNumber));
     return { hash, receipt, preflightData };
   }
 
@@ -125,34 +151,55 @@ export class TxSender {
     await this.assertChain();
     const preflightData = await this.preflightRaw(signer.address, req);
     const estimate = await this.estimate(signer.address, req);
-    const gas = estimate === null ? GRADUATION_GAS_LIMIT : gasLimitFor(estimate, req.mayGraduate === true);
+    const gas =
+      estimate === null ? GRADUATION_GAS_LIMIT : gasLimitFor(estimate, req.mayGraduate === true);
     const [block, quoted] = await Promise.all([
       this.deps.client.getBlock({ blockTag: 'latest' }),
       this.deps.client.estimateMaxPriorityFeePerGas().catch(() => DEFAULT_PRIORITY),
     ]);
-    const priority = quoted > this.deps.maxPriorityFeePerGas ? this.deps.maxPriorityFeePerGas : quoted;
+    const priority =
+      quoted > this.deps.maxPriorityFeePerGas ? this.deps.maxPriorityFeePerGas : quoted;
     const fees = feesWithFloor(block.baseFeePerGas ?? 0n, priority, this.deps.maxFeePerGasCap);
     await this.assertChain();
     let raw: Hex;
     try {
       raw = await signer.signTransaction({
-        type: 'eip1559', chainId: this.deps.chainId, nonce, to: req.to, data: req.data, value: req.value ?? 0n, gas, ...fees,
+        type: 'eip1559',
+        chainId: this.deps.chainId,
+        nonce,
+        to: req.to,
+        data: req.data,
+        value: req.value ?? 0n,
+        gas,
+        ...fees,
       });
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
-      const reason = error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error);
-      throw new MercurifiError('SIGNER_ERROR', `The signer failed: ${redactUrlsIn(reason).split('\n')[0]}`);
+      const reason =
+        error instanceof Error
+          ? ((error as { shortMessage?: string }).shortMessage ?? error.message)
+          : String(error);
+      throw new MercurifiError(
+        'SIGNER_ERROR',
+        `The signer failed: ${redactUrlsIn(reason).split('\n')[0]}`,
+      );
     }
     const hash = await this.deps.client.sendRawTransaction({ serializedTransaction: raw });
     const receipt = await this.waitForReceipt(hash);
-    if (receipt === null) throw new TxDroppedError(hash, Math.round(this.deps.receiptTimeoutMs / 1000));
+    if (receipt === null)
+      throw new TxDroppedError(hash, Math.round(this.deps.receiptTimeoutMs / 1000));
     return { hash, receipt, preflightData };
   }
 
   /** A revert is reported as such; the 1.8M fallback applies only when the node itself failed to estimate, never to transport errors. */
   private async estimate(from: Address, req: WriteRequest): Promise<bigint | null> {
     try {
-      return await this.deps.client.estimateGas({ account: from, to: req.to, data: req.data, value: req.value });
+      return await this.deps.client.estimateGas({
+        account: from,
+        to: req.to,
+        data: req.data,
+        value: req.value,
+      });
     } catch (error) {
       const data = extractRevertData(error);
       if (data !== undefined) throw new ContractRevertError(decodeRevert(data), 'preflight');
@@ -182,7 +229,13 @@ export class TxSender {
    */
   private async replay(from: Address, req: WriteRequest, blockNumber: bigint) {
     try {
-      await this.deps.client.call({ account: from, to: req.to, data: req.data, value: req.value, blockNumber: blockNumber - 1n });
+      await this.deps.client.call({
+        account: from,
+        to: req.to,
+        data: req.data,
+        value: req.value,
+        blockNumber: blockNumber - 1n,
+      });
       return null;
     } catch (error) {
       const data = extractRevertData(error);

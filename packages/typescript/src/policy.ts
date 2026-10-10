@@ -35,14 +35,32 @@ export type PolicyField = keyof ChainPolicy;
 
 /** Struct order of `Policy`; also the index order a `BetaCeiling(uint8)` refers to. */
 export const POLICY_FIELDS: readonly PolicyField[] = [
-  'maxTradeUsdc', 'periodSpendCap', 'perTokenPeriodCap', 'periodSellCap', 'maxActionsPerPeriod', 'launchesPerPeriod',
-  'maxPriceImpactBps', 'maxSnipeBps', 'minTokenAgeBlocks', 'maxDeadlineSeconds', 'allowlistOnly',
+  'maxTradeUsdc',
+  'periodSpendCap',
+  'perTokenPeriodCap',
+  'periodSellCap',
+  'maxActionsPerPeriod',
+  'launchesPerPeriod',
+  'maxPriceImpactBps',
+  'maxSnipeBps',
+  'minTokenAgeBlocks',
+  'maxDeadlineSeconds',
+  'allowlistOnly',
 ];
 
-const USDC_FIELDS = new Set<PolicyField>(['maxTradeUsdc', 'periodSpendCap', 'perTokenPeriodCap', 'periodSellCap']);
+const USDC_FIELDS = new Set<PolicyField>([
+  'maxTradeUsdc',
+  'periodSpendCap',
+  'perTokenPeriodCap',
+  'periodSellCap',
+]);
 const INT_LIMITS: Partial<Record<PolicyField, number>> = {
-  maxActionsPerPeriod: 0xffff_ffff, launchesPerPeriod: 0xffff, maxPriceImpactBps: 0xffff, maxSnipeBps: 0xffff,
-  minTokenAgeBlocks: 0xffff_ffff, maxDeadlineSeconds: 0xffff_ffff,
+  maxActionsPerPeriod: 0xffff_ffff,
+  launchesPerPeriod: 0xffff,
+  maxPriceImpactBps: 0xffff,
+  maxSnipeBps: 0xffff,
+  minTokenAgeBlocks: 0xffff_ffff,
+  maxDeadlineSeconds: 0xffff_ffff,
 };
 const UINT64_MAX = (1n << 64n) - 1n;
 
@@ -75,7 +93,8 @@ export const QUEUE_TTL_SECONDS = 604_800;
 const checkRange = (field: PolicyField, value: unknown): void => {
   const name = `policy.${field}`;
   if (USDC_FIELDS.has(field)) {
-    if (typeof value !== 'bigint' || value < 0n || value > UINT64_MAX) throw new InvalidInputError(name, `${name} must be a bigint in 0..${UINT64_MAX} (usdc6)`);
+    if (typeof value !== 'bigint' || value < 0n || value > UINT64_MAX)
+      throw new InvalidInputError(name, `${name} must be a bigint in 0..${UINT64_MAX} (usdc6)`);
   } else if (field === 'allowlistOnly') {
     if (typeof value !== 'boolean') throw new InvalidInputError(name, `${name} must be a boolean`);
   } else {
@@ -95,7 +114,8 @@ export const mergePolicy = (base: ChainPolicy, input: PolicyInput): ChainPolicy 
   const set = out as unknown as Record<PolicyField, unknown>;
   for (const [key, raw] of Object.entries(input) as [PolicyField, unknown][]) {
     if (raw === undefined) continue;
-    if (!POLICY_FIELDS.includes(key)) throw new InvalidInputError(`policy.${key}`, `unknown policy field ${key}`);
+    if (!POLICY_FIELDS.includes(key))
+      throw new InvalidInputError(`policy.${key}`, `unknown policy field ${key}`);
     if (USDC_FIELDS.has(key)) {
       const v = parseUsdc(raw, `policy.${key}`);
       checkRange(key, v);
@@ -118,10 +138,18 @@ const show = (field: PolicyField, value: ChainPolicy[PolicyField]): string =>
 export const validatePolicy = (p: ChainPolicy, ceilings?: ChainPolicy): void => {
   for (const field of POLICY_FIELDS) checkRange(field, p[field]);
   // Same order as AgentPolicyLib.checkShape: impact, snipe, deadline.
-  if (p.maxPriceImpactBps > 10_000) throw new InvalidInputError('policy.maxPriceImpactBps', 'policy.maxPriceImpactBps must be at most 10000');
-  if (p.maxSnipeBps > 10_000) throw new InvalidInputError('policy.maxSnipeBps', 'policy.maxSnipeBps must be at most 10000');
+  if (p.maxPriceImpactBps > 10_000)
+    throw new InvalidInputError(
+      'policy.maxPriceImpactBps',
+      'policy.maxPriceImpactBps must be at most 10000',
+    );
+  if (p.maxSnipeBps > 10_000)
+    throw new InvalidInputError('policy.maxSnipeBps', 'policy.maxSnipeBps must be at most 10000');
   if (p.maxDeadlineSeconds < 1 || p.maxDeadlineSeconds > MAX_DEADLINE_SECONDS) {
-    throw new InvalidInputError('policy.maxDeadlineSeconds', `policy.maxDeadlineSeconds must be in 1..${MAX_DEADLINE_SECONDS}`);
+    throw new InvalidInputError(
+      'policy.maxDeadlineSeconds',
+      `policy.maxDeadlineSeconds must be in 1..${MAX_DEADLINE_SECONDS}`,
+    );
   }
   if (ceilings === undefined) return;
   for (const field of POLICY_FIELDS) {
@@ -130,15 +158,26 @@ export const validatePolicy = (p: ChainPolicy, ceilings?: ChainPolicy): void => 
     const limit = ceilings[field] as bigint | number;
     // minTokenAgeBlocks is a floor on-chain (AgentPolicyLib.checkCeilings); every other ceiling is an upper bound.
     if (field === 'minTokenAgeBlocks') {
-      if (value < limit) throw new InvalidInputError(`policy.${field}`, `policy.${field} = ${show(field, p[field])} is below the beta floor of ${show(field, ceilings[field])}`);
+      if (value < limit)
+        throw new InvalidInputError(
+          `policy.${field}`,
+          `policy.${field} = ${show(field, p[field])} is below the beta floor of ${show(field, ceilings[field])}`,
+        );
     } else if (value > limit) {
-      throw new InvalidInputError(`policy.${field}`, `policy.${field} = ${show(field, p[field])} is above the beta ceiling of ${show(field, ceilings[field])}`);
+      throw new InvalidInputError(
+        `policy.${field}`,
+        `policy.${field} = ${show(field, p[field])} is above the beta ceiling of ${show(field, ceilings[field])}`,
+      );
     }
   }
 };
 
 /** Per-field direction, identical to AgentPolicyLib.isNarrowing. */
-export const fieldDirection = (field: PolicyField, current: ChainPolicy, next: ChainPolicy): 'same' | 'narrow' | 'widen' => {
+export const fieldDirection = (
+  field: PolicyField,
+  current: ChainPolicy,
+  next: ChainPolicy,
+): 'same' | 'narrow' | 'widen' => {
   const a = current[field] as bigint | number | boolean;
   const b = next[field] as bigint | number | boolean;
   if (a === b) return 'same';
@@ -166,7 +205,12 @@ export const previewPolicyChange = (current: ChainPolicy, next: ChainPolicy): Po
   for (const field of POLICY_FIELDS) {
     const direction = fieldDirection(field, current, next);
     if (direction === 'same') continue;
-    changes.push({ field, current: show(field, current[field]), next: show(field, next[field]), direction });
+    changes.push({
+      field,
+      current: show(field, current[field]),
+      next: show(field, next[field]),
+      direction,
+    });
     if (direction === 'narrow') {
       immediate.push(field);
       (immediatePolicy as unknown as Record<PolicyField, unknown>)[field] = next[field];
@@ -174,6 +218,13 @@ export const previewPolicyChange = (current: ChainPolicy, next: ChainPolicy): Po
       queued.push(field);
     }
   }
-  const outcome = changes.length === 0 ? 'none' : queued.length === 0 ? 'immediate' : immediate.length === 0 ? 'queued' : 'mixed';
+  const outcome =
+    changes.length === 0
+      ? 'none'
+      : queued.length === 0
+        ? 'immediate'
+        : immediate.length === 0
+          ? 'queued'
+          : 'mixed';
   return { changes, immediate, queued, outcome, immediatePolicy, target: { ...next } };
 };

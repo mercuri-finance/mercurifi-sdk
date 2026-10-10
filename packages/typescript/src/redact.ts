@@ -13,10 +13,12 @@ export const redactUrl = (url: string): string => {
 // ("x:https://k@h/KEY" must not slip through); data:/javascript: only after a non-alphanumeric so words such as
 // "metadata:" are left alone.
 // The lookbehind anchors a scheme at the start of its run, so a long letter run is scanned once (linear), not once per start.
-const URL_PATTERN = /(?:(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:[\\/]{2}|(?<![A-Za-z0-9])(?:data|javascript):)[^\s"'<>)]*/gi;
+const URL_PATTERN =
+  /(?:(?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:[\\/]{2}|(?<![A-Za-z0-9])(?:data|javascript):)[^\s"'<>)]*/gi;
 
 /** Replaces every URL in a message with its host ("invalid URL" for schemes without one). */
-export const redactUrlsIn = (message: string): string => message.replace(URL_PATTERN, (u) => redactUrl(u));
+export const redactUrlsIn = (message: string): string =>
+  message.replace(URL_PATTERN, (u) => redactUrl(u));
 
 // Terminal escape sequences: CSI, OSC (BEL or ST terminated) and two-character escapes.
 // eslint-disable-next-line no-control-regex
@@ -36,7 +38,10 @@ export const neutralizeUntrusted = (raw: string, o: { keepUrls?: boolean } = {})
     .replace(/\p{Cf}+/gu, '')
     // Invisible or blank "letters": Hangul fillers, Braille blank, combining grapheme joiner, variation selectors outside
     // emoji sequences (a selector after a pictograph, digit, # or * keeps its emoji/keycap meaning).
-    .replace(/[\u034f\u115f\u1160\u2800\u3164\uffa0]|[\u{e0100}-\u{e01ef}]|(?<![\p{Extended_Pictographic}#*0-9])[\ufe00-\ufe0f]/gu, '')
+    .replace(
+      /[\u034f\u115f\u1160\u2800\u3164\uffa0]|[\u{e0100}-\u{e01ef}]|(?<![\p{Extended_Pictographic}#*0-9])[\ufe00-\ufe0f]/gu,
+      '',
+    )
     .replace(/(\p{M}{4})\p{M}+/gu, '$1') // zalgo: at most 4 combining marks in a row
     .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
   return o.keepUrls === true ? plain : redactUrlsIn(plain);
@@ -57,6 +62,12 @@ export const truncateChars = (text: string, max: number, suffix: string): string
  */
 export const rpcError = (error: unknown): MercurifiError => {
   if (error instanceof MercurifiError) return error;
-  const raw = error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error);
-  return new MercurifiError('RPC_ERROR', `The RPC request failed: ${redactUrlsIn(raw).split('\n')[0]}`);
+  const raw =
+    error instanceof Error
+      ? ((error as { shortMessage?: string }).shortMessage ?? error.message)
+      : String(error);
+  return new MercurifiError(
+    'RPC_ERROR',
+    `The RPC request failed: ${redactUrlsIn(raw).split('\n')[0]}`,
+  );
 };

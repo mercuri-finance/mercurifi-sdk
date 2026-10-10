@@ -1,12 +1,30 @@
-import { createPublicClient, defineChain, type Address, type Chain, type PublicClient, type Transport } from 'viem';
+import {
+  createPublicClient,
+  defineChain,
+  type Address,
+  type Chain,
+  type PublicClient,
+  type Transport,
+} from 'viem';
 
 import { AgentClient } from './agent.js';
 import { readTokenSafeView, type TokenSafeView } from './safeView.js';
 import { openStream, validateTopics, type StreamEvent, type StreamOptions } from './stream.js';
 import { HttpApi } from './api/http.js';
 import type { MercurifiApi } from './api/types.js';
-import { InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError } from './errors.js';
-import { isLoopbackUrl, LOCAL_CHAIN_ID, NETWORKS, type AgentBook, type NetworkBook } from './networks.js';
+import {
+  InvalidInputError,
+  MercurifiError,
+  NetworkMismatchError,
+  NotDeployedError,
+} from './errors.js';
+import {
+  isLoopbackUrl,
+  LOCAL_CHAIN_ID,
+  NETWORKS,
+  type AgentBook,
+  type NetworkBook,
+} from './networks.js';
 import { MAX_PRIORITY_FEE_PER_GAS } from './gas.js';
 import { MAX_DEADLINE_SECONDS } from './policy.js';
 import { NonceManager } from './nonce.js';
@@ -72,10 +90,16 @@ export class MercurifiClient {
     readonly settings: ClientSettings,
     private readonly onWarning: (message: string) => void,
   ) {
-    this.nonces = new NonceManager((address) => publicClient.getTransactionCount({ address, blockTag: 'pending' }));
+    this.nonces = new NonceManager((address) =>
+      publicClient.getTransactionCount({ address, blockTag: 'pending' }),
+    );
     this.sender = new TxSender({
-      client: publicClient, chainId: network.chainId, nonces: this.nonces,
-      receiptTimeoutMs: settings.receiptTimeoutMs, pollMs: settings.pollMs, maxFeePerGasCap: settings.maxFeePerGasCap,
+      client: publicClient,
+      chainId: network.chainId,
+      nonces: this.nonces,
+      receiptTimeoutMs: settings.receiptTimeoutMs,
+      pollMs: settings.pollMs,
+      maxFeePerGasCap: settings.maxFeePerGasCap,
       maxPriorityFeePerGas: settings.maxPriorityFeePerGas,
     });
   }
@@ -92,18 +116,37 @@ export class MercurifiClient {
   }
 
   /** Agent-side client. Refuses an address that is not an account of this network's factory. */
-  async agent(o: { account: Address; signer: Signer; slippage?: number; deadlineSeconds?: number }): Promise<AgentClient> {
+  async agent(o: {
+    account: Address;
+    signer: Signer;
+    slippage?: number;
+    deadlineSeconds?: number;
+  }): Promise<AgentClient> {
     const agents = this.requireAgents();
     if (!(await isAgentAccount(this.publicClient, agents, o.account))) {
-      throw new InvalidInputError('account', `${o.account} is not a Mercurifi agent account on ${this.network.name}`);
+      throw new InvalidInputError(
+        'account',
+        `${o.account} is not a Mercurifi agent account on ${this.network.name}`,
+      );
     }
     const deadlineSeconds = o.deadlineSeconds ?? this.settings.deadlineSeconds;
-    return new AgentClient(this, agents, o.account, o.signer, slippageToBps(o.slippage ?? 0.01), deadlineSeconds);
+    return new AgentClient(
+      this,
+      agents,
+      o.account,
+      o.signer,
+      slippageToBps(o.slippage ?? 0.01),
+      deadlineSeconds,
+    );
   }
 
   /** Live events (spec 6.1): `launches`, `trades`, `token:0x…`, `trader:0x…`, `agent-account:0x…`. Needs the API. */
   stream(topics: readonly string[], o: StreamOptions = {}): AsyncGenerator<StreamEvent> {
-    if (this.api === null) throw new InvalidInputError('api', 'Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.');
+    if (this.api === null)
+      throw new InvalidInputError(
+        'api',
+        'Streams need the Mercurifi API; chain-only clients can poll headroom() and logs instead.',
+      );
     return openStream(this.api.streamRequest(validateTopics(topics)), o);
   }
 
@@ -119,12 +162,20 @@ export class MercurifiClient {
 
 const resolveBook = (network: CreateClientOptions['network']): NetworkBook => {
   if (typeof network === 'string') {
-    const book = Object.hasOwn(NETWORKS, network) ? (NETWORKS as Record<string, NetworkBook>)[network] : undefined;
-    if (book === undefined) throw new InvalidInputError('network', "network must be 'mainnet', 'testnet' or a local address book");
+    const book = Object.hasOwn(NETWORKS, network)
+      ? (NETWORKS as Record<string, NetworkBook>)[network]
+      : undefined;
+    if (book === undefined)
+      throw new InvalidInputError(
+        'network',
+        "network must be 'mainnet', 'testnet' or a local address book",
+      );
     return book;
   }
   if (network.name !== 'local' || network.chainId !== LOCAL_CHAIN_ID) {
-    throw new NetworkMismatchError(`custom address books are accepted only for the local chain ${LOCAL_CHAIN_ID}; use 'mainnet' or 'testnet' for Arc`);
+    throw new NetworkMismatchError(
+      `custom address books are accepted only for the local chain ${LOCAL_CHAIN_ID}; use 'mainnet' or 'testnet' for Arc`,
+    );
   }
   return network;
 };
@@ -143,28 +194,61 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   try {
     parsed = new URL(rpcUrl);
   } catch {
-    throw new InvalidInputError('rpcUrl', 'rpcUrl is not a valid URL; expected http(s)://host[:port][/path]');
+    throw new InvalidInputError(
+      'rpcUrl',
+      'rpcUrl is not a valid URL; expected http(s)://host[:port][/path]',
+    );
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new InvalidInputError('rpcUrl', 'rpcUrl must start with http:// or https://');
-  if (book.name === 'local' && !isLoopbackUrl(rpcUrl)) throw new NetworkMismatchError('a local address book needs a loopback RPC (127.0.0.1, localhost or [::1])');
-  if (options.apiKey !== undefined && (typeof options.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(options.apiKey))) {
-    throw new InvalidInputError('apiKey', "apiKey is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key");
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    throw new InvalidInputError('rpcUrl', 'rpcUrl must start with http:// or https://');
+  if (book.name === 'local' && !isLoopbackUrl(rpcUrl))
+    throw new NetworkMismatchError(
+      'a local address book needs a loopback RPC (127.0.0.1, localhost or [::1])',
+    );
+  if (
+    options.apiKey !== undefined &&
+    (typeof options.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(options.apiKey))
+  ) {
+    throw new InvalidInputError(
+      'apiKey',
+      "apiKey is empty or malformed (letters, digits, '_' and '-' only); omit it for keyless use, or pass an mfk_live_ or mfk_test_ key",
+    );
   }
-  if (options.apiKey !== undefined && book.apiKeyPrefix !== null && !options.apiKey.startsWith(book.apiKeyPrefix)) {
-    throw new NetworkMismatchError(`This API key belongs to the other network; ${book.name} keys start with ${book.apiKeyPrefix}`);
+  if (
+    options.apiKey !== undefined &&
+    book.apiKeyPrefix !== null &&
+    !options.apiKey.startsWith(book.apiKeyPrefix)
+  ) {
+    throw new NetworkMismatchError(
+      `This API key belongs to the other network; ${book.name} keys start with ${book.apiKeyPrefix}`,
+    );
   }
   const deadlineSeconds = options.deadlineSeconds ?? 60;
-  if (!Number.isInteger(deadlineSeconds) || deadlineSeconds < 1 || deadlineSeconds > MAX_DEADLINE_SECONDS) {
-    throw new InvalidInputError('deadlineSeconds', `deadlineSeconds must be an integer in 1..${MAX_DEADLINE_SECONDS}`);
+  if (
+    !Number.isInteger(deadlineSeconds) ||
+    deadlineSeconds < 1 ||
+    deadlineSeconds > MAX_DEADLINE_SECONDS
+  ) {
+    throw new InvalidInputError(
+      'deadlineSeconds',
+      `deadlineSeconds must be an integer in 1..${MAX_DEADLINE_SECONDS}`,
+    );
   }
   const receiptTimeoutMs = options.receiptTimeoutMs ?? 60_000;
   const pollMs = options.pollMs ?? 250;
-  for (const [field, value] of [['receiptTimeoutMs', receiptTimeoutMs], ['pollMs', pollMs]] as const) {
-    if (!Number.isSafeInteger(value) || value < 1) throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
+  for (const [field, value] of [
+    ['receiptTimeoutMs', receiptTimeoutMs],
+    ['pollMs', pollMs],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value < 1)
+      throw new InvalidInputError(field, `${field} must be a positive integer (milliseconds)`);
   }
   const maxPriorityFeePerGas = options.maxPriorityFeePerGas ?? MAX_PRIORITY_FEE_PER_GAS;
   if (typeof maxPriorityFeePerGas !== 'bigint' || maxPriorityFeePerGas < 1n) {
-    throw new InvalidInputError('maxPriorityFeePerGas', 'maxPriorityFeePerGas must be a positive bigint (wei per gas)');
+    throw new InvalidInputError(
+      'maxPriorityFeePerGas',
+      'maxPriorityFeePerGas must be a positive bigint (wei per gas)',
+    );
   }
   const publicClient = createPublicClient({
     chain: arcChain(book, rpcUrl),
@@ -177,7 +261,9 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
   const onWarning = options.onWarning ?? ((m) => console.warn(`[mercurifi] ${m}`));
   // Skipping start-up verification is for the loopback book only; on Arc the chain check is unconditional.
   if (options.verify === false && book.name !== 'local') {
-    onWarning(`verify: false is ignored on ${book.name}; start-up verification always runs outside the local book.`);
+    onWarning(
+      `verify: false is ignored on ${book.name}; start-up verification always runs outside the local book.`,
+    );
   }
   if (options.verify !== false || book.name !== 'local') {
     try {
@@ -187,8 +273,15 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
       // Transport failures carry the full RPC URL (often with a key); surface the host only and drop the cause.
       // The SDK's own response checks (rpcFetch.ts) name their reason; anything else keeps viem's short message.
       const checked = rpcCheckReason(error);
-      const reason = checked ?? (error instanceof Error ? (error as { shortMessage?: string }).shortMessage ?? error.message : String(error));
-      throw new MercurifiError('RPC_ERROR', `RPC ${redactUrl(rpcUrl)} failed during start-up verification: ${redactUrlsIn(reason).split('\n')[0]}`);
+      const reason =
+        checked ??
+        (error instanceof Error
+          ? ((error as { shortMessage?: string }).shortMessage ?? error.message)
+          : String(error));
+      throw new MercurifiError(
+        'RPC_ERROR',
+        `RPC ${redactUrl(rpcUrl)} failed during start-up verification: ${redactUrlsIn(reason).split('\n')[0]}`,
+      );
     }
   }
   const settings: ClientSettings = {
@@ -200,8 +293,16 @@ export const createClient = async (options: CreateClientOptions): Promise<Mercur
     hasApiKey: options.apiKey !== undefined,
   };
   const apiBaseUrl = options.apiBaseUrl ?? book.apiBaseUrl;
-  const api = options.api !== undefined
-    ? options.api
-    : apiBaseUrl === null ? null : new HttpApi({ baseUrl: apiBaseUrl, chainId: book.chainId, onWarning, ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }) });
+  const api =
+    options.api !== undefined
+      ? options.api
+      : apiBaseUrl === null
+        ? null
+        : new HttpApi({
+            baseUrl: apiBaseUrl,
+            chainId: book.chainId,
+            onWarning,
+            ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
+          });
   return new MercurifiClient(book, publicClient, api, settings, onWarning);
 };

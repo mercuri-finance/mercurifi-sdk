@@ -8,11 +8,15 @@ import { getAgent } from '../src/identity.js';
 import { TESTNET } from '../src/networks.js';
 
 describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (read-only)', () => {
-  it('passes start-up verification of the pinned agent deployment', { timeout: 60_000 }, async () => {
-    const mf = await createClient({ network: 'testnet', api: null });
-    expect(mf.requireAgents()).toBe(TESTNET.agents);
-    expect(await mf.publicClient.getBlockNumber()).toBeGreaterThan(TESTNET.agents!.deployBlock);
-  });
+  it(
+    'passes start-up verification of the pinned agent deployment',
+    { timeout: 60_000 },
+    async () => {
+      const mf = await createClient({ network: 'testnet', api: null });
+      expect(mf.requireAgents()).toBe(TESTNET.agents);
+      expect(await mf.publicClient.getBlockNumber()).toBeGreaterThan(TESTNET.agents!.deployBlock);
+    },
+  );
   it('reads an agent from the ERC-8004 IdentityRegistry', { timeout: 60_000 }, async () => {
     const mf = await createClient({ network: 'testnet', api: null });
     const agent = await getAgent(mf.publicClient, { network: 'testnet', agentId: 1n });

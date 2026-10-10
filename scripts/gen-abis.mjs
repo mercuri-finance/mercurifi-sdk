@@ -33,29 +33,134 @@ export const SOURCES = [
 // Members the SDK calls or decodes. A missing one is an interface break with the contracts: stop and report.
 const REQUIRED = {
   agentAccount: {
-    function: ['FACTORY', 'REGISTRY', 'owner', 'referrer', 'basis', 'buy', 'sell', 'launch', 'swapExactIn', 'claimFees',
-      'sweepToOwner', 'withdraw', 'withdrawMany', 'isValidSignature'],
+    function: [
+      'FACTORY',
+      'REGISTRY',
+      'owner',
+      'referrer',
+      'basis',
+      'buy',
+      'sell',
+      'launch',
+      'swapExactIn',
+      'claimFees',
+      'sweepToOwner',
+      'withdraw',
+      'withdrawMany',
+      'isValidSignature',
+    ],
     event: ['AgentAction', 'AccountWithdrawn'],
-    error: ['TradeTooLarge', 'PriceImpactTooHigh', 'TokenNotRegistered', 'TokenNotAllowed', 'TokenTooNew', 'SnipeTaxTooHigh', 'ZeroMinOut',
-      'NotTrading', 'NotGraduated', 'ZeroOutput', 'AmountTooLarge'],
+    error: [
+      'TradeTooLarge',
+      'PriceImpactTooHigh',
+      'TokenNotRegistered',
+      'TokenNotAllowed',
+      'TokenTooNew',
+      'SnipeTaxTooHigh',
+      'ZeroMinOut',
+      'NotTrading',
+      'NotGraduated',
+      'ZeroOutput',
+      'AmountTooLarge',
+    ],
   },
   agentPolicyRegistry: {
-    function: ['FACTORY', 'owner', 'policy', 'periodSeconds', 'increaseDelay', 'agent', 'activeAgentCount', 'retired',
-      'tokenAllowed', 'ownerPaused', 'writeSeq', 'epoch', 'policyWrite', 'agentWrite', 'tokenWrite', 'delayWrite', 'queued',
-      'usage', 'tokenSpent', 'headroom', 'addAgent', 'setAgent', 'revokeAgent', 'rotateAgent', 'setPolicy', 'setTokenAllowed',
-      'setIncreaseDelay', 'transferOwnership', 'acceptOwnership', 'executeQueued', 'cancelQueued', 'pauseAgents'],
-    event: ['PolicyApplied', 'AgentActivated', 'AgentQueued', 'AgentRevoked', 'PolicyQueued', 'QueuedCancelled', 'QueuedExecuted',
-      'TokenAllowed', 'TokenAllowQueued', 'AgentsPaused', 'IncreaseDelaySet', 'IncreaseDelayQueued', 'OwnershipQueued',
-      'AccountOwnerChanged'],
-    error: ['PeriodSpendExceeded', 'PeriodSellExceeded', 'TokenCapExceeded', 'ActionLimit', 'LaunchLimit', 'NotAgent', 'AgentExpired',
-      'MissingPermission', 'Paused', 'DeadlineOutOfRange', 'StaleQueued'],
+    function: [
+      'FACTORY',
+      'owner',
+      'policy',
+      'periodSeconds',
+      'increaseDelay',
+      'agent',
+      'activeAgentCount',
+      'retired',
+      'tokenAllowed',
+      'ownerPaused',
+      'writeSeq',
+      'epoch',
+      'policyWrite',
+      'agentWrite',
+      'tokenWrite',
+      'delayWrite',
+      'queued',
+      'usage',
+      'tokenSpent',
+      'headroom',
+      'addAgent',
+      'setAgent',
+      'revokeAgent',
+      'rotateAgent',
+      'setPolicy',
+      'setTokenAllowed',
+      'setIncreaseDelay',
+      'transferOwnership',
+      'acceptOwnership',
+      'executeQueued',
+      'cancelQueued',
+      'pauseAgents',
+    ],
+    event: [
+      'PolicyApplied',
+      'AgentActivated',
+      'AgentQueued',
+      'AgentRevoked',
+      'PolicyQueued',
+      'QueuedCancelled',
+      'QueuedExecuted',
+      'TokenAllowed',
+      'TokenAllowQueued',
+      'AgentsPaused',
+      'IncreaseDelaySet',
+      'IncreaseDelayQueued',
+      'OwnershipQueued',
+      'AccountOwnerChanged',
+    ],
+    error: [
+      'PeriodSpendExceeded',
+      'PeriodSellExceeded',
+      'TokenCapExceeded',
+      'ActionLimit',
+      'LaunchLimit',
+      'NotAgent',
+      'AgentExpired',
+      'MissingPermission',
+      'Paused',
+      'DeadlineOutOfRange',
+      'StaleQueued',
+    ],
   },
   agentAccountFactory: {
-    function: ['createAccount', 'predictAccount', 'isAccount', 'implementation', 'registry', 'ceilings', 'isPaused', 'pausedUntil'],
+    function: [
+      'createAccount',
+      'predictAccount',
+      'isAccount',
+      'implementation',
+      'registry',
+      'ceilings',
+      'isPaused',
+      'pausedUntil',
+    ],
     event: ['AccountCreated'],
   },
-  bondingCurve: { function: ['phase', 'quoteBuy', 'quoteSell', 'price', 'sold', 'curveSupply', 'currentSnipeBps', 'launchBlock', 'progressBps', 'token'], event: [] },
-  launchFactory: { function: ['curveOf', 'config', 'configHash', 'createToken'], event: ['TokenCreated'] },
+  bondingCurve: {
+    function: [
+      'phase',
+      'quoteBuy',
+      'quoteSell',
+      'price',
+      'sold',
+      'curveSupply',
+      'currentSnipeBps',
+      'launchBlock',
+      'progressBps',
+      'token',
+    ],
+    event: [],
+  },
+  launchFactory: {
+    function: ['curveOf', 'config', 'configHash', 'createToken'],
+    event: ['TokenCreated'],
+  },
   feeManager: { function: ['balances', 'referrerOf', 'tokenInfo'], event: [] },
   graduationManager: { function: ['poolKey'], event: [] },
   launchHook: { function: [], event: [] },
@@ -67,20 +172,64 @@ const REQUIRED = {
 // Exact field names the SDK encodes or decodes by name: [SDK name, item type, item name, where, names].
 // `where` is 'inputs', 'outputs' or 'components' (the components of the first input, a struct).
 const SHAPES = [
-  ['agentAccount', 'function', 'launch', 'components',
-    ['name', 'symbol', 'metadataURI', 'salt', 'expectedConfigHash', 'initialBuyUsdc', 'minTokensOut', 'deadline']],
+  [
+    'agentAccount',
+    'function',
+    'launch',
+    'components',
+    [
+      'name',
+      'symbol',
+      'metadataURI',
+      'salt',
+      'expectedConfigHash',
+      'initialBuyUsdc',
+      'minTokensOut',
+      'deadline',
+    ],
+  ],
   ['agentAccount', 'function', 'basis', 'outputs', ['costUsdc', 'tokens', 'highWater']],
-  ['agentAccount', 'event', 'AgentAction', 'inputs',
-    ['agent', 'action', 'token', 'usdcSpent', 'usdcReceived', 'tokenDelta', 'basisValue', 'periodId']],
-  ['agentPolicyRegistry', 'function', 'queued', 'outputs', ['kind', 'eta', 'itemEpoch', 'seq', 'payload']],
-  ['agentPolicyRegistry', 'event', 'AgentQueued', 'inputs', ['account', 'id', 'agent', 'expiresAt', 'permissions', 'eta']],
+  [
+    'agentAccount',
+    'event',
+    'AgentAction',
+    'inputs',
+    [
+      'agent',
+      'action',
+      'token',
+      'usdcSpent',
+      'usdcReceived',
+      'tokenDelta',
+      'basisValue',
+      'periodId',
+    ],
+  ],
+  [
+    'agentPolicyRegistry',
+    'function',
+    'queued',
+    'outputs',
+    ['kind', 'eta', 'itemEpoch', 'seq', 'payload'],
+  ],
+  [
+    'agentPolicyRegistry',
+    'event',
+    'AgentQueued',
+    'inputs',
+    ['account', 'id', 'agent', 'expiresAt', 'permissions', 'eta'],
+  ],
 ];
 
 const sortKeys = (v) =>
   Array.isArray(v)
     ? v.map(sortKeys)
     : v !== null && typeof v === 'object'
-      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]))
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, sortKeys(v[k])]),
+        )
       : v;
 
 /** JSON with sorted keys and no whitespace; Python's json.dumps(sort_keys=True, separators=(",",":")) is identical. */
@@ -89,27 +238,42 @@ export const canonical = (value) => JSON.stringify(sortKeys(value));
 /** sha256 over "<name>\n<canonical abi>\n" for every entry, sorted by name. */
 export const digestOf = (entries) =>
   createHash('sha256')
-    .update([...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([n, abi]) => `${n}\n${canonical(abi)}\n`).join(''))
+    .update(
+      [...entries]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([n, abi]) => `${n}\n${canonical(abi)}\n`)
+        .join(''),
+    )
     .digest('hex');
 
 const loadAbi = (outDir, dir, contract) => {
-  const files = ['', '.default', '.small', '.posm'].map((p) => join(outDir, dir, `${contract}${p}.json`)).filter((f) => existsSync(f));
+  const files = ['', '.default', '.small', '.posm']
+    .map((p) => join(outDir, dir, `${contract}${p}.json`))
+    .filter((f) => existsSync(f));
   if (files.length === 0) {
-    throw new Error(`missing artifact out/${dir}/${contract}: run forge build (and bash script/build-universal-router.sh for the router) in the agent contracts checkout`);
+    throw new Error(
+      `missing artifact out/${dir}/${contract}: run forge build (and bash script/build-universal-router.sh for the router) in the agent contracts checkout`,
+    );
   }
   const abis = files.map((f) => JSON.parse(readFileSync(f, 'utf8')).abi);
-  if (new Set(abis.map(canonical)).size !== 1) throw new Error(`${contract}: compiler profiles disagree on the ABI`);
+  if (new Set(abis.map(canonical)).size !== 1)
+    throw new Error(`${contract}: compiler profiles disagree on the ABI`);
   return abis[0];
 };
 
 /** Non-fatal: a Foundry artifact older than its Solidity source may predate a contract edit (run forge build). */
 const warnStale = (contractsDir, dir, contract) => {
-  const artifacts = ['', '.default', '.small', '.posm'].map((p) => join(contractsDir, 'out', dir, `${contract}${p}.json`)).filter((f) => existsSync(f));
+  const artifacts = ['', '.default', '.small', '.posm']
+    .map((p) => join(contractsDir, 'out', dir, `${contract}${p}.json`))
+    .filter((f) => existsSync(f));
   const source = findSource(contractsDir, contract);
   if (source === null) return;
   const sourceTime = statSync(source).mtimeMs;
   for (const f of artifacts) {
-    if (statSync(f).mtimeMs < sourceTime) console.warn(`warning: ${f} is older than ${source}; run forge build in the agent contracts checkout`);
+    if (statSync(f).mtimeMs < sourceTime)
+      console.warn(
+        `warning: ${f} is older than ${source}; run forge build in the agent contracts checkout`,
+      );
   }
 };
 
@@ -120,7 +284,8 @@ const findSource = (root, contract) => {
     if (!existsSync(dir)) continue;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       if (e.isDirectory()) {
-        if (e.name !== 'node_modules' && e.name !== 'test' && e.name !== '.git') stack.push(join(dir, e.name));
+        if (e.name !== 'node_modules' && e.name !== 'test' && e.name !== '.git')
+          stack.push(join(dir, e.name));
       } else if (e.name === `${contract}.sol`) return join(dir, e.name);
     }
   }
@@ -131,7 +296,10 @@ const checkRequired = (name, abi) => {
   for (const [type, members] of Object.entries(REQUIRED[name])) {
     const have = new Set(abi.filter((i) => i.type === type).map((i) => i.name));
     const missing = members.filter((m) => !have.has(m));
-    if (missing.length > 0) throw new Error(`${name} is missing ${type}(s) ${missing.join(', ')}: interface break, see the plan's "Interface dependencies"`);
+    if (missing.length > 0)
+      throw new Error(
+        `${name} is missing ${type}(s) ${missing.join(', ')}: interface break, see the plan's "Interface dependencies"`,
+      );
   }
 };
 
@@ -142,22 +310,34 @@ const checkShapes = (name, abi) => {
     const fields = where === 'components' ? found?.inputs?.[0]?.components : found?.[where];
     const actual = (fields ?? []).map((f) => f.name);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      throw new Error(`${name}.${item} ${where} are [${actual.join(', ')}], expected [${expected.join(', ')}]: interface break, see the plan's "Interface dependencies"`);
+      throw new Error(
+        `${name}.${item} ${where} are [${actual.join(', ')}], expected [${expected.join(', ')}]: interface break, see the plan's "Interface dependencies"`,
+      );
     }
   }
 };
 
 const contractsCommit = (dir, allowDirty) => {
-  const sha = execFileSync('git', ['-C', dir, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8' }).trim();
-  const dirty = execFileSync('git', ['-C', dir, 'status', '--porcelain', '--', 'src', 'lib'], { encoding: 'utf8' }).trim() !== '';
-  if (dirty && !allowDirty) throw new Error('the contracts checkout has uncommitted changes under src/ or lib/; commit them or pass --allow-dirty');
+  const sha = execFileSync('git', ['-C', dir, 'rev-parse', '--short=12', 'HEAD'], {
+    encoding: 'utf8',
+  }).trim();
+  const dirty =
+    execFileSync('git', ['-C', dir, 'status', '--porcelain', '--', 'src', 'lib'], {
+      encoding: 'utf8',
+    }).trim() !== '';
+  if (dirty && !allowDirty)
+    throw new Error(
+      'the contracts checkout has uncommitted changes under src/ or lib/; commit them or pass --allow-dirty',
+    );
   return dirty ? `${sha}-dirty` : sha;
 };
 
 const renderTs = (entries, digest, commit) =>
   `// GENERATED by scripts/gen-abis.mjs from contracts ${commit}. Do not edit; run npm run gen:abis.\n\n` +
   `export const ABI_DIGEST = '${digest}';\n\n` +
-  entries.map(([n, abi]) => `export const ${n}Abi = ${JSON.stringify(abi, null, 2)} as const;\n`).join('\n');
+  entries
+    .map(([n, abi]) => `export const ${n}Abi = ${JSON.stringify(abi, null, 2)} as const;\n`)
+    .join('\n');
 
 const body = (ts) => ts.split('\n').slice(1).join('\n'); // drop the header line that names the commit
 
@@ -186,19 +366,27 @@ const verifyDigest = () => {
   const stems = py.map(([n]) => n).sort();
   const expected = SOURCES.map(([n]) => n).sort();
   if (JSON.stringify(stems) !== JSON.stringify(expected)) {
-    console.error(`Python abi/ files [${stems.join(', ')}] differ from SOURCES [${expected.join(', ')}]`);
+    console.error(
+      `Python abi/ files [${stems.join(', ')}] differ from SOURCES [${expected.join(', ')}]`,
+    );
     process.exit(1);
   }
   const order = new Map(SOURCES.map(([n], i) => [n, i]));
   py.sort(([a], [b]) => order.get(a) - order.get(b));
   const problems = [];
-  if (digestOf(py) !== shared.digest) problems.push('Python ABIs do not match fixtures/abi-digest.json');
-  if (body(readFileSync(TS_OUT, 'utf8')) !== body(renderTs(py, shared.digest, shared.contractsCommit))) problems.push('TS generated.ts does not match the Python ABIs');
+  if (digestOf(py) !== shared.digest)
+    problems.push('Python ABIs do not match fixtures/abi-digest.json');
+  if (
+    body(readFileSync(TS_OUT, 'utf8')) !== body(renderTs(py, shared.digest, shared.contractsCommit))
+  )
+    problems.push('TS generated.ts does not match the Python ABIs');
   if (problems.length > 0) {
     console.error(problems.join('\n'));
     process.exit(1);
   }
-  console.log(`ABIs consistent (${shared.digest.slice(0, 12)}, contracts ${shared.contractsCommit})`);
+  console.log(
+    `ABIs consistent (${shared.digest.slice(0, 12)}, contracts ${shared.contractsCommit})`,
+  );
 };
 
 const main = () => {
@@ -208,9 +396,13 @@ const main = () => {
     verifyDigest();
     return;
   }
-  const given = args.includes('--contracts') ? args[args.indexOf('--contracts') + 1] : process.env.MERCURIFI_CONTRACTS_DIR;
+  const given = args.includes('--contracts')
+    ? args[args.indexOf('--contracts') + 1]
+    : process.env.MERCURIFI_CONTRACTS_DIR;
   if (given === undefined || given === '') {
-    console.error('gen-abis: set MERCURIFI_CONTRACTS_DIR (or pass --contracts DIR) to the agent contracts checkout with a forge build in out/');
+    console.error(
+      'gen-abis: set MERCURIFI_CONTRACTS_DIR (or pass --contracts DIR) to the agent contracts checkout with a forge build in out/',
+    );
     process.exit(2);
   }
   const contractsDir = resolve(given);
@@ -220,7 +412,9 @@ const main = () => {
     verifyDigest();
     const shared = JSON.parse(readFileSync(DIGEST_FILE, 'utf8'));
     if (shared.digest !== digest || body(readFileSync(TS_OUT, 'utf8')) !== body(ts)) {
-      console.error(`ABIs are stale: committed ${shared.digest.slice(0, 12)}, contracts ${commit} give ${digest.slice(0, 12)}. Run npm run gen:abis.`);
+      console.error(
+        `ABIs are stale: committed ${shared.digest.slice(0, 12)}, contracts ${commit} give ${digest.slice(0, 12)}. Run npm run gen:abis.`,
+      );
       process.exit(1);
     }
     console.log('ABIs current');
@@ -231,9 +425,14 @@ const main = () => {
   mkdirSync(PY_DIR, { recursive: true });
   mkdirSync(dirname(DIGEST_FILE), { recursive: true });
   writeFileSync(TS_OUT, ts);
-  for (const [name, abi] of entries) writeFileSync(join(PY_DIR, `${name}.json`), `${JSON.stringify(abi, null, 2)}\n`);
-  writeFileSync(DIGEST_FILE, `${JSON.stringify({ digest, contractsCommit: commit, names: entries.map(([n]) => n) }, null, 2)}\n`);
+  for (const [name, abi] of entries)
+    writeFileSync(join(PY_DIR, `${name}.json`), `${JSON.stringify(abi, null, 2)}\n`);
+  writeFileSync(
+    DIGEST_FILE,
+    `${JSON.stringify({ digest, contractsCommit: commit, names: entries.map(([n]) => n) }, null, 2)}\n`,
+  );
   console.log(`generated ${entries.length} ABIs from contracts ${commit} (${digest.slice(0, 12)})`);
 };
 
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main();

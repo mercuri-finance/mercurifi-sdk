@@ -23,7 +23,12 @@ const MAX_DECIMAL_TEXT = 80;
  * @returns the amount in base units
  * @throws {InvalidInputError} for anything that is not a plain non-negative decimal string with at most `decimals` places
  */
-export const parseDecimal = (value: unknown, decimals: number, field: string, baseUnitHint = `${field}6`): bigint => {
+export const parseDecimal = (
+  value: unknown,
+  decimals: number,
+  field: string,
+  baseUnitHint = `${field}6`,
+): bigint => {
   if (typeof value !== 'string') {
     throw new InvalidInputError(
       field,
@@ -33,9 +38,14 @@ export const parseDecimal = (value: unknown, decimals: number, field: string, ba
   const text = value.replace(ASCII_EDGE_WHITESPACE, '');
   // Same bound as Python (units._MAX_TEXT): no real amount needs more, and BigInt work stays small.
   if (text.length > MAX_DECIMAL_TEXT) throw new InvalidInputError(field, `${field} is too long`);
-  if (!DECIMAL.test(text)) throw new InvalidInputError(field, `${field} must be a plain decimal string such as "25" or "0.5"`);
+  if (!DECIMAL.test(text))
+    throw new InvalidInputError(
+      field,
+      `${field} must be a plain decimal string such as "25" or "0.5"`,
+    );
   const [whole = '0', frac = ''] = text.split('.');
-  if (frac.length > decimals) throw new InvalidInputError(field, `${field} has more than ${decimals} decimal places`);
+  if (frac.length > decimals)
+    throw new InvalidInputError(field, `${field} has more than ${decimals} decimal places`);
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac.padEnd(decimals, '0') || '0');
 };
 
@@ -49,9 +59,11 @@ export const formatDecimal = (value: bigint, decimals: number): string => {
   return `${negative ? '-' : ''}${whole}${frac ? `.${frac}` : ''}`;
 };
 
-export const parseUsdc = (value: unknown, field = 'usdc'): bigint => parseDecimal(value, USDC_DECIMALS, field);
+export const parseUsdc = (value: unknown, field = 'usdc'): bigint =>
+  parseDecimal(value, USDC_DECIMALS, field);
 export const formatUsdc6 = (value: bigint): string => formatDecimal(value, USDC_DECIMALS);
-export const parseTokens = (value: unknown, field = 'amount'): bigint => parseDecimal(value, TOKEN_DECIMALS, field, 'amountWei');
+export const parseTokens = (value: unknown, field = 'amount'): bigint =>
+  parseDecimal(value, TOKEN_DECIMALS, field, 'amountWei');
 export const formatTokens = (value: bigint): string => formatDecimal(value, TOKEN_DECIMALS);
 
 /** usdc6 → native wei; exact. */
@@ -67,18 +79,31 @@ export const weiToUsdc6Ceil = (wei: bigint): bigint => (wei + SCALE - 1n) / SCAL
  * @throws {InvalidInputError} outside [0, 0.5) or not a whole number of basis points
  */
 export const slippageToBps = (slippage: unknown): number => {
-  if (typeof slippage !== 'number' || !Number.isFinite(slippage) || slippage < 0 || slippage >= MAX_SLIPPAGE) {
-    throw new InvalidInputError('slippage', 'slippage is a fraction: 0.02 means 2%. It must be at least 0 and below 0.5.');
+  if (
+    typeof slippage !== 'number' ||
+    !Number.isFinite(slippage) ||
+    slippage < 0 ||
+    slippage >= MAX_SLIPPAGE
+  ) {
+    throw new InvalidInputError(
+      'slippage',
+      'slippage is a fraction: 0.02 means 2%. It must be at least 0 and below 0.5.',
+    );
   }
   if (slippage === 0) return 0; // normalises -0
   const bps = Math.round(slippage * 10_000);
-  if (Math.abs(bps - slippage * 10_000) > 1e-6) throw new InvalidInputError('slippage', 'slippage must be a whole number of basis points (steps of 0.0001)');
+  if (Math.abs(bps - slippage * 10_000) > 1e-6)
+    throw new InvalidInputError(
+      'slippage',
+      'slippage must be a whole number of basis points (steps of 0.0001)',
+    );
   return bps;
 };
 
 /** The minimum acceptable output for a quote, rounded down, matching the web app. */
 export const applySlippageFloor = (amount: bigint, bps: number): bigint => {
-  if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) throw new InvalidInputError('slippage', 'bps must be an integer from 0 to 10000');
+  if (!Number.isInteger(bps) || bps < 0 || bps > 10_000)
+    throw new InvalidInputError('slippage', 'bps must be an integer from 0 to 10000');
   return (amount * BigInt(10_000 - bps)) / 10_000n;
 };
 
@@ -86,21 +111,40 @@ export const applySlippageFloor = (amount: bigint, bps: number): bigint => {
 export const resolveUsdc6 = (input: { usdc?: string; usdc6?: bigint }, field = 'usdc'): bigint => {
   const hasHuman = input.usdc !== undefined;
   const hasBase = input.usdc6 !== undefined;
-  if (hasHuman === hasBase) throw new InvalidInputError(field, `pass exactly one of ${field} (decimal string) or ${field}6 (bigint)`);
+  if (hasHuman === hasBase)
+    throw new InvalidInputError(
+      field,
+      `pass exactly one of ${field} (decimal string) or ${field}6 (bigint)`,
+    );
   if (hasBase) {
-    if (typeof input.usdc6 !== 'bigint' || input.usdc6 < 0n) throw new InvalidInputError(`${field}6`, `${field}6 must be a bigint of base units (1 USDC = 1000000n)`);
+    if (typeof input.usdc6 !== 'bigint' || input.usdc6 < 0n)
+      throw new InvalidInputError(
+        `${field}6`,
+        `${field}6 must be a bigint of base units (1 USDC = 1000000n)`,
+      );
     return input.usdc6;
   }
   return parseUsdc(input.usdc, field);
 };
 
 /** Exactly one of `amount` (human string or 'all') or `amountWei` (bigint, 18 decimals). */
-export const resolveTokenAmount = (input: { amount?: string; amountWei?: bigint }): bigint | 'all' => {
+export const resolveTokenAmount = (input: {
+  amount?: string;
+  amountWei?: bigint;
+}): bigint | 'all' => {
   const hasHuman = input.amount !== undefined;
   const hasBase = input.amountWei !== undefined;
-  if (hasHuman === hasBase) throw new InvalidInputError('amount', "pass exactly one of amount (decimal string or 'all') or amountWei (bigint)");
+  if (hasHuman === hasBase)
+    throw new InvalidInputError(
+      'amount',
+      "pass exactly one of amount (decimal string or 'all') or amountWei (bigint)",
+    );
   if (hasBase) {
-    if (typeof input.amountWei !== 'bigint' || input.amountWei < 0n) throw new InvalidInputError('amountWei', 'amountWei must be a bigint of 18-decimal base units');
+    if (typeof input.amountWei !== 'bigint' || input.amountWei < 0n)
+      throw new InvalidInputError(
+        'amountWei',
+        'amountWei must be a bigint of 18-decimal base units',
+      );
     return input.amountWei;
   }
   return input.amount === 'all' ? 'all' : parseTokens(input.amount, 'amount');

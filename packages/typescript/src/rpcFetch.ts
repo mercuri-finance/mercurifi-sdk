@@ -63,7 +63,8 @@ async function readCapped(response: Response, maxBytes: number): Promise<string 
   return new TextDecoder().decode(all);
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * The SDK's HTTP JSON-RPC transport, with the Python Rpc's rules (rpc.py): bodies over {@link MAX_RPC_RESPONSE_BYTES}
@@ -71,7 +72,11 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * answer is passed on as `{ code, message, data }` (URLs in the node's words reduced to hosts), so revert data still
  * decodes; every other failure is an {@link RpcTransportError}. The RPC URL is never part of any error.
  */
-export const rpcTransport = (rpcUrl: string, inner?: FetchFn, maxBytes = MAX_RPC_RESPONSE_BYTES): CustomTransport => {
+export const rpcTransport = (
+  rpcUrl: string,
+  inner?: FetchFn,
+  maxBytes = MAX_RPC_RESPONSE_BYTES,
+): CustomTransport => {
   const host = redactUrl(rpcUrl);
   // Anything the runtime says about the request may quote the URL (or just its path): both are cut before redaction.
   const path = (() => {
@@ -113,7 +118,9 @@ export const rpcTransport = (rpcUrl: string, inner?: FetchFn, maxBytes = MAX_RPC
           if (text === null) failure = `the response is larger than ${maxBytes} bytes`;
         } catch (error) {
           // Only the error's name and own first line: its cause (undici's socket error, a DNS record) is dropped.
-          failure = controller.signal.aborted ? `timed out after ${TIMEOUT_MS / 1000} s` : `${(error as Error)?.name ?? 'Error'}: ${String((error as Error)?.message ?? error)}`;
+          failure = controller.signal.aborted
+            ? `timed out after ${TIMEOUT_MS / 1000} s`
+            : `${(error as Error)?.name ?? 'Error'}: ${String((error as Error)?.message ?? error)}`;
         } finally {
           clearTimeout(timer);
         }
@@ -126,16 +133,21 @@ export const rpcTransport = (rpcUrl: string, inner?: FetchFn, maxBytes = MAX_RPC
         }
         const ok = status >= 200 && status < 300;
         // A non-2xx answer still counts when it is a well-formed JSON-RPC error for this request (viem's rule).
-        if (!ok && !(isObject(body) && isObject(body.error) && typeof body.error.code === 'number')) throw fail(`HTTP ${status}`);
+        if (!ok && !(isObject(body) && isObject(body.error) && typeof body.error.code === 'number'))
+          throw fail(`HTTP ${status}`);
         if (body === undefined) throw fail('the response is not JSON');
         if (!isObject(body)) throw fail('the response is not a JSON-RPC object');
         if (body.jsonrpc !== '2.0') throw fail('the response is not JSON-RPC 2.0');
-        if (typeof body.id !== 'number' || body.id !== id) throw fail('the response id does not match the request');
+        if (typeof body.id !== 'number' || body.id !== id)
+          throw fail('the response id does not match the request');
         if (body.error !== undefined && body.error !== null) {
           const e = body.error;
           if (!isObject(e) || typeof e.code !== 'number') throw fail('malformed JSON-RPC error');
           const message = typeof e.message === 'string' ? clean(e.message) : '';
-          throw Object.assign(new Error(message), { code: e.code, ...(e.data === undefined ? {} : { data: e.data }) });
+          throw Object.assign(new Error(message), {
+            code: e.code,
+            ...(e.data === undefined ? {} : { data: e.data }),
+          });
         }
         if (!('result' in body)) throw fail('the response has neither result nor error');
         return body.result;

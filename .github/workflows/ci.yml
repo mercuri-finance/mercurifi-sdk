@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         # 22 is .nvmrc (the development version; a test keeps them equal). 24 is the release publish job's version
-        # (npm >= 11.5.1 for trusted publishing), so the suite is proven on both.
+        # line, so the suite is proven on both.
         node: ['22', '24']
     defaults:
       run:
@@ -47,6 +47,7 @@ jobs:
       # @vitest/mocker is accepted until vitest 4 (docs/releasing.md, "Accepted advisories").
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run check:package
+      - run: npm run format:check
       - run: node ../../scripts/gen-abis.mjs --verify-digest
       - run: npm run typecheck
       - run: npm test

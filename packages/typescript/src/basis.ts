@@ -18,8 +18,19 @@ export interface Basis {
 
 const ceilDiv = (a: bigint, b: bigint): bigint => (a + b - 1n) / b;
 
-export const readBasis = async (client: PublicClient, account: Address, token: Address, blockNumber?: bigint): Promise<Basis> => {
-  const [costUsdc, tokens, highWater] = await readAccount<readonly [bigint, bigint, bigint]>(client, account, 'basis', [token], blockNumber);
+export const readBasis = async (
+  client: PublicClient,
+  account: Address,
+  token: Address,
+  blockNumber?: bigint,
+): Promise<Basis> => {
+  const [costUsdc, tokens, highWater] = await readAccount<readonly [bigint, bigint, bigint]>(
+    client,
+    account,
+    'basis',
+    [token],
+    blockNumber,
+  );
   return { costUsdc6: BigInt(costUsdc), tokens: BigInt(tokens), highWater: BigInt(highWater) };
 };
 
@@ -28,7 +39,10 @@ export const readBasis = async (client: PublicClient, account: Address, token: A
  * cost rounded up and the high-water cost rounded down, so a crash buy cannot stretch the sell cap and a single lot sold
  * whole is charged exactly what it cost.
  */
-export const recordedSellValue6 = (b: Basis, tokensIn: bigint): { recorded: bigint; value6: bigint } => {
+export const recordedSellValue6 = (
+  b: Basis,
+  tokensIn: bigint,
+): { recorded: bigint; value6: bigint } => {
   const recorded = tokensIn < b.tokens ? tokensIn : b.tokens;
   if (recorded <= 0n) return { recorded: 0n, value6: 0n };
   const average = ceilDiv(recorded * b.costUsdc6, b.tokens);

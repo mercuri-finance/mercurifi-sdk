@@ -1,13 +1,36 @@
 import {
-  custom, decodeFunctionData, encodeFunctionResult, keccak256, toFunctionSelector, toHex, getAbiItem,
-  type Abi, type AbiFunction, type Address, type Hex, type Transport,
+  custom,
+  decodeFunctionData,
+  encodeFunctionResult,
+  keccak256,
+  toFunctionSelector,
+  toHex,
+  getAbiItem,
+  type Abi,
+  type AbiFunction,
+  type Address,
+  type Hex,
+  type Transport,
 } from 'viem';
 
-export interface RpcLog { address: Address; topics: Hex[]; data: Hex }
-type Result = ((args: readonly unknown[]) => unknown) | object | string | number | bigint | boolean | null | undefined;
+export interface RpcLog {
+  address: Address;
+  topics: Hex[];
+  data: Hex;
+}
+type Result =
+  | ((args: readonly unknown[]) => unknown)
+  | object
+  | string
+  | number
+  | bigint
+  | boolean
+  | null
+  | undefined;
 type TopicFilter = (Hex | Hex[] | null)[];
 
-const callKey = (to: string, data: string): string => `${to.toLowerCase()}:${data.slice(0, 10).toLowerCase()}`;
+const callKey = (to: string, data: string): string =>
+  `${to.toLowerCase()}:${data.slice(0, 10).toLowerCase()}`;
 
 /** eth_getLogs topic matching: null is a wildcard, an array is "any of", comparison ignores case. */
 const topicsMatch = (filter: TopicFilter | undefined, topics: Hex[]): boolean =>
@@ -38,20 +61,31 @@ export class MockRpc {
     this.on('eth_chainId', () => toHex(this.chainId));
     this.on('eth_blockNumber', () => toHex(this.block.number));
     this.on('eth_getBlockByNumber', () => ({
-      number: toHex(this.block.number), hash: keccak256(toHex(this.block.number)), parentHash: `0x${'00'.repeat(32)}`,
-      timestamp: toHex(this.block.timestamp), baseFeePerGas: toHex(this.block.baseFeePerGas),
-      gasLimit: toHex(30_000_000n), gasUsed: '0x0', transactions: [],
+      number: toHex(this.block.number),
+      hash: keccak256(toHex(this.block.number)),
+      parentHash: `0x${'00'.repeat(32)}`,
+      timestamp: toHex(this.block.timestamp),
+      baseFeePerGas: toHex(this.block.baseFeePerGas),
+      gasLimit: toHex(30_000_000n),
+      gasUsed: '0x0',
+      transactions: [],
     }));
     this.on('eth_getCode', ([address]) => this.codes.get(String(address).toLowerCase()) ?? '0x');
-    this.on('eth_getBalance', ([address]) => toHex(this.balances.get(String(address).toLowerCase()) ?? 0n));
+    this.on('eth_getBalance', ([address]) =>
+      toHex(this.balances.get(String(address).toLowerCase()) ?? 0n),
+    );
     this.on('eth_getTransactionCount', () => toHex(this.nonce));
     this.on('eth_maxPriorityFeePerGas', () => toHex(1_000_000_000n));
-    this.on('eth_estimateGas', ([tx]) => { this.handleCall(tx as { to: Address; data: Hex }); return toHex(this.gasEstimate); });
+    this.on('eth_estimateGas', ([tx]) => {
+      this.handleCall(tx as { to: Address; data: Hex });
+      return toHex(this.gasEstimate);
+    });
     this.on('eth_call', ([tx]) => this.handleCall(tx as { to: Address; data: Hex }));
     this.on('eth_sendRawTransaction', ([raw]) => {
       const hash = keccak256(raw as Hex);
       this.sent.push(raw as Hex);
-      if (this.receiptMode !== 'none') this.receipts.set(hash, { status: this.receiptMode, logs: this.receiptLogs });
+      if (this.receiptMode !== 'none')
+        this.receipts.set(hash, { status: this.receiptMode, logs: this.receiptLogs });
       return hash;
     });
     this.on('eth_getTransactionReceipt', ([hash]) => {
@@ -59,11 +93,26 @@ export class MockRpc {
       return r === undefined ? null : this.rpcReceipt(hash as Hex, r);
     });
     this.on('eth_getLogs', ([filter]) => {
-      const f = filter as { address?: string; fromBlock?: Hex; toBlock?: Hex; topics?: TopicFilter };
+      const f = filter as {
+        address?: string;
+        fromBlock?: Hex;
+        toBlock?: Hex;
+        topics?: TopicFilter;
+      };
       return this.logs
-        .filter((l) => f.address === undefined || l.address.toLowerCase() === f.address.toLowerCase())
+        .filter(
+          (l) => f.address === undefined || l.address.toLowerCase() === f.address.toLowerCase(),
+        )
         .filter((l) => topicsMatch(f.topics, l.topics))
-        .map((l, i) => ({ ...l, blockNumber: toHex(this.block.number), blockHash: keccak256(toHex(this.block.number)), transactionHash: keccak256(toHex(i)), transactionIndex: '0x0', logIndex: toHex(i), removed: false }));
+        .map((l, i) => ({
+          ...l,
+          blockNumber: toHex(this.block.number),
+          blockHash: keccak256(toHex(this.block.number)),
+          transactionHash: keccak256(toHex(i)),
+          transactionIndex: '0x0',
+          logIndex: toHex(i),
+          removed: false,
+        }));
     });
   }
 
@@ -77,7 +126,10 @@ export class MockRpc {
     const item = getAbiItem({ abi, name: functionName }) as AbiFunction;
     this.reads.set(callKey(address, toFunctionSelector(item)), (data) => {
       const { args } = decodeFunctionData({ abi: [item], data });
-      const value = typeof result === 'function' ? (result as (a: readonly unknown[]) => unknown)(args ?? []) : result;
+      const value =
+        typeof result === 'function'
+          ? (result as (a: readonly unknown[]) => unknown)(args ?? [])
+          : result;
       return encodeFunctionResult({ abi: [item], functionName, result: value } as never);
     });
     this.reverts.delete(callKey(address, toFunctionSelector(item)));
@@ -110,7 +162,8 @@ export class MockRpc {
   private handleCall(tx: { to: Address; data: Hex }): Hex {
     const key = callKey(tx.to, tx.data ?? '0x');
     const revert = this.reverts.get(key);
-    if (revert !== undefined) throw Object.assign(new Error('execution reverted'), { code: 3, data: revert });
+    if (revert !== undefined)
+      throw Object.assign(new Error('execution reverted'), { code: 3, data: revert });
     const read = this.reads.get(key);
     if (read === undefined) throw new Error(`unmocked eth_call ${key}`);
     return read(tx.data);
@@ -120,11 +173,27 @@ export class MockRpc {
     const blockNumber = toHex(this.block.number + 1n);
     const blockHash = keccak256(blockNumber);
     return {
-      transactionHash: hash, transactionIndex: '0x0', blockHash, blockNumber, from: `0x${'11'.repeat(20)}`, to: `0x${'22'.repeat(20)}`,
-      cumulativeGasUsed: toHex(120_000n), gasUsed: toHex(120_000n), effectiveGasPrice: toHex(21_000_000_000n),
-      contractAddress: null, logsBloom: `0x${'00'.repeat(256)}`, status: r.status === 'success' ? '0x1' : '0x0', type: '0x2',
+      transactionHash: hash,
+      transactionIndex: '0x0',
+      blockHash,
+      blockNumber,
+      from: `0x${'11'.repeat(20)}`,
+      to: `0x${'22'.repeat(20)}`,
+      cumulativeGasUsed: toHex(120_000n),
+      gasUsed: toHex(120_000n),
+      effectiveGasPrice: toHex(21_000_000_000n),
+      contractAddress: null,
+      logsBloom: `0x${'00'.repeat(256)}`,
+      status: r.status === 'success' ? '0x1' : '0x0',
+      type: '0x2',
       logs: r.logs.map((log, i) => ({
-        ...log, blockHash, blockNumber, transactionHash: hash, transactionIndex: '0x0', logIndex: toHex(i), removed: false,
+        ...log,
+        blockHash,
+        blockNumber,
+        transactionHash: hash,
+        transactionIndex: '0x0',
+        logIndex: toHex(i),
+        removed: false,
       })),
     };
   }

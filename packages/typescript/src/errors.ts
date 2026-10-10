@@ -33,7 +33,10 @@ export class NetworkMismatchError extends MercurifiError {
 /** Agent Accounts have no recorded deployment on this network in this SDK build. */
 export class NotDeployedError extends MercurifiError {
   constructor(network: string) {
-    super('NOT_DEPLOYED', `Mercurifi Agent Accounts are not deployed on ${network} in this SDK version.`);
+    super(
+      'NOT_DEPLOYED',
+      `Mercurifi Agent Accounts are not deployed on ${network} in this SDK version.`,
+    );
     this.name = 'NotDeployedError';
   }
 }
@@ -52,7 +55,10 @@ export class GasPriceTooHighError extends MercurifiError {
   readonly capWei: bigint;
 
   constructor(requiredWei: bigint, capWei: bigint) {
-    super('GAS_PRICE_TOO_HIGH', `The network needs at least ${requiredWei} wei per gas, above your cap of ${capWei}.`);
+    super(
+      'GAS_PRICE_TOO_HIGH',
+      `The network needs at least ${requiredWei} wei per gas, above your cap of ${capWei}.`,
+    );
     this.name = 'GasPriceTooHighError';
     this.requiredWei = requiredWei;
     this.capWei = capWei;

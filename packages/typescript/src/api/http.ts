@@ -4,14 +4,38 @@ import { ApiError, InvalidInputError, MercurifiError } from '../errors.js';
 import { isLoopbackUrl } from '../networks.js';
 import { redactUrlsIn } from '../redact.js';
 import type {
-  ApiAccount, ApiAccountSummary, ApiAction, ApiQuote, ApiToken, BuildRequest, BuiltTx, ImageUpload, LaunchMetadata,
-  MercurifiApi, Page, QuoteKind, QuoteRequest, UploadedMetadata,
+  ApiAccount,
+  ApiAccountSummary,
+  ApiAction,
+  ApiQuote,
+  ApiToken,
+  BuildRequest,
+  BuiltTx,
+  ImageUpload,
+  LaunchMetadata,
+  MercurifiApi,
+  Page,
+  QuoteKind,
+  QuoteRequest,
+  UploadedMetadata,
 } from './types.js';
 
-export interface HttpApiOptions { baseUrl: string; chainId: number; apiKey?: string; fetch?: typeof fetch; timeoutMs?: number; onWarning?: (message: string) => void }
+export interface HttpApiOptions {
+  baseUrl: string;
+  chainId: number;
+  apiKey?: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+  onWarning?: (message: string) => void;
+}
 
-interface ErrorBody { error?: { code?: unknown; message?: unknown } }
-interface Answer { body: unknown; headers: Headers }
+interface ErrorBody {
+  error?: { code?: unknown; message?: unknown };
+}
+interface Answer {
+  body: unknown;
+  headers: Headers;
+}
 type Init = { method?: string; json?: unknown; form?: FormData };
 
 /** A response larger than this is refused unread (the largest legitimate answer is a page of actions). */
@@ -24,19 +48,27 @@ const CURSOR = /^[A-Za-z0-9_\-.:=~]+$/;
 const DECIMAL = /^\d{1,78}$/;
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
 
-const bad = (path: string, what: string): MercurifiError => new MercurifiError('API_BAD_RESPONSE', `The API answered ${path} with something unexpected (${what}); it was ignored.`);
+const bad = (path: string, what: string): MercurifiError =>
+  new MercurifiError(
+    'API_BAD_RESPONSE',
+    `The API answered ${path} with something unexpected (${what}); it was ignored.`,
+  );
 
 /** Server text is untrusted: no control or format characters, no URLs, bounded. */
 const cleanText = (value: unknown, max = 200): string => {
   const text = typeof value === 'string' ? value : '';
   // eslint-disable-next-line no-control-regex
-  const plain = text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\p{Cf}+/gu, '');
+  const plain = text
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
+    .replace(/\p{Cf}+/gu, '');
   const chars = Array.from(redactUrlsIn(plain).trim());
   return chars.length > max ? `${chars.slice(0, max).join('')}...` : chars.join('');
 };
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isAddr = (v: unknown): v is Address => typeof v === 'string' && isAddress(v, { strict: false });
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isAddr = (v: unknown): v is Address =>
+  typeof v === 'string' && isAddress(v, { strict: false });
 
 const addressParam = (field: string, value: unknown): string => {
   if (!isAddr(value)) throw new InvalidInputError(field, `${field} is not an address`);
@@ -64,22 +96,46 @@ export class HttpApi implements MercurifiApi {
     } catch {
       throw new InvalidInputError('apiBaseUrl', 'the API base URL is not a valid URL');
     }
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackUrl(o.baseUrl))) throw new InvalidInputError('apiBaseUrl', 'the API base URL must use https (http is allowed for loopback only)');
-    if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') throw new InvalidInputError('apiBaseUrl', 'the API base URL must not carry credentials, a query or a fragment');
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackUrl(o.baseUrl)))
+      throw new InvalidInputError(
+        'apiBaseUrl',
+        'the API base URL must use https (http is allowed for loopback only)',
+      );
+    if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '')
+      throw new InvalidInputError(
+        'apiBaseUrl',
+        'the API base URL must not carry credentials, a query or a fragment',
+      );
     this.baseUrl = `${url.origin}${url.pathname}`.replace(/\/+$/, '');
-    if (!Number.isInteger(o.chainId) || o.chainId < 1) throw new InvalidInputError('chainId', 'chainId must be a positive integer');
+    if (!Number.isInteger(o.chainId) || o.chainId < 1)
+      throw new InvalidInputError('chainId', 'chainId must be a positive integer');
     this.chainId = o.chainId;
-    if (o.apiKey !== undefined && (typeof o.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(o.apiKey))) throw new InvalidInputError('apiKey', "apiKey is malformed: expected 1-256 letters, digits, '_' or '-' (check for a stray newline or space)");
+    if (
+      o.apiKey !== undefined &&
+      (typeof o.apiKey !== 'string' || !/^[A-Za-z0-9_-]{1,256}$/.test(o.apiKey))
+    )
+      throw new InvalidInputError(
+        'apiKey',
+        "apiKey is malformed: expected 1-256 letters, digits, '_' or '-' (check for a stray newline or space)",
+      );
     this.#apiKey = o.apiKey;
     this.#fetch = o.fetch ?? globalThis.fetch.bind(globalThis);
     const timeoutMs = o.timeoutMs ?? 15_000;
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new InvalidInputError('timeoutMs', 'timeoutMs must be a positive integer (milliseconds)');
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1)
+      throw new InvalidInputError(
+        'timeoutMs',
+        'timeoutMs must be a positive integer (milliseconds)',
+      );
     this.#timeoutMs = timeoutMs;
     this.#warn = o.onWarning ?? (() => undefined);
   }
 
   toJSON(): Record<string, unknown> {
-    return { baseUrl: this.baseUrl, chainId: this.chainId, apiKey: this.#apiKey === undefined ? null : '[redacted]' };
+    return {
+      baseUrl: this.baseUrl,
+      chainId: this.chainId,
+      apiKey: this.#apiKey === undefined ? null : '[redacted]',
+    };
   }
 
   [INSPECT](): string {
@@ -92,7 +148,12 @@ export class HttpApi implements MercurifiApi {
   }
 
   private headers(extra: Record<string, string> = {}): Record<string, string> {
-    return { Accept: 'application/json', 'Accept-Encoding': 'identity', ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }), ...extra };
+    return {
+      Accept: 'application/json',
+      'Accept-Encoding': 'identity',
+      ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }),
+      ...extra,
+    };
   }
 
   private async readBody(response: Response, path: string): Promise<string> {
@@ -131,7 +192,9 @@ export class HttpApi implements MercurifiApi {
     try {
       const response = await this.#fetch(`${this.baseUrl}${path}`, {
         method: init.method ?? 'GET',
-        headers: this.headers(init.json === undefined ? {} : { 'Content-Type': 'application/json' }),
+        headers: this.headers(
+          init.json === undefined ? {} : { 'Content-Type': 'application/json' },
+        ),
         body: init.form ?? (init.json === undefined ? undefined : JSON.stringify(init.json)),
         redirect: 'error',
         signal: controller.signal,
@@ -147,17 +210,39 @@ export class HttpApi implements MercurifiApi {
         const e = isObject(body) ? (body as ErrorBody).error : undefined;
         // A server (or a proxy in front of it) may echo the request headers: the key is cut from its words before anything else.
         const rawCode = isObject(e) && typeof e.code === 'string' ? e.code : '';
-        const code = /^[a-z0-9_.-]{1,64}$/i.test(rawCode) && this.keyless(rawCode) === rawCode ? rawCode : 'http_error';
-        const said = isObject(e) && typeof e.message === 'string' ? cleanText(this.keyless(e.message)) : '';
+        const code =
+          /^[a-z0-9_.-]{1,64}$/i.test(rawCode) && this.keyless(rawCode) === rawCode
+            ? rawCode
+            : 'http_error';
+        const said =
+          isObject(e) && typeof e.message === 'string' ? cleanText(this.keyless(e.message)) : '';
         const message = said !== '' ? said : `HTTP ${response.status} from ${path}`;
         const retry = Number(response.headers.get('Retry-After'));
-        throw new ApiError(response.status, code, message, Number.isFinite(retry) && retry > 0 ? Math.min(retry, 3600) : null);
+        throw new ApiError(
+          response.status,
+          code,
+          message,
+          Number.isFinite(retry) && retry > 0 ? Math.min(retry, 3600) : null,
+        );
       }
       return { body, headers: response.headers };
     } catch (error) {
       if (error instanceof MercurifiError) throw error;
-      const reason = timedOut ? `timed out after ${this.#timeoutMs} ms` : redactUrlsIn(String((error as { shortMessage?: string }).shortMessage ?? (error as Error)?.message ?? 'unknown error')).split('\n')[0];
-      throw new ApiError(0, timedOut ? 'timeout' : 'network', `Request to ${path} failed: ${cleanText(this.keyless(String(reason)))}`, null);
+      const reason = timedOut
+        ? `timed out after ${this.#timeoutMs} ms`
+        : redactUrlsIn(
+            String(
+              (error as { shortMessage?: string }).shortMessage ??
+                (error as Error)?.message ??
+                'unknown error',
+            ),
+          ).split('\n')[0];
+      throw new ApiError(
+        0,
+        timedOut ? 'timeout' : 'network',
+        `Request to ${path} failed: ${cleanText(this.keyless(String(reason)))}`,
+        null,
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -168,7 +253,11 @@ export class HttpApi implements MercurifiApi {
   }
 
   /** A list endpoint: a JSON array, with the next page's cursor in the Next-Cursor header. */
-  private async page<T>(path: string, item: (v: unknown) => v is T, sent?: string): Promise<Page<T>> {
+  private async page<T>(
+    path: string,
+    item: (v: unknown) => v is T,
+    sent?: string,
+  ): Promise<Page<T>> {
     const { body, headers } = await this.send(path);
     if (!Array.isArray(body)) throw bad(path, 'not a list');
     if (body.length > MAX_ITEMS) throw bad(path, 'too many items');
@@ -184,8 +273,10 @@ export class HttpApi implements MercurifiApi {
     const a = addressParam('account', account);
     const path = `/v1/agent-accounts/${a}${opts.live === true ? '?live=1' : ''}`;
     const body = await this.request(path);
-    if (!isObject(body) || !isAddr(body.account) || body.account.toLowerCase() !== a) throw bad(path, 'not the requested account');
-    for (const k of ['owner', 'referrer', 'factory'] as const) if (body[k] !== undefined && !isAddr(body[k])) throw bad(path, `${k} is not an address`);
+    if (!isObject(body) || !isAddr(body.account) || body.account.toLowerCase() !== a)
+      throw bad(path, 'not the requested account');
+    for (const k of ['owner', 'referrer', 'factory'] as const)
+      if (body[k] !== undefined && !isAddr(body[k])) throw bad(path, `${k} is not an address`);
     return body as unknown as ApiAccount;
   }
 
@@ -197,24 +288,38 @@ export class HttpApi implements MercurifiApi {
     for (let pages = 0; pages < MAX_LIST_PAGES; pages++) {
       const page = await this.page<ApiAccountSummary>(
         cursor === undefined ? base : `${base}&cursor=${encodeURIComponent(cursor)}`,
-        (v): v is ApiAccountSummary => isObject(v) && isAddr(v.account) && (v.owner === undefined || isAddr(v.owner)), cursor,
+        (v): v is ApiAccountSummary =>
+          isObject(v) && isAddr(v.account) && (v.owner === undefined || isAddr(v.owner)),
+        cursor,
       );
       out.push(...page.items);
       if (page.nextCursor === null) return out;
       cursor = page.nextCursor;
     }
-    this.#warn(`The account list was cut off after ${MAX_LIST_PAGES} pages; more accounts exist than were returned.`);
+    this.#warn(
+      `The account list was cut off after ${MAX_LIST_PAGES} pages; more accounts exist than were returned.`,
+    );
     return out;
   }
 
   async listActions(account: Address, cursor?: string): Promise<Page<ApiAction>> {
-    if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > MAX_CURSOR || !CURSOR.test(cursor))) throw new InvalidInputError('cursor', 'cursor is not one the API issued');
+    if (
+      cursor !== undefined &&
+      (typeof cursor !== 'string' || cursor.length > MAX_CURSOR || !CURSOR.test(cursor))
+    )
+      throw new InvalidInputError('cursor', 'cursor is not one the API issued');
     const q = cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`;
-    return await this.page<ApiAction>(`/v1/agent-accounts/${addressParam('account', account)}/actions${q}`, (v): v is ApiAction => isObject(v) && typeof v.id === 'string' && (v.token === undefined || isAddr(v.token)), cursor);
+    return await this.page<ApiAction>(
+      `/v1/agent-accounts/${addressParam('account', account)}/actions${q}`,
+      (v): v is ApiAction =>
+        isObject(v) && typeof v.id === 'string' && (v.token === undefined || isAddr(v.token)),
+      cursor,
+    );
   }
 
   async quote(kind: QuoteKind, body: QuoteRequest): Promise<ApiQuote> {
-    if (kind !== 'curve-buy' && kind !== 'curve-sell' && kind !== 'pool-swap') throw new InvalidInputError('kind', 'unknown quote kind');
+    if (kind !== 'curve-buy' && kind !== 'curve-sell' && kind !== 'pool-swap')
+      throw new InvalidInputError('kind', 'unknown quote kind');
     const path = `/v1/quote/${kind}`;
     const answer = await this.request(path, { method: 'POST', json: body });
     if (!isObject(answer) || answer.advisory !== true) throw bad(path, 'not an advisory quote');
@@ -224,9 +329,25 @@ export class HttpApi implements MercurifiApi {
   async buildTx(body: BuildRequest): Promise<BuiltTx> {
     const path = '/v1/tx/build';
     const r = await this.request(path, { method: 'POST', json: body });
-    if (!isObject(r) || !Number.isSafeInteger(r.chainId) || !isAddr(r.to) || !isHex(r.data) || typeof r.value !== 'string' || !DECIMAL.test(r.value)) throw bad(path, 'not a transaction');
-    if (r.selector !== undefined && !(isHex(r.selector) && r.selector.length === 10)) throw bad(path, 'bad selector');
-    return { chainId: r.chainId as number, to: r.to, data: r.data as Hex, value: r.value, ...(typeof r.function === 'string' ? { function: cleanText(r.function, 64) } : {}), ...(r.selector === undefined ? {} : { selector: r.selector as Hex }) };
+    if (
+      !isObject(r) ||
+      !Number.isSafeInteger(r.chainId) ||
+      !isAddr(r.to) ||
+      !isHex(r.data) ||
+      typeof r.value !== 'string' ||
+      !DECIMAL.test(r.value)
+    )
+      throw bad(path, 'not a transaction');
+    if (r.selector !== undefined && !(isHex(r.selector) && r.selector.length === 10))
+      throw bad(path, 'bad selector');
+    return {
+      chainId: r.chainId as number,
+      to: r.to,
+      data: r.data as Hex,
+      value: r.value,
+      ...(typeof r.function === 'string' ? { function: cleanText(r.function, 64) } : {}),
+      ...(r.selector === undefined ? {} : { selector: r.selector as Hex }),
+    };
   }
 
   async uploadLaunchMetadata(meta: LaunchMetadata, image?: ImageUpload): Promise<UploadedMetadata> {
@@ -234,12 +355,18 @@ export class HttpApi implements MercurifiApi {
     const form = new FormData();
     form.append('metadata', JSON.stringify(meta));
     if (image !== undefined) {
-      if (image.contentType !== 'image/png' && image.contentType !== 'image/jpeg') throw new InvalidInputError('image', 'image must be image/png or image/jpeg');
-      form.append('file', new Blob([image.bytes as unknown as ArrayBuffer], { type: image.contentType }), image.filename ?? (image.contentType === 'image/png' ? 'image.png' : 'image.jpg'));
+      if (image.contentType !== 'image/png' && image.contentType !== 'image/jpeg')
+        throw new InvalidInputError('image', 'image must be image/png or image/jpeg');
+      form.append(
+        'file',
+        new Blob([image.bytes as unknown as ArrayBuffer], { type: image.contentType }),
+        image.filename ?? (image.contentType === 'image/png' ? 'image.png' : 'image.jpg'),
+      );
     }
     const r = await this.request(path, { method: 'POST', form });
     if (!isObject(r) || typeof r.metadataURI !== 'string') throw bad(path, 'no metadata URI');
-    if (r.imageStatus !== undefined && r.imageStatus !== 'clean' && r.imageStatus !== 'review') throw bad(path, 'unknown image status');
+    if (r.imageStatus !== undefined && r.imageStatus !== 'clean' && r.imageStatus !== 'review')
+      throw bad(path, 'unknown image status');
     return { metadataURI: r.metadataURI, imageStatus: r.imageStatus ?? null };
   }
 
@@ -248,12 +375,16 @@ export class HttpApi implements MercurifiApi {
     const path = `/v1/tokens/${t}`;
     const r = await this.request(path);
     if (r === null || r === undefined) return null;
-    if (!isObject(r) || !isAddr(r.address) || r.address.toLowerCase() !== t) throw bad(path, 'not the requested token');
+    if (!isObject(r) || !isAddr(r.address) || r.address.toLowerCase() !== t)
+      throw bad(path, 'not the requested token');
     return r as unknown as ApiToken;
   }
 
   /** The returned headers contain the API key: pass them to the stream client and never log or serialise this object. */
   streamRequest(topics: readonly string[]): { url: string; headers: Record<string, string> } {
-    return { url: `${this.baseUrl}/v1/stream?topics=${topics.map((t) => encodeURIComponent(t)).join(',')}`, headers: this.headers() };
+    return {
+      url: `${this.baseUrl}/v1/stream?topics=${topics.map((t) => encodeURIComponent(t)).join(',')}`,
+      headers: this.headers(),
+    };
   }
 }

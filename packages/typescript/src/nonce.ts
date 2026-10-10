@@ -15,7 +15,9 @@ export class NonceManager {
     const key = address.toLowerCase();
     const previous = this.tails.get(key) ?? Promise.resolve();
     let release: () => void = () => undefined;
-    const mine = new Promise<void>((resolve) => { release = resolve; });
+    const mine = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const tail = previous.then(() => mine);
     this.tails.set(key, tail);
     await previous;

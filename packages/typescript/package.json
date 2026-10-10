@@ -1,6 +1,6 @@
 {
   "name": "@mercurifi/sdk",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "TypeScript SDK for Mercurifi Agent Accounts on Arc",
   "license": "MIT",
   "repository": {
@@ -40,6 +40,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json && node scripts/write-dist-package-json.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "prettier --write --ignore-path ../../.prettierignore ../..",
+    "format:check": "prettier --check --ignore-path ../../.prettierignore ../..",
     "test": "vitest run",
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "check:package": "node scripts/check-package.mjs",
@@ -51,6 +53,7 @@
   },
   "devDependencies": {
     "@types/node": "22.15.3",
+    "prettier": "3.9.9",
     "typescript": "5.8.3",
     "vitest": "3.2.7"
   }

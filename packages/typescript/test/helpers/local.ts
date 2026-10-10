@@ -18,10 +18,24 @@ export const OWNER_KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4
 export const AGENT_KEY = '0x5de4111afa1a4b94908f83536b1543d1e1b8f8a8b9a5c5e7a5e0d0ff0a0b0c0d';
 
 export const localJson = (over: Partial<LocalBookJson> = {}): LocalBookJson => ({
-  chainId: 31337, launchFactory: A(1), feeManager: A(2), graduationManager: A(3), launchHook: A(4), poolManager: A(5),
-  permit2: A(6), universalRouter: A(7), v4Quoter: A(8), usdc: '0x3600000000000000000000000000000000000000',
-  agentFactory: A(9), agentImplementation: A(10), agentRegistry: REGISTRY, agentFactoryCodeHash: keccak256(FACTORY_CODE),
-  agentImplementationCodeHash: keccak256(IMPL_CODE), agentRegistryCodeHash: keccak256(REGISTRY_CODE), deployBlock: 1, ...over,
+  chainId: 31337,
+  launchFactory: A(1),
+  feeManager: A(2),
+  graduationManager: A(3),
+  launchHook: A(4),
+  poolManager: A(5),
+  permit2: A(6),
+  universalRouter: A(7),
+  v4Quoter: A(8),
+  usdc: '0x3600000000000000000000000000000000000000',
+  agentFactory: A(9),
+  agentImplementation: A(10),
+  agentRegistry: REGISTRY,
+  agentFactoryCodeHash: keccak256(FACTORY_CODE),
+  agentImplementationCodeHash: keccak256(IMPL_CODE),
+  agentRegistryCodeHash: keccak256(REGISTRY_CODE),
+  deployBlock: 1,
+  ...over,
 });
 
 /** A MockRpc that passes start-up verification of the local book. */
@@ -36,5 +50,15 @@ export const localRpc = (): MockRpc => {
   return rpc;
 };
 
-export const localClient = (rpc: MockRpc, over: Partial<CreateClientOptions> = {}): Promise<MercurifiClient> =>
-  createClient({ network: localNetwork(localJson()), rpcUrl: 'http://127.0.0.1:8545', transport: rpc.transport(), pollMs: 1, onWarning: () => undefined, ...over });
+export const localClient = (
+  rpc: MockRpc,
+  over: Partial<CreateClientOptions> = {},
+): Promise<MercurifiClient> =>
+  createClient({
+    network: localNetwork(localJson()),
+    rpcUrl: 'http://127.0.0.1:8545',
+    transport: rpc.transport(),
+    pollMs: 1,
+    onWarning: () => undefined,
+    ...over,
+  });

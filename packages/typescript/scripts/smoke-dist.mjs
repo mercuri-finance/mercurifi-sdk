@@ -2,7 +2,15 @@
 import { readFileSync } from 'node:fs';
 import * as sdk from '@mercurifi/sdk';
 
-for (const name of ['createClient', 'localKey', 'generateAgentKey', 'decodeRevert', 'verifyBuiltTx', 'openStream', 'wrapUntrusted']) {
+for (const name of [
+  'createClient',
+  'localKey',
+  'generateAgentKey',
+  'decodeRevert',
+  'verifyBuiltTx',
+  'openStream',
+  'wrapUntrusted',
+]) {
   if (typeof sdk[name] !== 'function') {
     console.error(`ESM build is missing ${name}`);
     process.exit(1);

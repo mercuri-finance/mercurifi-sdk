@@ -6,10 +6,18 @@ import { redactUrl } from './redact.js';
  * here): validate it before use and never feed it to an LLM unfiltered. A `reset` event means "refetch over HTTP, you
  * may have missed events"; it also arrives about every 30 minutes by design, when the server recycles the connection.
  */
-export interface StreamEvent { id: string | null; type: string; data: unknown }
+export interface StreamEvent {
+  id: string | null;
+  type: string;
+  data: unknown;
+}
 
 /** Passed to `onReconnect` before each wait. `reason` is a fixed, redacted label: it never contains the URL or the key. */
-export interface ReconnectInfo { attempt: number; delayMs: number; reason: string }
+export interface ReconnectInfo {
+  attempt: number;
+  delayMs: number;
+  reason: string;
+}
 
 export interface StreamOptions {
   signal?: AbortSignal;
@@ -34,7 +42,8 @@ export interface StreamOptions {
   now?: () => number;
 }
 
-const PUBLIC_TOPIC = /^(head|trades|launches|governance|pools|pool-trades|(token|trader|agent-account):0x[0-9a-f]{40}|pool:0x[0-9a-f]{64})$/;
+const PUBLIC_TOPIC =
+  /^(head|trades|launches|governance|pools|pool-trades|(token|trader|agent-account):0x[0-9a-f]{40}|pool:0x[0-9a-f]{64})$/;
 
 /** Limits on untrusted input. The server's own events are far smaller. */
 const MAX_LINE_CHARS = 64 * 1024; // one line, and so the unterminated tail kept between chunks
@@ -45,30 +54,48 @@ const MAX_RETRY_AFTER_MS = 300_000;
 const EVENT_ID = /^[0-9A-Za-z._:-]+$/;
 const EVENT_TYPE = /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/;
 
-const validId = (id: string): boolean => id.length > 0 && id.length <= MAX_ID_CHARS && EVENT_ID.test(id);
+const validId = (id: string): boolean =>
+  id.length > 0 && id.length <= MAX_ID_CHARS && EVENT_ID.test(id);
 
 /**
  * The server's topic rules plus `agent-account:0x…`; `account:` is reserved
  * (docs/architecture/api.md) and private topics need a browser session. Event type strings are passed through.
  */
 export const validateTopics = (topics: readonly string[]): string[] => {
-  if (!Array.isArray(topics) || topics.length === 0 || topics.length > 20) throw new InvalidInputError('topics', 'subscribe to 1 to at most 20 topics');
+  if (!Array.isArray(topics) || topics.length === 0 || topics.length > 20)
+    throw new InvalidInputError('topics', 'subscribe to 1 to at most 20 topics');
   return topics.map((raw) => {
     if (typeof raw !== 'string') throw new InvalidInputError('topics', 'a topic must be a string');
     const t = raw.trim().toLowerCase();
-    if (t === 'orders' || t === 'follows') throw new InvalidInputError('topics', `${t} is private and needs a browser session`);
-    if (t.startsWith('account:')) throw new InvalidInputError('topics', 'account: is reserved; use agent-account:0x… for an agent account');
-    if (!PUBLIC_TOPIC.test(t)) throw new InvalidInputError('topics', `unknown topic ${raw.slice(0, 80)}`);
+    if (t === 'orders' || t === 'follows')
+      throw new InvalidInputError('topics', `${t} is private and needs a browser session`);
+    if (t.startsWith('account:'))
+      throw new InvalidInputError(
+        'topics',
+        'account: is reserved; use agent-account:0x… for an agent account',
+      );
+    if (!PUBLIC_TOPIC.test(t))
+      throw new InvalidInputError('topics', `unknown topic ${raw.slice(0, 80)}`);
     return t;
   });
 };
 
-interface RawEvent { id: string | null; event: string | null; data: string; retry: number | null }
+interface RawEvent {
+  id: string | null;
+  event: string | null;
+  data: string;
+  retry: number | null;
+}
 
-const tooLarge = (what: string) => new StreamError(`The stream sent ${what} over the size limit; the connection was dropped.`, null);
+const tooLarge = (what: string) =>
+  new StreamError(`The stream sent ${what} over the size limit; the connection was dropped.`, null);
 
 /** Parses an SSE body. Oversized lines or events throw a StreamError instead of growing without bound. */
-async function* parseSse(stream: ReadableStream<Uint8Array>, beforeRead: () => void, afterRead: () => void): AsyncGenerator<RawEvent> {
+async function* parseSse(
+  stream: ReadableStream<Uint8Array>,
+  beforeRead: () => void,
+  afterRead: () => void,
+): AsyncGenerator<RawEvent> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -161,18 +188,24 @@ const abortableSleep = (ms: number, signal: AbortSignal | undefined): Promise<vo
  * otherwise retries forever. The request carries the API key: nothing here logs it, error messages name the host only
  * and `onReconnect` reasons are fixed labels.
  */
-export async function* openStream(request: { url: string; headers: Record<string, string> }, o: StreamOptions = {}): AsyncGenerator<StreamEvent> {
-  if (o.lastEventId !== undefined && !validId(o.lastEventId)) throw new InvalidInputError('lastEventId', 'not a valid stream event id');
+export async function* openStream(
+  request: { url: string; headers: Record<string, string> },
+  o: StreamOptions = {},
+): AsyncGenerator<StreamEvent> {
+  if (o.lastEventId !== undefined && !validId(o.lastEventId))
+    throw new InvalidInputError('lastEventId', 'not a valid stream event id');
   const fetchImpl = o.fetch ?? globalThis.fetch.bind(globalThis);
   const sleepFn = o.sleep;
-  const sleep = (ms: number): Promise<void> => (sleepFn === undefined ? abortableSleep(ms, o.signal) : sleepFn(ms));
+  const sleep = (ms: number): Promise<void> =>
+    sleepFn === undefined ? abortableSleep(ms, o.signal) : sleepFn(ms);
   const random = o.random ?? Math.random;
   const now = o.now ?? (() => performance.now()); // monotonic: a wall-clock step cannot fake or hide a healthy connection
   const min = Math.max(1, o.minBackoffMs ?? 500);
   const max = Math.max(min, o.maxBackoffMs ?? 30_000);
   const idleMs = o.idleTimeoutMs ?? 45_000;
   const healthyMs = o.healthyAfterMs ?? 10_000;
-  const backoff = (n: number) => Math.round(Math.min(max, min * 2 ** Math.min(n, 30)) * (0.5 + random() / 2));
+  const backoff = (n: number) =>
+    Math.round(Math.min(max, min * 2 ** Math.min(n, 30)) * (0.5 + random() / 2));
   const jitterUp = (ms: number) => Math.round(ms * (1 + random() / 2)); // server hints are minimums: only ever lengthen them
   const host = redactUrl(request.url);
   const aborted = () => o.signal?.aborted === true;
@@ -200,7 +233,11 @@ export async function* openStream(request: { url: string; headers: Record<string
     // Armed only while waiting on the network, so a slow consumer never looks like a silent server.
     const arm = () => {
       disarm();
-      if (idleMs > 0) idle = setTimeout(() => { idleFired = true; conn.abort(); }, idleMs);
+      if (idleMs > 0)
+        idle = setTimeout(() => {
+          idleFired = true;
+          conn.abort();
+        }, idleMs);
     };
     const disarm = () => {
       if (idle !== undefined) clearTimeout(idle);
@@ -212,7 +249,11 @@ export async function* openStream(request: { url: string; headers: Record<string
       try {
         arm();
         response = await fetchImpl(request.url, {
-          headers: { ...request.headers, Accept: 'text/event-stream', ...(lastId === null ? {} : { 'Last-Event-ID': lastId }) },
+          headers: {
+            ...request.headers,
+            Accept: 'text/event-stream',
+            ...(lastId === null ? {} : { 'Last-Event-ID': lastId }),
+          },
           redirect: 'manual', // never forward the API key to a redirect target
           signal: conn.signal,
         });
@@ -231,7 +272,10 @@ export async function* openStream(request: { url: string; headers: Record<string
         const retryAfter = Number(response.headers.get('Retry-After'));
         await response.body?.cancel().catch(() => undefined);
         const own = backoff(attempt);
-        const hinted = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(jitterUp(retryAfter * 1000), MAX_RETRY_AFTER_MS) : 0;
+        const hinted =
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(jitterUp(retryAfter * 1000), MAX_RETRY_AFTER_MS)
+            : 0;
         const delay = Math.max(own, hinted);
         attempt++;
         notify(`HTTP ${response.status}`, delay);
@@ -241,7 +285,10 @@ export async function* openStream(request: { url: string; headers: Record<string
       }
       if (!response.ok || response.body === null) {
         await response.body?.cancel().catch(() => undefined);
-        throw new StreamError(`The stream at ${host} was refused with HTTP ${response.status}.`, response.status);
+        throw new StreamError(
+          `The stream at ${host} was refused with HTTP ${response.status}.`,
+          response.status,
+        );
       }
 
       let retryMs: number | null = null;

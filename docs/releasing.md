@@ -22,8 +22,8 @@ npm needs a package to exist before a trusted publisher can be configured, so th
 
 ## Accepted advisories
 
-| Advisory | Package | Tree | Why accepted | Revisit |
-|---|---|---|---|---|
+| Advisory            | Package                               | Tree                                   | Why accepted                                                                                                                         | Revisit                                           |
+| ------------------- | ------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
 | GHSA-82fw-gwwq-j7x9 | `@vitest/mocker` (via `vitest` 3.2.7) | dev only; not in the published package | the fix needs vitest 4.x, a major upgrade of the test runner; nothing in it reaches users, and CI never runs untrusted code under it | at the vitest 4 upgrade, and before every release |
 
 CI and the npm release workflow run `npm audit --omit=dev --audit-level=high`, so any advisory in the runtime tree (viem and its dependencies) fails the build. A dev-tree advisory is added here, with a reason and a revisit point, or fixed.

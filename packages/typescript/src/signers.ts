@@ -1,6 +1,12 @@
 import {
-  hexToBigInt, isAddressEqual, keccak256, recoverTransactionAddress, serializeTransaction,
-  type Address, type Hex, type TransactionSerializableEIP1559,
+  hexToBigInt,
+  isAddressEqual,
+  keccak256,
+  recoverTransactionAddress,
+  serializeTransaction,
+  type Address,
+  type Hex,
+  type TransactionSerializableEIP1559,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 
@@ -19,8 +25,14 @@ const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 const HALF_N = N / 2n;
 
 const redacted = (signer: Signer, kind: string): Signer => {
-  Object.defineProperty(signer, 'toJSON', { value: () => ({ type: kind, address: signer.address }), enumerable: false });
-  Object.defineProperty(signer, INSPECT, { value: () => `${kind}(${signer.address})`, enumerable: false });
+  Object.defineProperty(signer, 'toJSON', {
+    value: () => ({ type: kind, address: signer.address }),
+    enumerable: false,
+  });
+  Object.defineProperty(signer, INSPECT, {
+    value: () => `${kind}(${signer.address})`,
+    enumerable: false,
+  });
   return Object.freeze(signer);
 };
 
@@ -31,17 +43,25 @@ const redacted = (signer: Signer, kind: string): Signer => {
  * @throws {InvalidInputError} for non-string input or anything but a valid 32-byte hex key
  */
 export const localKey = (privateKey: string): Signer => {
-  if (typeof privateKey !== 'string') throw new InvalidInputError('privateKey', 'expected a 32-byte hex private key as a string');
+  if (typeof privateKey !== 'string')
+    throw new InvalidInputError('privateKey', 'expected a 32-byte hex private key as a string');
   const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-  if (!KEY_PATTERN.test(key)) throw new InvalidInputError('privateKey', 'expected a 32-byte hex private key');
+  if (!KEY_PATTERN.test(key))
+    throw new InvalidInputError('privateKey', 'expected a 32-byte hex private key');
   let account: ReturnType<typeof privateKeyToAccount>;
   try {
     account = privateKeyToAccount(key as Hex);
   } catch {
     // Deliberately drop the cause: viem's message must never be able to carry key material.
-    throw new InvalidInputError('privateKey', 'the value is not a valid secp256k1 private key (32-byte hex, non-zero, below the curve order)');
+    throw new InvalidInputError(
+      'privateKey',
+      'the value is not a valid secp256k1 private key (32-byte hex, non-zero, below the curve order)',
+    );
   }
-  return redacted({ address: account.address, signTransaction: (tx) => account.signTransaction(tx) }, 'LocalKeySigner');
+  return redacted(
+    { address: account.address, signTransaction: (tx) => account.signTransaction(tx) },
+    'LocalKeySigner',
+  );
 };
 
 /**
@@ -61,7 +81,10 @@ export const generateAgentKey = (): AgentKey => {
   const out = { address } as { address: Address };
   Object.defineProperty(out, 'privateKey', { get: () => privateKey, enumerable: false });
   Object.defineProperty(out, 'exportPrivateKey', { value: () => privateKey, enumerable: false });
-  Object.defineProperty(out, 'toJSON', { value: () => ({ type: 'AgentKey', address }), enumerable: false });
+  Object.defineProperty(out, 'toJSON', {
+    value: () => ({ type: 'AgentKey', address }),
+    enumerable: false,
+  });
   Object.defineProperty(out, INSPECT, { value: () => `AgentKey(${address})`, enumerable: false });
   return Object.freeze(out) as AgentKey;
 };
@@ -76,7 +99,8 @@ export interface KmsAdapter {
 }
 
 const word = (v: bigint): Hex => `0x${v.toString(16).padStart(64, '0')}`;
-const mismatch = (message: string): MercurifiError => new MercurifiError('KMS_SIGNATURE_MISMATCH', message);
+const mismatch = (message: string): MercurifiError =>
+  new MercurifiError('KMS_SIGNATURE_MISMATCH', message);
 
 /** Wraps a KmsAdapter; every signature is recovered and checked against the adapter's address. */
 export const kmsSigner = (adapter: KmsAdapter): Signer => {
@@ -94,19 +118,25 @@ export const kmsSigner = (adapter: KmsAdapter): Signer => {
         } catch {
           throw mismatch('The KMS signature has a malformed r or s.');
         }
-        if (r <= 0n || r >= N || s <= 0n || s >= N) throw mismatch('The KMS signature has an r or s outside 1..n-1.');
+        if (r <= 0n || r >= N || s <= 0n || s >= N)
+          throw mismatch('The KMS signature has an r or s outside 1..n-1.');
         let given: 0 | 1 | undefined = signature.yParity;
-        if (given !== undefined && given !== 0 && given !== 1) throw mismatch('The KMS signature has an invalid yParity.');
+        if (given !== undefined && given !== 0 && given !== 1)
+          throw mismatch('The KMS signature has an invalid yParity.');
         if (s > HALF_N) {
           s = N - s;
           if (given !== undefined) given = given === 0 ? 1 : 0;
         }
         for (const parity of given === undefined ? ([0, 1] as const) : ([given] as const)) {
           const raw = serializeTransaction(tx, { r: word(r), s: word(s), yParity: parity });
-          const recovered = await recoverTransactionAddress({ serializedTransaction: raw as never }).catch(() => undefined);
+          const recovered = await recoverTransactionAddress({
+            serializedTransaction: raw as never,
+          }).catch(() => undefined);
           if (recovered !== undefined && isAddressEqual(recovered, address)) return raw;
         }
-        throw mismatch('The KMS signature does not recover to the configured address (wrong key or wrong digest).');
+        throw mismatch(
+          'The KMS signature does not recover to the configured address (wrong key or wrong digest).',
+        );
       },
     },
     'KmsSigner',

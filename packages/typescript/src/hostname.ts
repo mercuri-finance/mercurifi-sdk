@@ -9,11 +9,17 @@ const IPV4_PART = /^(?:0|[1-9][0-9]{0,2})$/;
 
 /** RFC 3492 decode of the part after `xn--`; null when it is not valid punycode. */
 export const punycodeDecode = (input: string): string | null => {
-  const base = 36, tMin = 1, tMax = 26, skew = 38, damp = 700;
+  const base = 36,
+    tMin = 1,
+    tMax = 26,
+    skew = 38,
+    damp = 700;
   if (!/^[A-Za-z0-9-]*$/.test(input)) return null;
   const cut = input.lastIndexOf('-');
   const out: number[] = cut > 0 ? Array.from(input.slice(0, cut), (c) => c.charCodeAt(0)) : [];
-  let n = 128, i = 0, bias = 72;
+  let n = 128,
+    i = 0,
+    bias = 72;
   const adapt = (delta: number, points: number, first: boolean): number => {
     let d = first ? Math.floor(delta / damp) : delta >> 1;
     d += Math.floor(d / points);
@@ -24,7 +30,8 @@ export const punycodeDecode = (input: string): string | null => {
     }
     return k + Math.floor(((base - tMin + 1) * d) / (d + skew));
   };
-  const digit = (c: number): number => (c - 48 < 10 ? c - 22 : c - 65 < 26 ? c - 65 : c - 97 < 26 ? c - 97 : base);
+  const digit = (c: number): number =>
+    c - 48 < 10 ? c - 22 : c - 65 < 26 ? c - 65 : c - 97 < 26 ? c - 97 : base;
   for (let p = cut > 0 ? cut + 1 : 0; p < input.length;) {
     const oldi = i;
     for (let w = 1, k = base; ; k += base) {
@@ -53,7 +60,13 @@ export const punycodeDecode = (input: string): string | null => {
 const punycodeLabelOk = (label: string): boolean => {
   if (!/^xn--/i.test(label)) return true;
   const decoded = punycodeDecode(label.slice(4));
-  return decoded !== null && decoded !== '' && /[^\x00-\x7f]/.test(decoded) && /^[\p{L}\p{M}\p{N}-]+$/u.test(decoded) && decoded.normalize('NFC') === decoded;
+  return (
+    decoded !== null &&
+    decoded !== '' &&
+    /[^\x00-\x7f]/.test(decoded) &&
+    /^[\p{L}\p{M}\p{N}-]+$/u.test(decoded) &&
+    decoded.normalize('NFC') === decoded
+  );
 };
 
 /**

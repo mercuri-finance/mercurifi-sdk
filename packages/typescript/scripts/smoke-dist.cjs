@@ -3,7 +3,15 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const sdk = require('@mercurifi/sdk');
 
-for (const name of ['createClient', 'localKey', 'generateAgentKey', 'decodeRevert', 'verifyBuiltTx', 'openStream', 'wrapUntrusted']) {
+for (const name of [
+  'createClient',
+  'localKey',
+  'generateAgentKey',
+  'decodeRevert',
+  'verifyBuiltTx',
+  'openStream',
+  'wrapUntrusted',
+]) {
   if (typeof sdk[name] !== 'function') {
     console.error(`CJS build is missing ${name}`);
     process.exit(1);

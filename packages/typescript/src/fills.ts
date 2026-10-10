@@ -37,34 +37,80 @@ export interface ReceiptLike {
 }
 
 /** AgentAction is emitted by the account itself (not the registry); a sweep also emits AccountWithdrawn, which is ignored here. */
-export const fillFromReceipt = (receipt: ReceiptLike, account: Address, launchFactory: Address): Fill => {
+export const fillFromReceipt = (
+  receipt: ReceiptLike,
+  account: Address,
+  launchFactory: Address,
+): Fill => {
   const own = receipt.logs.filter((l) => isAddressEqual(l.address, account));
-  const actions = parseEventLogs({ abi: agentAccountAbi, eventName: 'AgentAction', logs: own } as never) as unknown as {
-    args: { agent: Address; action: number; token: Address; usdcSpent: bigint; usdcReceived: bigint; tokenDelta: bigint; basisValue: bigint; periodId: bigint };
+  const actions = parseEventLogs({
+    abi: agentAccountAbi,
+    eventName: 'AgentAction',
+    logs: own,
+  } as never) as unknown as {
+    args: {
+      agent: Address;
+      action: number;
+      token: Address;
+      usdcSpent: bigint;
+      usdcReceived: bigint;
+      tokenDelta: bigint;
+      basisValue: bigint;
+      periodId: bigint;
+    };
   }[];
   if (actions.length !== 1) {
-    throw new MercurifiError('FILL_NOT_FOUND', `Expected one AgentAction from ${account} in ${receipt.transactionHash}, found ${actions.length}.`);
+    throw new MercurifiError(
+      'FILL_NOT_FOUND',
+      `Expected one AgentAction from ${account} in ${receipt.transactionHash}, found ${actions.length}.`,
+    );
   }
   const a = actions[0]!.args;
   const action = ACTIONS[Number(a.action)];
-  if (action === undefined) throw new MercurifiError('UNKNOWN_ACTION', `${account} reported an unknown action code ${String(a.action)} in ${receipt.transactionHash}; this SDK version does not know it.`);
+  if (action === undefined)
+    throw new MercurifiError(
+      'UNKNOWN_ACTION',
+      `${account} reported an unknown action code ${String(a.action)} in ${receipt.transactionHash}; this SDK version does not know it.`,
+    );
   const created = parseEventLogs({
-    abi: launchFactoryAbi, eventName: 'TokenCreated', logs: receipt.logs.filter((l) => isAddressEqual(l.address, launchFactory)),
+    abi: launchFactoryAbi,
+    eventName: 'TokenCreated',
+    logs: receipt.logs.filter((l) => isAddressEqual(l.address, launchFactory)),
   } as never) as unknown as { args: { token: Address; curve: Address; creator: Address } }[];
   // A launch must show the factory creating the very token the account reports, with the account as its creator.
-  const made = created.find((c) => isAddressEqual(c.args.token, a.token) && isAddressEqual(c.args.creator, account));
+  const made = created.find(
+    (c) => isAddressEqual(c.args.token, a.token) && isAddressEqual(c.args.creator, account),
+  );
   if (action === 'launch' && made === undefined) {
-    throw new MercurifiError('FILL_NOT_FOUND', `The launch in ${receipt.transactionHash} has no TokenCreated event for ${a.token} created by ${account}.`);
+    throw new MercurifiError(
+      'FILL_NOT_FOUND',
+      `The launch in ${receipt.transactionHash} has no TokenCreated event for ${a.token} created by ${account}.`,
+    );
   }
   const delta = BigInt(a.tokenDelta);
   const abs = delta < 0n ? -delta : delta;
   return {
-    action, account, agent: a.agent, token: a.token,
-    usdcSpent6: BigInt(a.usdcSpent), usdcReceived6: BigInt(a.usdcReceived), basisValue6: BigInt(a.basisValue),
-    tokenDelta: delta, tokensOut: delta > 0n ? delta : 0n, tokensIn: delta < 0n ? -delta : 0n,
-    usdcSpent: formatUsdc6(BigInt(a.usdcSpent)), usdcReceived: formatUsdc6(BigInt(a.usdcReceived)), tokens: formatTokens(abs),
-    periodId: BigInt(a.periodId), txHash: receipt.transactionHash, block: receipt.blockNumber,
-    gasUsed: receipt.gasUsed, gasCostWei: receipt.gasUsed * receipt.effectiveGasPrice,
-    launched: action === 'launch' && made !== undefined ? { token: made.args.token, curve: made.args.curve } : null,
+    action,
+    account,
+    agent: a.agent,
+    token: a.token,
+    usdcSpent6: BigInt(a.usdcSpent),
+    usdcReceived6: BigInt(a.usdcReceived),
+    basisValue6: BigInt(a.basisValue),
+    tokenDelta: delta,
+    tokensOut: delta > 0n ? delta : 0n,
+    tokensIn: delta < 0n ? -delta : 0n,
+    usdcSpent: formatUsdc6(BigInt(a.usdcSpent)),
+    usdcReceived: formatUsdc6(BigInt(a.usdcReceived)),
+    tokens: formatTokens(abs),
+    periodId: BigInt(a.periodId),
+    txHash: receipt.transactionHash,
+    block: receipt.blockNumber,
+    gasUsed: receipt.gasUsed,
+    gasCostWei: receipt.gasUsed * receipt.effectiveGasPrice,
+    launched:
+      action === 'launch' && made !== undefined
+        ? { token: made.args.token, curve: made.args.curve }
+        : null,
   };
 };

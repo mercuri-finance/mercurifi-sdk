@@ -1,7 +1,17 @@
 // scripts/local-chain.sh run against stub anvil / curl / forge binaries in a throwaway root: no node is started and no
 // network is touched. Pins the cleanup scope (only this script's own outputs) and the anvil identity check.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,7 +56,14 @@ function setup() {
   const state = join(root, 'state');
   const bin = join(root, 'bin');
   const contracts = join(root, 'contracts');
-  for (const d of [join(root, 'scripts'), join(root, 'fixtures'), state, join(state, 'real'), bin, join(contracts, 'script')]) {
+  for (const d of [
+    join(root, 'scripts'),
+    join(root, 'fixtures'),
+    state,
+    join(state, 'real'),
+    bin,
+    join(contracts, 'script'),
+  ]) {
     mkdirSync(d, { recursive: true });
   }
   for (const f of ['local-chain.sh', 'stop-local-chain.sh']) {
@@ -56,7 +73,11 @@ function setup() {
   // A process whose command name contains "anvil", so stop-local-chain.sh recognises and kills it.
   // A symlink, not a copy: a copied signed system binary can hang in exit on macOS.
   symlinkSync('/bin/sleep', join(state, 'real', 'anvil'));
-  for (const [name, text] of [['curl', CURL], ['anvil', ANVIL], ['forge', FORGE]] as const) {
+  for (const [name, text] of [
+    ['curl', CURL],
+    ['anvil', ANVIL],
+    ['forge', FORGE],
+  ] as const) {
     writeFileSync(join(bin, name), text);
     chmodSync(join(bin, name), 0o755);
   }
@@ -114,13 +135,19 @@ describe.skipIf(process.platform === 'win32')('scripts/local-chain.sh', () => {
     const r = run(t);
     expect(r.code, r.err).toBe(0);
     expect(existsSync(join(t.root, 'fixtures', 'local-book-59999.json'))).toBe(true);
-    expect(existsSync(join(t.contracts, 'broadcast', 'DeployAgentAccounts.s.sol', '5042002', 'run-latest.json'))).toBe(true);
+    expect(
+      existsSync(
+        join(t.contracts, 'broadcast', 'DeployAgentAccounts.s.sol', '5042002', 'run-latest.json'),
+      ),
+    ).toBe(true);
     expect(existsSync(join(t.contracts, 'broadcast', 'DeployAgentLocal.s.sol'))).toBe(false);
     expect(existsSync(join(t.contracts, 'cache', 'DeployAgentLocal.s.sol'))).toBe(false);
     expect(existsSync(join(t.contracts, 'test-export', 'agent-local-31337.json'))).toBe(false);
     const pid = Number(readFileSync(pidFile(t), 'utf8').trim());
     expect(alive(pid)).toBe(true);
-    const stop = spawnSync('bash', [join(t.root, 'scripts', 'stop-local-chain.sh'), '59999'], { encoding: 'utf8' });
+    const stop = spawnSync('bash', [join(t.root, 'scripts', 'stop-local-chain.sh'), '59999'], {
+      encoding: 'utf8',
+    });
     expect(stop.status).toBe(0);
     expect(existsSync(pidFile(t))).toBe(false);
   });
@@ -133,7 +160,11 @@ describe.skipIf(process.platform === 'win32')('scripts/local-chain.sh', () => {
     const r = run(t, { STUB_FORGE_FAIL: '1' });
     expect(r.code).not.toBe(0);
     expect(existsSync(keep)).toBe(true);
-    expect(existsSync(join(t.contracts, 'broadcast', 'DeployAgentAccounts.s.sol', '5042002', 'run-latest.json'))).toBe(true);
+    expect(
+      existsSync(
+        join(t.contracts, 'broadcast', 'DeployAgentAccounts.s.sol', '5042002', 'run-latest.json'),
+      ),
+    ).toBe(true);
     expect(existsSync(join(t.contracts, 'broadcast', 'DeployAgentLocal.s.sol'))).toBe(false);
     expect(existsSync(pidFile(t))).toBe(false);
   });

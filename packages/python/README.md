@@ -1,10 +1,12 @@
+![Mercurifi Agent Accounts SDK — Your agent trades. Only you withdraw.](https://raw.githubusercontent.com/mercuri-finance/mercurifi-sdk/main/assets/banner-light.png)
+
 # mercurifi
 
 Python SDK for Mercurifi Agent Accounts on Arc: an account that holds USDC and Launch tokens, and agent keys that trade for it inside caps the owner sets.
 
 A stolen agent key can still lose money through bad trades: buying an attacker's token, or selling the account's holdings into a price the attacker pushed down. **That loss is bounded by the account's caps, not prevented.** Per period, the bound is the USDC spend cap plus the sell cap, which is measured at the account's own cost basis. It keeps accruing every period until the key is revoked or expires.
 
-Read [docs/security-model.md](../../docs/security-model.md) before you give a key to a program.
+Read [docs/security-model.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/security-model.md) before you give a key to a program.
 
 **Testnet only.** Agent Accounts are deployed on Arc testnet (chain 5042002; factory `0x6D56A15c25782FF638943A4E81A1eD1ea862C9Bd`, source verified on the explorer and Sourcify). Mainnet agent addresses stay empty until an owner-approved deployment is recorded, and agent operations on mainnet raise `NotDeployedError`. A local chain also works (chain 31337, loopback RPC, a local address book).
 
@@ -28,13 +30,25 @@ from mercurifi import FirstAgent, create_client, generate_agent_key, local_key
 
 async def main() -> None:
     mf = await create_client("testnet")
+
+    # The owner wallet creates the account, funds it and gives the agent key gas.
     owner = mf.owner(local_key(os.environ["OWNER_KEY"]))
-    key = generate_agent_key()  # demo only: a real bot stores the key in a secret manager and reads it at the call site
+
+    # Demo only: a real bot stores the key in a secret manager
+    # and reads it at the call site.
+    key = generate_agent_key()
+
     created = await owner.create_account(first_agent=FirstAgent(key.address))
+
     await owner.deposit(created.account, usdc="20")
+
     await owner.fund_gas(key.address, usdc="0.5")
+
+    # The agent key trades for the account.
     agent = await mf.agent(created.account, local_key(key.export_private_key()))
+
     fill = await agent.buy(sys.argv[1], usdc="5", slippage=0.02)
+
     print(f"bought {fill.tokens} tokens for {fill.usdc_spent} USDC in {fill.tx_hash}")
 
 
@@ -150,7 +164,7 @@ The SDK's HTTP clients (RPC, API and stream) ignore environment proxies, `.netrc
 
 ## Supply chain
 
-Install only `mercurifi` (PyPI) or `@mercurifi/sdk` (npm); see [docs/reserved-names.md](../../docs/reserved-names.md). Before upgrading, verify the release as described in [docs/verify-provenance.md](../../docs/verify-provenance.md): PyPI attestations for this package, npm provenance for the TypeScript one. These checks are inert until publishing is approved.
+Install only `mercurifi` (PyPI) or `@mercurifi/sdk` (npm); see [docs/reserved-names.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/reserved-names.md). Before upgrading, verify the release as described in [docs/verify-provenance.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/verify-provenance.md): PyPI attestations for this package, npm provenance for the TypeScript one. These checks are inert until publishing is approved.
 
 ## ERC-8004 identity (optional)
 
@@ -180,4 +194,4 @@ A Circle wallet can be an account's **owner**, including a Circle Agent Wallet, 
 
 ## More
 
-See the [repository README](../../README.md) and [docs/security-model.md](../../docs/security-model.md).
+See the [repository README](https://github.com/mercuri-finance/mercurifi-sdk#readme) and [docs/security-model.md](https://github.com/mercuri-finance/mercurifi-sdk/blob/main/docs/security-model.md).

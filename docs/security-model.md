@@ -59,13 +59,13 @@ RPC provider URLs usually carry a key in the path. The SDK shows only the host i
 
 The API is optional: every on-chain action works with a chain-only client. With it you get streams, quotes, metadata uploads and the account index.
 
-| Item | Detail |
-|---|---|
-| Header | `X-Api-Key: mfk_live_...` (mainnet) or `mfk_test_...` (testnet); the prefix must match the network |
-| Account reads | `GET /v1/agent-accounts/{account}`, `GET /v1/agent-accounts?owner=0x...`, `GET /v1/agent-accounts/{account}/actions` |
+| Item              | Detail                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Header            | `X-Api-Key: mfk_live_...` (mainnet) or `mfk_test_...` (testnet); the prefix must match the network                                                                                                                                                                                                                                                                                                                                               |
+| Account reads     | `GET /v1/agent-accounts/{account}`, `GET /v1/agent-accounts?owner=0x...`, `GET /v1/agent-accounts/{account}/actions`                                                                                                                                                                                                                                                                                                                             |
 | Quotes and builds | `POST /v1/quote/curve-buy`, `curve-sell`, `pool-swap`; `POST /v1/tx/build` (the SDK decodes and verifies the calldata before signing: `verifyBuiltTx` / `verify_built_tx` for agent calls to the account, `verifyBuiltOwnerTx` / `verify_built_owner_tx` for owner calls, which must target the account (withdrawals) or the registry from the network book with your account as the first argument; both refuse any argument you did not state) |
-| Uploads | `POST /v1/uploads/launch-metadata` |
-| Stream | `GET /v1/stream?topics=...` with `launches`, `trades`, `token:<addr>`, `trader:<addr>` and `agent-account:<addr>` |
+| Uploads           | `POST /v1/uploads/launch-metadata`                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Stream            | `GET /v1/stream?topics=...` with `launches`, `trades`, `token:<addr>`, `trader:<addr>` and `agent-account:<addr>`                                                                                                                                                                                                                                                                                                                                |
 
 ## Gas on Arc
 

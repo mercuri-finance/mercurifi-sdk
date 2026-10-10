@@ -1,0 +1,11 @@
+# Generated, digest-checked or byte-compared files keep their exact form.
+**/node_modules/
+**/dist/
+packages/typescript/src/abi/generated.ts
+packages/typescript/package-lock.json
+fixtures/
+# Workflows are read by scripts/check-workflows.mjs, a strict YAML subset; Python has its own tools.
+.github/
+packages/python/
+*.yml
+*.yaml

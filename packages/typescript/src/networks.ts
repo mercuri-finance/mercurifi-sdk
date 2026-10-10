@@ -116,7 +116,10 @@ export interface LocalBookJson {
 
 /** A book for the loopback Anvil deployment written by scripts/local-chain.sh. Only chain 31337 is accepted. */
 export const localNetwork = (json: LocalBookJson): NetworkBook => {
-  if (json.chainId !== LOCAL_CHAIN_ID) throw new NetworkMismatchError(`a local address book must be for chain ${LOCAL_CHAIN_ID} (Anvil), not ${json.chainId}`);
+  if (json.chainId !== LOCAL_CHAIN_ID)
+    throw new NetworkMismatchError(
+      `a local address book must be for chain ${LOCAL_CHAIN_ID} (Anvil), not ${json.chainId}`,
+    );
   return {
     name: 'local',
     chainId: LOCAL_CHAIN_ID,
@@ -124,13 +127,24 @@ export const localNetwork = (json: LocalBookJson): NetworkBook => {
     apiBaseUrl: null,
     apiKeyPrefix: null,
     launch: {
-      factory: json.launchFactory, feeManager: json.feeManager, graduationManager: json.graduationManager, launchHook: json.launchHook,
-      poolManager: json.poolManager, permit2: json.permit2, universalRouter: json.universalRouter, v4Quoter: json.v4Quoter, usdc: json.usdc,
+      factory: json.launchFactory,
+      feeManager: json.feeManager,
+      graduationManager: json.graduationManager,
+      launchHook: json.launchHook,
+      poolManager: json.poolManager,
+      permit2: json.permit2,
+      universalRouter: json.universalRouter,
+      v4Quoter: json.v4Quoter,
+      usdc: json.usdc,
     },
     agents: {
-      factory: json.agentFactory, implementation: json.agentImplementation, registry: json.agentRegistry,
-      factoryCodeHash: json.agentFactoryCodeHash, implementationCodeHash: json.agentImplementationCodeHash,
-      registryCodeHash: json.agentRegistryCodeHash, deployBlock: BigInt(json.deployBlock),
+      factory: json.agentFactory,
+      implementation: json.agentImplementation,
+      registry: json.agentRegistry,
+      factoryCodeHash: json.agentFactoryCodeHash,
+      implementationCodeHash: json.agentImplementationCodeHash,
+      registryCodeHash: json.agentRegistryCodeHash,
+      deployBlock: BigInt(json.deployBlock),
     },
   };
 };
