@@ -16,7 +16,7 @@ Agent Accounts are deployed on Arc mainnet and testnet: mainnet (chain 5042; fac
 npm install @mercurifi/sdk
 ```
 
-Beta release, published with signed provenance from the SDK repository. Node 20 or newer. The one runtime dependency is `viem`.
+Published with signed provenance from the SDK repository. Node 20 or newer. The one runtime dependency is `viem`.
 
 ## Quickstart (Arc testnet)
 
@@ -68,7 +68,7 @@ Amounts are human strings in `usdc` / `amount` (`usdc: '25'`, `amount: '1000.5'`
 
 - The account (`AgentAccount`) holds the funds and the cost basis and is the only contract an agent key calls.
 - The owner's settings, the queue, the pause and the usage counters live in the policy registry (`AgentPolicyRegistry`: one per factory, immutable, no admin and no owner of its own). Each owner call names the account.
-- The factory creates accounts and sets the beta ceilings.
+- The factory creates accounts and sets the ceilings.
 
 Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 

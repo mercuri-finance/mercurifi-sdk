@@ -579,7 +579,7 @@ wheels = [
 
 [[package]]
 name = "mercurifi"
-version = "0.1.0b2"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "eth-abi" },

@@ -13,10 +13,10 @@ Agent Accounts are deployed on Arc mainnet and testnet: mainnet (chain 5042; fac
 ## Install
 
 ```
-pip install --pre mercurifi
+pip install mercurifi
 ```
 
-Beta release (`--pre` lets pip pick it), published with attestations from the SDK repository. Python 3.10 or newer. Direct dependencies: `eth-account`, `eth-abi`, `eth-utils`, `httpx`.
+Published with attestations from the SDK repository. Python 3.10 or newer. Direct dependencies: `eth-account`, `eth-abi`, `eth-utils`, `httpx`.
 
 ## Quickstart (Arc testnet)
 
@@ -89,7 +89,7 @@ Amounts are human strings or `Decimal` in `usdc` / `amount` (`usdc="25"`, `amoun
 
 - The account (`AgentAccount`) holds the funds and the cost basis and is the only contract an agent key calls.
 - The owner's settings, the queue, the pause and the usage counters live in the policy registry (`AgentPolicyRegistry`: one per factory, immutable, no admin and no owner of its own). Each owner call names the account.
-- The factory creates accounts and sets the beta ceilings.
+- The factory creates accounts and sets the ceilings.
 
 Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost, so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings received from outside (airdrops, transfers in) are valued by a quote an attacker can move; they are not protected by the sell cap — withdraw them.
 

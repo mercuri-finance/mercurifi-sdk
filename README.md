@@ -12,8 +12,8 @@
 <h1 align="center">Mercurifi Agent Accounts · SDK</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_0.1.0--beta.2-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 0.1.0-beta.2"></a>
-  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_0.1.0b2-0A0A0A?style=flat-square" alt="PyPI mercurifi 0.1.0b2"></a>
+  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_1.0.0-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 1.0.0"></a>
+  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_1.0.0-0A0A0A?style=flat-square" alt="PyPI mercurifi 1.0.0"></a>
   <a href="#deployment"><img src="https://img.shields.io/badge/Arc_mainnet-chain_5042-C3E6FF?style=flat-square" alt="Arc mainnet, chain 5042"></a>
   <a href="#deployment"><img src="https://img.shields.io/badge/Arc_testnet-chain_5042002-C3E6FF?style=flat-square" alt="Arc testnet, chain 5042002"></a>
   <a href="docs/verify-provenance.md"><img src="https://img.shields.io/badge/provenance-signed-0A0A0A?style=flat-square" alt="signed provenance"></a>
@@ -45,10 +45,10 @@ an agent key.
 
 ```sh
 npm install @mercurifi/sdk      # TypeScript / JavaScript, Node 20 or newer
-pip install --pre mercurifi     # Python 3.10 or newer
+pip install mercurifi           # Python 3.10 or newer
 ```
 
-Both are beta releases (`0.1.0-beta.2` on npm, `0.1.0b2` on PyPI). `pip` needs `--pre` to pick a beta. Each package is
+Both are at `1.0.0` on npm and PyPI. Each package is
 built and published by this repository's release workflows, with signed provenance; see
 [Verify a release](#verify-a-release). Install only these two names: anything else is not ours
 ([docs/reserved-names.md](docs/reserved-names.md)).
@@ -173,7 +173,7 @@ settings are on the policy registry and funds are on the account:
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AgentAccount`        | Holds the funds and the cost basis, and is the only contract an agent key calls.                                                                                    |
 | `AgentPolicyRegistry` | The owner's settings, the queue, the pause and the usage counters; one per factory, immutable, no admin and no owner of its own. Each owner call names the account. |
-| `AgentAccountFactory` | Creates accounts and sets the beta ceilings.                                                                                                                        |
+| `AgentAccountFactory` | Creates accounts and sets the ceilings.                                                                                                                             |
 
 Sells count against the sell cap at the higher of the position's current average cost and its high-water average cost,
 so a stolen key cannot buy a crashed token cheaply to stretch the sell cap for tokens the account bought. Holdings
@@ -257,7 +257,7 @@ stages the version; it goes public after a second approval with the maintainer's
 
 ```sh
 npm audit signatures                      # in a project that depends on @mercurifi/sdk
-npm view @mercurifi/sdk@0.1.0-beta.2 dist.attestations
+npm view @mercurifi/sdk@1.0.0 dist.attestations
 ```
 
 On PyPI, each file's Provenance panel must name this repository and `release-pypi.yml`. The full steps are in

@@ -12,7 +12,7 @@ is. You will get an acknowledgement within 48 hours and updates as the fix moves
 
 ## Supported versions
 
-The latest beta of each package. Fixes ship as a new version through the release workflows; a published version is
+The latest release of each package. Fixes ship as a new version through the release workflows; a published version is
 never replaced.
 
 ## Scope

@@ -16,7 +16,7 @@ Agent Accounts are deployed on Arc mainnet and testnet: mainnet (chain 5042; fac
 
 - **The account** (`AgentAccount`, one per owner and salt) holds the funds and the cost basis, and is the only contract an agent key calls: `buy`, `sell`, `launch`, `swapExactIn`, `claimFees`, `sweepToOwner`. The owner withdraws from it with `withdraw` and `withdrawMany`, to the owner only.
 - **The policy registry** (`AgentPolicyRegistry`, one per factory) holds every account's owner, policy, agents, allowlist, delayed-widening queue, pause and per-period usage. The owner changes settings there; each call names the account. The registry is immutable and has no admin and no owner of its own: only an account's owner can change that account's settings, and only a registered account can charge its own usage.
-- **The factory** (`AgentAccountFactory`) creates accounts, deploys the registry once, sets the beta ceilings and carries the platform guardian pause.
+- **The factory** (`AgentAccountFactory`) creates accounts, deploys the registry once, sets the ceilings and carries the platform guardian pause.
 
 At start-up the SDK checks the chain ID and, on a network with an agent deployment, the code hashes of the factory, implementation and registry, `factory.implementation()`, `factory.registry()` and `registry.FACTORY()`.
 
