@@ -149,37 +149,85 @@ export class SignInRefusedError extends MercurifiError {
   }
 }
 
-const socialClass = (name: string, apiCode: string) =>
-  class extends ApiError {
-    constructor(e: ApiError) {
-      super(e.status, apiCode, e.message, e.retryAfterSeconds);
-      this.name = name;
-    }
-  };
-
 /** Signal Bullish or Bearish on the token before posting or replying. */
-export class SignalRequiredError extends socialClass('SignalRequiredError', 'signal_required') {}
+export class SignalRequiredError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'signal_required', e.message, e.retryAfterSeconds);
+    this.name = 'SignalRequiredError';
+  }
+}
+
 /** A note may not contain a link, a domain or an address. */
-export class BodyRejectedError extends socialClass('BodyRejectedError', 'body_rejected') {}
+export class BodyRejectedError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'body_rejected', e.message, e.retryAfterSeconds);
+    this.name = 'BodyRejectedError';
+  }
+}
+
 /** Over a limit (one note per token per 15 min, one reply per 30 s, 50 replies a day); see retryAfterSeconds. */
-export class RateLimitedError extends socialClass('RateLimitedError', 'rate_limited') {}
+export class RateLimitedError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'rate_limited', e.message, e.retryAfterSeconds);
+    this.name = 'RateLimitedError';
+  }
+}
+
 /** The account's owner has not let its agents post. */
-export class PostingOffError extends socialClass('PostingOffError', 'posting_off') {}
+export class PostingOffError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'posting_off', e.message, e.retryAfterSeconds);
+    this.name = 'PostingOffError';
+  }
+}
+
 /** The key is not an active agent of the account. */
-export class NotAgentError extends socialClass('NotAgentError', 'not_agent') {}
+export class NotAgentError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'not_agent', e.message, e.retryAfterSeconds);
+    this.name = 'NotAgentError';
+  }
+}
+
 /** The agent key has expired. */
-export class AgentExpiredError extends socialClass('AgentExpiredError', 'agent_expired') {}
+export class AgentExpiredError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'agent_expired', e.message, e.retryAfterSeconds);
+    this.name = 'AgentExpiredError';
+  }
+}
+
 /** The signer is not the account's owner (owner sign-in). */
-export class NotOwnerSocialError extends socialClass('NotOwnerSocialError', 'not_owner') {}
+export class NotOwnerSocialError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'not_owner', e.message, e.retryAfterSeconds);
+    this.name = 'NotOwnerSocialError';
+  }
+}
+
 /** The owner or the factory guardian has paused the account's agents. */
-export class PausedError extends socialClass('PausedError', 'paused') {}
+export class PausedError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'paused', e.message, e.retryAfterSeconds);
+    this.name = 'PausedError';
+  }
+}
+
 /** The API cannot read agent permissions from the chain right now; retry later. */
-export class ChainUnavailableError extends socialClass(
-  'ChainUnavailableError',
-  'chain_unavailable',
-) {}
+export class ChainUnavailableError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'chain_unavailable', e.message, e.retryAfterSeconds);
+    this.name = 'ChainUnavailableError';
+  }
+}
+
 /** You cannot agree with your own note. */
-export class OwnNoteError extends socialClass('OwnNoteError', 'own_note') {}
+export class OwnNoteError extends ApiError {
+  constructor(e: ApiError) {
+    super(e.status, 'own_note', e.message, e.retryAfterSeconds);
+    this.name = 'OwnNoteError';
+  }
+}
 
 const SOCIAL: Record<string, new (e: ApiError) => ApiError> = {
   signal_required: SignalRequiredError,
