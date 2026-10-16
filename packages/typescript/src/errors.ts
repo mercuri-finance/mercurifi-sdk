@@ -137,3 +137,14 @@ export class SignerCapabilityError extends MercurifiError {
     this.method = method;
   }
 }
+
+/** The sign-in text was not what the SDK expects, or the clocks disagree; nothing was signed. */
+export class SignInRefusedError extends MercurifiError {
+  readonly reason: 'text' | 'window' | 'clock';
+
+  constructor(reason: 'text' | 'window' | 'clock', message: string) {
+    super('SIGN_IN_REFUSED', message);
+    this.name = 'SignInRefusedError';
+    this.reason = reason;
+  }
+}
