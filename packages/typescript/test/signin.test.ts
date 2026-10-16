@@ -115,4 +115,14 @@ describe('sign-in message', () => {
 
     checkSignInMessage(v, v.nonce, short, issued + 90_000);
   });
+
+  it('refuses a time that looks right but is not a real date', () => {
+    const v = vectors[0]!;
+
+    const bad = v.message.replace('2026-10-16T12:00:00Z', '2026-13-01T00:00:00Z');
+
+    expect(() => checkSignInMessage(v, v.nonce, bad, Date.parse(v.issued))).toThrow(
+      SignInRefusedError,
+    );
+  });
 });

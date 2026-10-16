@@ -68,6 +68,9 @@ export const checkSignInMessage = (
 
   const expires = new Date(expiresRaw);
 
+  if (Number.isNaN(issued.getTime()) || Number.isNaN(expires.getTime()))
+    throw new SignInRefusedError('text', 'the message has no valid times');
+
   if (buildSignInMessage(e, nonce, issued, expires) !== message)
     throw new SignInRefusedError('text', 'the message is not the sign-in text this SDK expects');
 
