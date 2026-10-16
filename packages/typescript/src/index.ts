@@ -96,7 +96,7 @@ export {
   PHASE,
   type LaunchConfigValue,
 } from './curve.js';
-export { HttpApi, type HttpApiOptions } from './api/http.js';
+export { checkBody, HttpApi, type HttpApiOptions } from './api/http.js';
 export { verifyBuiltTx, type BuildExpectation, type AgentFunction } from './api/verifyBuild.js';
 export {
   verifyBuiltOwnerTx,

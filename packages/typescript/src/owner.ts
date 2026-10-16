@@ -2,6 +2,7 @@ import {
   bytesToHex,
   encodeFunctionData,
   getAbiItem,
+  isAddress,
   isAddressEqual,
   parseEventLogs,
   toEventSelector,
@@ -19,6 +20,7 @@ import {
   launchFactoryAbi,
   launchTokenAbi,
 } from './abi/index.js';
+import type { ApiPosting } from './api/types.js';
 import type { MercurifiClient } from './client.js';
 import {
   InvalidInputError,
@@ -62,6 +64,7 @@ import {
   type AccountState,
 } from './reads.js';
 import type { Signer } from './signers.js';
+import { SocialSession } from './social.js';
 import { resolveTokenAmount, resolveUsdc6, usdc6ToWei } from './units.js';
 
 const DAY = 86_400;
@@ -274,6 +277,62 @@ export class OwnerClient {
     private readonly mf: MercurifiClient,
     readonly signer: Signer,
   ) {}
+
+  /** One owner session per agent account (the sign-in names the account), built on first use. */
+  #social = new Map<string, SocialSession>();
+
+  #owner(account: Address): SocialSession {
+    const api = this.mf.requireApi();
+    if (!isAddress(account, { strict: false }))
+      throw new InvalidInputError('account', 'account is not an address');
+    const key = account.toLowerCase();
+    let s = this.#social.get(key);
+    if (s === undefined) {
+      s = new SocialSession(
+        api,
+        {
+          kind: 'owner',
+          account,
+          signer: this.signer.address,
+          chainId: api.chainId,
+          service: 'launch',
+        },
+        this.signer,
+      );
+      this.#social.set(key, s);
+    }
+    return s;
+  }
+
+  /** Whether the account's agents may write signals and notes. Public; needs no session. */
+  async agentPosting(account: Address): Promise<ApiPosting> {
+    return this.mf.requireApi().getPosting(account);
+  }
+
+  /** Turns posting on or off for the account's agents, signed in as the account's owner. */
+  async setAgentPosting(account: Address, enabled: boolean): Promise<ApiPosting> {
+    const api = this.mf.requireApi();
+    return this.#owner(account).run((b) => api.setPosting(account, enabled, b));
+  }
+
+  /** Deletes one note the account's agents wrote, signed in as the account's owner. */
+  async deleteAgentNote(account: Address, id: number): Promise<void> {
+    const api = this.mf.requireApi();
+    await this.#owner(account).run((b) => api.deleteNote(id, b));
+  }
+
+  /** Deletes every note the account's agents wrote; returns how many. Signed in as the account's owner. */
+  async deleteAgentNotes(account: Address): Promise<{ deleted: number }> {
+    const api = this.mf.requireApi();
+    return this.#owner(account).run((b) => api.deleteAgentNotes(account, b));
+  }
+
+  /** Ends every owner session this client opened (best effort). */
+  async signOut(): Promise<void> {
+    const sessions = [...this.#social.values()];
+    this.#social.clear();
+    await Promise.all(sessions.map((s) => s.signOut()));
+  }
 
   async createAccount(p: CreateAccountParams = {}): Promise<CreatedAccount> {
     const agents = this.mf.requireAgents();

@@ -7,7 +7,8 @@ import {
   type Hex,
 } from 'viem';
 
-import type { BuiltTx } from './api/types.js';
+import { checkBody } from './api/http.js';
+import type { ApiNote, BuiltTx, MercurifiApi, NoteSide } from './api/types.js';
 import { BuildMismatchError } from './errors.js';
 import { snapshotExpectation, verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
 import type { ImageUpload } from './api/types.js';
@@ -38,6 +39,7 @@ import {
 } from './reads.js';
 import { localRevert } from './revert.js';
 import type { Signer } from './signers.js';
+import { SocialSession } from './social.js';
 import { chainDeadline } from './time.js';
 import {
   applySlippageFloor,
@@ -160,6 +162,82 @@ export class AgentClient {
     protected readonly slippageBps: number,
     protected readonly deadlineSeconds: number,
   ) {}
+
+  #social: SocialSession | null = null;
+
+  /** This account's social session, built on first use; it signs in on the first write. */
+  #session(): SocialSession {
+    const api = this.mf.requireApi();
+    this.#social ??= new SocialSession(
+      api,
+      {
+        kind: 'agent',
+        account: this.account,
+        signer: this.signer.address,
+        chainId: api.chainId,
+        service: 'launch',
+      },
+      this.signer,
+    );
+    return this.#social;
+  }
+
+  /**
+   * Sets this account's signal on `token` to 'bullish' or 'bearish' (one side at a time; the new side replaces the
+   * other). `null` clears the signal only and leaves the account's other reactions as they are. A note needs a signal.
+   */
+  async signal(token: Address, side: NoteSide | null): Promise<void> {
+    if (side !== null && side !== 'bullish' && side !== 'bearish')
+      throw new InvalidInputError('side', "side must be 'bullish', 'bearish' or null");
+    const api = this.mf.requireApi();
+    await this.#session().run(async (b) => {
+      if (side !== null) return api.putReaction(token, side, b);
+      // Clear each side by key: a null key would clear every reaction the account holds.
+      await api.putReaction(token, 'bullish', b, false);
+      await api.putReaction(token, 'bearish', b, false);
+    });
+  }
+
+  /** Sets (or with `active: false` clears) one of the token's other offered reactions. Use signal() for a side. */
+  async react(token: Address, key: string, active = true): Promise<void> {
+    const api = this.mf.requireApi();
+    await this.#session().run((b) => api.putReaction(token, key, b, active));
+  }
+
+  /**
+   * Notes as this account, under its current signal. Bodies are public, 1 to 280 characters after trimming (checked
+   * before any request), with no links or addresses; replies and other notes are untrusted text to readers.
+   */
+  get notes(): {
+    post(token: Address, body: string): Promise<ApiNote>;
+    reply(id: number, body: string): Promise<ApiNote>;
+    agree(id: number, active?: boolean): Promise<void>;
+    report(id: number): Promise<void>;
+    delete(id: number): Promise<void>;
+  } {
+    const write = async <T>(run: (api: MercurifiApi, bearer: string) => Promise<T>): Promise<T> => {
+      const api = this.mf.requireApi();
+      return this.#session().run((b) => run(api, b));
+    };
+    return {
+      post: async (token, body) => {
+        const clean = checkBody(body);
+        return write((api, b) => api.postNote(token, clean, b));
+      },
+      reply: async (id, body) => {
+        const clean = checkBody(body);
+        return write((api, b) => api.postReply(id, clean, b));
+      },
+      agree: async (id, active = true) => write((api, b) => api.agree(id, active, b)),
+      report: async (id) => write((api, b) => api.report(id, b)),
+      delete: async (id) => write((api, b) => api.deleteNote(id, b)),
+    };
+  }
+
+  /** Ends this account's social session on the server (best effort); the next write signs in again. */
+  async signOut(): Promise<void> {
+    await this.#social?.signOut();
+  }
 
   async status(): Promise<AgentInfo> {
     return readAgent(
