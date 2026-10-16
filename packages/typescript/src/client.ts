@@ -215,7 +215,7 @@ export class MercurifiClient {
    */
   async onNotes(
     token: Address,
-    handler: (page: ApiNotesPage) => void | Promise<void>,
+    handler: (page: ApiNotesPage) => unknown,
     o: StreamOptions = {},
   ): Promise<void> {
     const stop = new AbortController();
@@ -248,7 +248,9 @@ export class MercurifiClient {
             continue; // skipped: the next event (or a queued one) fetches again
           }
           if (stop.signal.aborted) return;
-          await handler(page);
+          const r = handler(page);
+          if (r !== null && typeof (r as PromiseLike<unknown> | undefined)?.then === 'function')
+            await r;
         } while (queued && !stop.signal.aborted);
       } finally {
         // Same continuation as the loop check: an event after this point starts a new fetch, never a lost one.

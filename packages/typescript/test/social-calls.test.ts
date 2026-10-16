@@ -397,7 +397,7 @@ describe('reader calls', () => {
 
     const pages: number[] = [];
 
-    const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
+    const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
       fetch: s.fetch,
       maxReconnects: 0,
       onOpen,
@@ -447,7 +447,7 @@ describe('reader calls', () => {
 
       const pages: number[] = [];
 
-      const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
+      const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
         fetch: s.fetch,
         maxReconnects: 0,
         onOpen,
@@ -528,7 +528,7 @@ describe('reader calls', () => {
 
     const pages: number[] = [];
 
-    const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
+    const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
       fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'),
       maxReconnects: 0,
     });
