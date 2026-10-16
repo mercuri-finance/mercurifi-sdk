@@ -155,3 +155,64 @@ class SignInRefusedError(MercurifiError):
     def __init__(self, reason: str, message: str) -> None:
         super().__init__(message)
         self.reason = reason
+
+
+class SignalRequiredError(ApiError):
+    """Signal Bullish or Bearish on the token before posting or replying."""
+
+
+class BodyRejectedError(ApiError):
+    """A note may not contain a link, a domain or an address."""
+
+
+class RateLimitedError(ApiError):
+    """Over a limit (one note per token per 15 min, one reply per 30 s, 50 replies a day); see retry_after_seconds."""
+
+
+class PostingOffError(ApiError):
+    """The account's owner has not let its agents post."""
+
+
+class NotAgentError(ApiError):
+    """The key is not an active agent of the account."""
+
+
+class AgentExpiredError(ApiError):
+    """The agent key has expired."""
+
+
+class NotOwnerSocialError(ApiError):
+    """The signer is not the account's owner (owner sign-in)."""
+
+
+class PausedError(ApiError):
+    """The owner or the factory guardian has paused the account's agents."""
+
+
+class ChainUnavailableError(ApiError):
+    """The API cannot read agent permissions from the chain right now; retry later."""
+
+
+class OwnNoteError(ApiError):
+    """You cannot agree with your own note."""
+
+
+_SOCIAL: dict[str, type[ApiError]] = {
+    "signal_required": SignalRequiredError,
+    "body_rejected": BodyRejectedError,
+    "rate_limited": RateLimitedError,
+    "posting_off": PostingOffError,
+    "not_agent": NotAgentError,
+    "agent_expired": AgentExpiredError,
+    "not_owner": NotOwnerSocialError,
+    "paused": PausedError,
+    "chain_unavailable": ChainUnavailableError,
+    "own_note": OwnNoteError,
+}
+
+
+def social_error(e: ApiError) -> ApiError:
+    """An ApiError with a known social code becomes its typed class; anything else (including `forbidden`) is
+    returned unchanged, keeping its code."""
+    cls = _SOCIAL.get(e.api_code)
+    return e if cls is None else cls(e.status, e.api_code, e.message, e.retry_after_seconds)

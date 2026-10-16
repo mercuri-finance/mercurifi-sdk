@@ -13,6 +13,7 @@ from .redact import install_log_redaction
 from .revert import ContractRevertError, TxRevertedError, decode_revert
 from .safe_view import wrap_untrusted
 from .signers import generate_agent_key, kms_signer, local_key
+from .social import SocialSession
 from .stream import open_stream
 from .sync import Client
 
@@ -32,6 +33,7 @@ __all__ = [
     "MAINNET",
     "OwnerClient",
     "SignerCapabilityError",
+    "SocialSession",
     "TESTNET",
     "TxRevertedError",
     "__version__",
