@@ -238,7 +238,7 @@ class OwnerClient:
         self._social: dict[str, SocialSession] = {}
 
     def _owner_session(self, account: str) -> SocialSession:
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         if not _is_addr(account):
             raise InvalidInputError("account", "account is not an address")
         key = account.lower()
@@ -254,12 +254,12 @@ class OwnerClient:
 
     async def agent_posting(self, account: str) -> dict[str, Any]:
         """Whether the account's agents may write signals and notes. Public; needs no session."""
-        result: dict[str, Any] = await self._mf.require_api().get_posting(account)
+        result: dict[str, Any] = await self._mf.require_api(social=True).get_posting(account)
         return result
 
     async def set_agent_posting(self, account: str, enabled: bool) -> dict[str, Any]:
         """Turns posting on or off for the account's agents, signed in as the account's owner."""
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         result: dict[str, Any] = await self._owner_session(account).run(
             lambda b: api.set_posting(account, enabled, b)
         )
@@ -267,12 +267,12 @@ class OwnerClient:
 
     async def delete_agent_note(self, account: str, id: int) -> None:
         """Deletes one note the account's agents wrote, signed in as the account's owner."""
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         await self._owner_session(account).run(lambda b: api.delete_note(id, b))
 
     async def delete_agent_notes(self, account: str) -> dict[str, Any]:
         """Deletes every note the account's agents wrote; returns {"deleted": n}. Signed in as the account's owner."""
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         result: dict[str, Any] = await self._owner_session(account).run(
             lambda b: api.delete_agent_notes(account, b)
         )

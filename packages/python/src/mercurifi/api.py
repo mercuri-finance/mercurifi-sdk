@@ -12,7 +12,7 @@ import json
 import math
 import re
 import unicodedata
-from typing import Any, NoReturn, Protocol
+from typing import Any, NoReturn, Protocol, runtime_checkable
 from urllib.parse import quote as urlquote
 
 import httpx
@@ -49,11 +49,11 @@ _NONCE = re.compile(r"[A-Za-z0-9]{1,128}")
 _SIGNATURE = re.compile(r"0x[0-9a-fA-F]{130}")
 _REACTION_KEY = re.compile(r"[a-z_]{1,32}")
 _MAX_SAFE = 2**53 - 1  # the TypeScript SDK's integer bound, kept for parity
-MAX_PAGE = 50
+_MAX_PAGE = 50
 #: The API serves at most this many marks per range.
-MAX_MARKS = 2_000
-MARKS_SPAN = 90 * 86_400
-NOTE_MAX = 280
+_MAX_MARKS = 2_000
+_MARKS_SPAN = 90 * 86_400
+_NOTE_MAX = 280
 _STRIPPED = ("Cc", "Cf", "Zl", "Zp")
 
 
@@ -72,6 +72,13 @@ class MercurifiApi(Protocol):
         self, meta: dict[str, Any], image: Any = None
     ) -> dict[str, Any]: ...
     async def get_token(self, token: str) -> dict[str, Any] | None: ...
+    def stream_request(self, topics: list[str]) -> tuple[str, dict[str, str]]: ...
+
+
+@runtime_checkable
+class SocialApi(Protocol):
+    """Signals and notes, split from MercurifiApi so a 1.0 implementation still type-checks; HttpApi implements both.
+    `require_api(social=True)` refuses an API without these methods."""
 
     # Sign-in sends neither the API key nor a bearer.
     async def sign_in_challenge(self, kind: str, account: str, signer: str) -> dict[str, Any]: ...
@@ -101,7 +108,6 @@ class MercurifiApi(Protocol):
     async def get_posting(self, account: str) -> dict[str, Any]: ...
     async def set_posting(self, account: str, enabled: bool, bearer: str) -> dict[str, Any]: ...
     async def delete_agent_notes(self, account: str, bearer: str) -> dict[str, Any]: ...
-    def stream_request(self, topics: list[str]) -> tuple[str, dict[str, str]]: ...
 
 
 class _Secret:
@@ -174,8 +180,8 @@ def _page_query(cursor: str | None, limit: int | None) -> str:
     if cursor is not None:
         parts.append(f"cursor={urlquote(_cursor_param(cursor), safe='')}")
     if limit is not None:
-        if not _is_int(limit) or not 1 <= limit <= MAX_PAGE:
-            raise InvalidInputError("limit", f"limit must be 1 to {MAX_PAGE}")
+        if not _is_int(limit) or not 1 <= limit <= _MAX_PAGE:
+            raise InvalidInputError("limit", f"limit must be 1 to {_MAX_PAGE}")
         parts.append(f"limit={limit}")
     return f"?{'&'.join(parts)}" if parts else ""
 
@@ -203,7 +209,7 @@ def check_body(body: str) -> str:
     """A note body as the API will store it: control and format characters and line or paragraph separators removed,
     trimmed, 1 to 280 characters (code points). Raises InvalidInputError('body') otherwise. The API also refuses links
     and addresses. A lone surrogate becomes U+FFFD, as the API's JSON decoder makes it."""
-    refused = InvalidInputError("body", f"a note body must be 1 to {NOTE_MAX} characters")
+    refused = InvalidInputError("body", f"a note body must be 1 to {_NOTE_MAX} characters")
     if not isinstance(body, str):
         raise refused
     clean = "".join(
@@ -211,7 +217,7 @@ def check_body(body: str) -> str:
         for ch, cat in ((ch, unicodedata.category(ch)) for ch in body)
         if cat not in _STRIPPED
     ).strip()
-    if not 1 <= len(clean) <= NOTE_MAX:
+    if not 1 <= len(clean) <= _NOTE_MAX:
         raise refused
     return clean
 
@@ -230,7 +236,7 @@ def _is_note(v: object) -> bool:
         and "holdBps" in v
         and (v["holdBps"] is None or _is_count(v["holdBps"]))
         and isinstance(v.get("body"), str)
-        and len(v["body"]) <= NOTE_MAX
+        and len(v["body"]) <= _NOTE_MAX
         and _is_count(v.get("createdAt"))
         and ("replyCount" not in v or _is_count(v["replyCount"]))
         and _is_count(v.get("agreeCount"))
@@ -244,7 +250,7 @@ def _is_notes_page(v: object) -> bool:
         return False
     nxt = v["nextCursor"]
     return (
-        len(v["notes"]) <= MAX_PAGE
+        len(v["notes"]) <= _MAX_PAGE
         and all(_is_note(n) for n in v["notes"])
         and (
             nxt is None
@@ -717,16 +723,16 @@ class HttpApi:
         return r  # type: ignore[no-any-return]
 
     async def note_marks(self, token: str, start: int, end: int) -> list[dict[str, Any]]:
-        """`start` and `end` are unix seconds, 0 <= start <= end, at most 90 days apart (ValueError otherwise)."""
+        """`start` and `end` are unix seconds, 0 <= start <= end, at most 90 days apart (InvalidInputError otherwise)."""
         if not _is_int(start) or not 0 <= start <= _MAX_SAFE:
-            raise ValueError("start must be unix seconds, 0 or more")
+            raise InvalidInputError("start", "start must be unix seconds, 0 or more")
         if not _is_int(end) or not start <= end <= _MAX_SAFE:
-            raise ValueError("end must be unix seconds, not before start")
-        if end - start > MARKS_SPAN:
-            raise ValueError("end must be at most 90 days after start")
+            raise InvalidInputError("end", "end must be unix seconds, not before start")
+        if end - start > _MARKS_SPAN:
+            raise InvalidInputError("end", "end must be at most 90 days after start")
         path = f"/v1/tokens/{_address_param('token', token)}/notes/marks?from={start}&to={end}"
         r = await self._request("GET", path)
-        if not isinstance(r, list) or len(r) > MAX_MARKS or not all(_is_mark(m) for m in r):
+        if not isinstance(r, list) or len(r) > _MAX_MARKS or not all(_is_mark(m) for m in r):
             raise _bad(path, "not a list of marks")
         return r
 

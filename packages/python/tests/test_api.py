@@ -793,9 +793,17 @@ async def test_social_arguments_are_refused_before_any_request() -> None:
         await api.list_replies(7, cursor="a&b=c")
     with pytest.raises(InvalidInputError):
         await api.list_notes("nope")
-    for start, end in ((-1, 5), (10, 5), (0, 90 * 86_400 + 1), (0.5, 5), (True, 5)):
-        with pytest.raises(ValueError):
+    for start, end, field in (
+        (-1, 5, "start"),
+        (10, 5, "end"),
+        (0, 90 * 86_400 + 1, "end"),
+        (0.5, 5, "start"),
+        (True, 5, "start"),
+        (0, None, "end"),
+    ):
+        with pytest.raises(InvalidInputError) as refused:
             await api.note_marks(TOKEN, start, end)  # type: ignore[arg-type]
+        assert refused.value.field == field
     with pytest.raises(InvalidInputError):
         await api.put_reaction(TOKEN, None, BEARER, False)
     with pytest.raises(InvalidInputError):

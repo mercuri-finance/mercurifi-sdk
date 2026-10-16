@@ -6,7 +6,20 @@ from .agent import AgentClient, ImageUpload
 from .api import check_body
 from .build_verify import verify_built_owner_tx, verify_built_tx
 from .client import AsyncClient, create_client
-from .errors import SignerCapabilityError
+from .errors import (
+    AgentExpiredError,
+    BodyRejectedError,
+    ChainUnavailableError,
+    NotAgentError,
+    NotOwnerSocialError,
+    OwnNoteError,
+    PausedError,
+    PostingOffError,
+    RateLimitedError,
+    SignalRequiredError,
+    SignerCapabilityError,
+    SignInRefusedError,
+)
 from .networks import MAINNET, TESTNET, local_network
 from .owner import AccountManager, FirstAgent, OwnerClient
 from .policy import DEFAULT_POLICY, ChainPolicy
@@ -24,15 +37,26 @@ install_log_redaction()
 __all__ = [
     "AccountManager",
     "AgentClient",
+    "AgentExpiredError",
     "AsyncClient",
+    "BodyRejectedError",
     "ChainPolicy",
+    "ChainUnavailableError",
     "Client",
     "ContractRevertError",
     "DEFAULT_POLICY",
     "FirstAgent",
     "ImageUpload",
     "MAINNET",
+    "NotAgentError",
+    "NotOwnerSocialError",
+    "OwnNoteError",
     "OwnerClient",
+    "PausedError",
+    "PostingOffError",
+    "RateLimitedError",
+    "SignInRefusedError",
+    "SignalRequiredError",
     "SignerCapabilityError",
     "SocialSession",
     "TESTNET",

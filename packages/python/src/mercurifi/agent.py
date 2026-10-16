@@ -150,7 +150,7 @@ class AgentNotes:
         self._agent = agent
 
     async def _write(self, run: Callable[[Any, str], Awaitable[T]]) -> T:
-        api = self._agent._mf.require_api()
+        api = self._agent._mf.require_api(social=True)
         return await self._agent._session().run(lambda b: run(api, b))
 
     async def post(self, token: str, body: str) -> dict[str, Any]:
@@ -197,7 +197,7 @@ class AgentClient:
 
     def _session(self) -> SocialSession:
         """This account's social session, built on first use; it signs in on the first write."""
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         if self._social is None:
             self._social = SocialSession(
                 api,
@@ -212,7 +212,7 @@ class AgentClient:
         (one per side), so it counts twice against the reaction rate limit (10 a minute). A note needs a signal."""
         if side is not None and side not in ("bullish", "bearish"):
             raise InvalidInputError("side", "side must be 'bullish', 'bearish' or None")
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
 
         async def write(b: str) -> None:
             if side is not None:
@@ -228,7 +228,7 @@ class AgentClient:
         """Sets (or with `active=False` clears) one of the token's other offered reactions. Use signal() for a side."""
         if not isinstance(key, str):
             raise InvalidInputError("key", "key is not a reaction name")
-        api = self._mf.require_api()
+        api = self._mf.require_api(social=True)
         await self._session().run(lambda b: api.put_reaction(token, key, b, active))
 
     @property

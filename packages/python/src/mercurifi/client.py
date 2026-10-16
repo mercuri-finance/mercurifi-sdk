@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import inspect
 import re
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 
+from .api import SocialApi
 from .errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotDeployedError
 from .gas import MAX_PRIORITY_FEE_PER_GAS
 from .networks import LOCAL_CHAIN_ID, NETWORKS, AgentBook, NetworkBook, is_loopback_url, url_host
@@ -60,7 +62,7 @@ class ReaderNotes:
         self, token: str, *, cursor: str | None = None, limit: int | None = None
     ) -> dict[str, Any]:
         """A page of the token's top-level notes, newest first: {"notes": [...], "nextCursor": str | None}."""
-        result: dict[str, Any] = await self._mf.require_api().list_notes(
+        result: dict[str, Any] = await self._mf.require_api(social=True).list_notes(
             token, cursor=cursor, limit=limit
         )
         return result
@@ -68,18 +70,25 @@ class ReaderNotes:
     async def replies(
         self, id: int, *, cursor: str | None = None, limit: int | None = None
     ) -> dict[str, Any]:
-        result: dict[str, Any] = await self._mf.require_api().list_replies(
+        result: dict[str, Any] = await self._mf.require_api(social=True).list_replies(
             id, cursor=cursor, limit=limit
         )
         return result
 
     async def get(self, id: int) -> dict[str, Any]:
-        result: dict[str, Any] = await self._mf.require_api().get_note(id)
+        result: dict[str, Any] = await self._mf.require_api(social=True).get_note(id)
         return result
 
-    async def marks(self, token: str, *, start: int, end: int) -> builtins.list[dict[str, Any]]:
-        """Top-level notes' times and sides between `start` and `end` (unix seconds, at most 90 days apart)."""
-        result: builtins.list[dict[str, Any]] = await self._mf.require_api().note_marks(
+    async def marks(
+        self, token: str, *, start: int | None = None, end: int | None = None
+    ) -> builtins.list[dict[str, Any]]:
+        """Top-level notes' times and sides between `start` and `end` (unix seconds, 0 <= start <= end, at most 90 days
+        apart). Both are required; a missing or bad bound raises InvalidInputError('start' or 'end')."""
+        if start is None:
+            raise InvalidInputError("start", "start is required (unix seconds)")
+        if end is None:
+            raise InvalidInputError("end", "end is required (unix seconds)")
+        result: builtins.list[dict[str, Any]] = await self._mf.require_api(social=True).note_marks(
             token, start, end
         )
         return result
@@ -122,12 +131,18 @@ class AsyncClient:
             raise NotDeployedError(self.network.name)
         return self.network.agents
 
-    def require_api(self) -> Any:
-        """The Mercurifi API, or InvalidInputError('api') on a chain-only client."""
+    def require_api(self, *, social: bool = False) -> Any:
+        """The Mercurifi API, or InvalidInputError('api') on a chain-only client. With `social=True` the API must also
+        implement SocialApi (signals and notes): a custom 1.0 MercurifiApi without it is refused here."""
         if self.api is None:
             raise InvalidInputError(
                 "api",
                 "This call needs the Mercurifi API (streams, signals and notes); chain-only clients can poll headroom() and logs instead.",
+            )
+        if social and not isinstance(self.api, SocialApi):
+            raise InvalidInputError(
+                "api",
+                "Signals and notes need an API that implements SocialApi (HttpApi does); this custom API does not.",
             )
         return self.api
 
@@ -186,7 +201,7 @@ class AsyncClient:
 
     async def reactions(self, token: str) -> dict[str, Any]:
         """A token's reaction counts. `mine` and `selected` belong to website sessions and are empty here."""
-        result: dict[str, Any] = await self.require_api().get_reactions(token)
+        result: dict[str, Any] = await self.require_api(social=True).get_reactions(token)
         return result
 
     async def on_notes(
@@ -196,7 +211,8 @@ class AsyncClient:
         reconnect catches up) and after every `notes` or `reset` event. Fetches are coalesced: at most one runs and one
         more waits, so the handler always ends on the latest page. A fetch that fails (network, rate limit, server) is
         skipped and the next event fetches again; an InvalidInputError, or a handler that raises, ends it with that
-        error. Returns when the stream ends; cancel the task to stop it, after which the handler is not called again.
+        error. An async handler is awaited (the next page waits for it), and one that raises ends it the same way.
+        Returns when the stream ends; cancel the task to stop it, after which the handler is not called again.
         `options` are those of `stream` (`on_open` is still called). Note bodies are untrusted text."""
         user_open = options.pop("on_open", None)
         stopped = busy = queued = False
@@ -219,7 +235,9 @@ class AsyncClient:
                     if stopped:
                         return
                     if page is not None:
-                        handler(page)
+                        result = handler(page)
+                        if inspect.isawaitable(result):
+                            await result
                     if not queued or stopped:
                         return
             finally:

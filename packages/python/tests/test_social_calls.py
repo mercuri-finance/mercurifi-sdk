@@ -192,6 +192,34 @@ async def test_a_chain_only_client_refuses_at_the_await_with_the_api_message() -
         assert "This call needs the Mercurifi API (streams, signals and notes)" in str(e.value)
 
 
+async def test_an_api_without_the_social_methods_is_refused_for_signals_and_notes() -> None:
+    class ApiV1:
+        """A custom API written against 1.0: MercurifiApi only."""
+
+        base_url = "http://127.0.0.1:9"
+        chain_id = LOCAL_CHAIN_ID
+
+        def stream_request(self, topics: list[str]) -> tuple[str, dict[str, str]]:
+            return self.base_url, {}
+
+    mf = await client_with(ApiV1())
+    assert mf.require_api() is mf.api
+    agent = await mf.agent(ACCOUNT, SIGNER)
+    calls = [
+        agent.notes.post(TOKEN, "hello"),
+        agent.signal(TOKEN, "bullish"),
+        mf.notes.list(TOKEN),
+        mf.reactions(TOKEN),
+        mf.owner(local_key(OWNER_KEY)).agent_posting(ACCOUNT),
+        mf.on_notes(TOKEN, lambda p: None),
+    ]
+    for call in calls:
+        with pytest.raises(InvalidInputError) as e:
+            await call
+        assert e.value.field == "api"
+        assert "SocialApi" in str(e.value)
+
+
 async def test_writes_send_the_bearer_and_never_the_api_key() -> None:
     seen: list[httpx.Request] = []
 
@@ -255,6 +283,15 @@ async def test_reads_need_no_session() -> None:
     api.note_marks.assert_awaited_once_with(TOKEN, 10, 20)
     api.get_reactions.assert_awaited_once_with(TOKEN)
     api.sign_in_challenge.assert_not_awaited()
+
+
+async def test_marks_refuses_a_missing_range_before_any_request() -> None:
+    mf, api = await fake_client()
+    for kw, field in (({}, "start"), ({"start": 10}, "end"), ({"end": 20}, "start")):
+        with pytest.raises(InvalidInputError) as e:
+            await mf.notes.marks(TOKEN, **kw)
+        assert e.value.field == field
+    api.note_marks.assert_not_awaited()
 
 
 async def test_on_notes_fetches_at_once_and_on_open_and_coalesces_a_burst() -> None:
@@ -382,6 +419,52 @@ async def test_on_notes_ends_with_the_error_of_a_raising_handler_or_an_invalid_r
     api.list_notes.side_effect = InvalidInputError("limit", "limit is out of range")
     with pytest.raises(InvalidInputError):
         await mf.on_notes(TOKEN, lambda p: None, **stream_options(one_shot(events)))
+    assert others() == set()
+
+
+async def test_on_notes_awaits_an_async_handler_before_the_next_page() -> None:
+    mf, api = await fake_client()
+    listed = DeferredList(api)
+    s = LiveSse()
+    on_open = Mock()
+    gate: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    pages: list[int] = []
+    finished: list[int] = []
+
+    async def handler(p: dict[str, Any]) -> None:
+        pages.append(p["notes"][0]["id"])
+        if len(pages) == 1:
+            await gate
+        finished.append(p["notes"][0]["id"])
+
+    done = asyncio.ensure_future(
+        mf.on_notes(TOKEN, handler, **stream_options(s.transport, on_open=on_open))
+    )
+    await until(lambda: on_open.call_count == 1)
+    listed.resolve()
+    await until(lambda: pages == [0])
+    await settle()
+    assert listed.calls == 1  # the fetch queued by the open waits for the handler
+    gate.set_result(None)
+    await until(lambda: listed.calls == 2)
+    listed.version = 1
+    listed.resolve()
+    s.end()
+    await done
+    assert finished == [0, 0]
+    assert others() == set()
+
+
+async def test_on_notes_ends_with_the_error_of_an_async_handler() -> None:
+    mf, api = await fake_client()
+
+    async def fail(p: dict[str, Any]) -> None:
+        await asyncio.sleep(0)
+        raise RuntimeError("async handler failed")
+
+    events = "id: 1\nevent: notes\ndata: {}\n\n"
+    with pytest.raises(RuntimeError, match="async handler failed"):
+        await mf.on_notes(TOKEN, fail, **stream_options(one_shot(events)))
     assert others() == set()
 
 
