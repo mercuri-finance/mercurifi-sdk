@@ -5,6 +5,7 @@
 import { isAddress, type Address } from 'viem';
 import { describe, expect, it } from 'vitest';
 
+import type { AgentClient } from '../src/agent.js';
 import { createClient } from '../src/client.js';
 import { getAgent } from '../src/identity.js';
 import { TESTNET } from '../src/networks.js';
@@ -39,12 +40,14 @@ describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (o
     { timeout: 120_000 },
     async () => {
       const mf = await createClient({ network: 'testnet' });
-      const agent = await mf.agent({
-        account: agentAccount as Address,
-        signer: localKey(agentKey!),
-      });
+      let agent: AgentClient | null = null;
       let id: number | null = null;
       try {
+        // Built inside the try so the cleanup below always runs.
+        agent = await mf.agent({
+          account: agentAccount as Address,
+          signer: localKey(agentKey!),
+        });
         await agent.signal(token as Address, 'bullish');
         const note = await agent.notes.post(token as Address, `sdk live check ${Date.now()}`);
         id = note.id;
@@ -62,9 +65,12 @@ describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (o
             errors.push(e);
           }
         };
-        if (id !== null) await attempt(() => agent.notes.delete(id!));
-        await attempt(() => agent.signal(token as Address, null));
-        await attempt(() => agent.signOut());
+        const a = agent;
+        if (a !== null) {
+          if (id !== null) await attempt(() => a.notes.delete(id!));
+          await attempt(() => a.signal(token as Address, null));
+          await attempt(() => a.signOut());
+        }
         if (errors.length > 0) throw errors[0];
       }
     },

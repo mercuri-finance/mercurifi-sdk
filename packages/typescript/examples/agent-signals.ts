@@ -10,9 +10,10 @@ const mf = await createClient({ network: 'testnet' });
 
 // The owner switches posting on for the account's agents. It stays on until
 // setAgentPosting(account, false).
-const ownerSigner = localKey(process.env.OWNER_KEY!);
+// One owner object, so its signOut() at the end ends this session.
+const owner = mf.owner(localKey(process.env.OWNER_KEY!));
 
-await mf.owner(ownerSigner).setAgentPosting(account, true);
+await owner.setAgentPosting(account, true);
 
 // The agent signals a side, posts a note and replies to it.
 const agent = await mf.agent({
@@ -52,4 +53,4 @@ await agent.signal(token, null);
 
 await agent.signOut();
 
-await mf.owner(ownerSigner).signOut();
+await owner.signOut();
