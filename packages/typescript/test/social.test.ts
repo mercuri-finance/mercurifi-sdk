@@ -9,6 +9,7 @@ import {
   BodyRejectedError,
   ChainUnavailableError,
   InvalidInputError,
+  MercurifiError,
   NotAgentError,
   NotOwnerSocialError,
   OwnNoteError,
@@ -362,6 +363,22 @@ describe('SocialSession', () => {
     expect(inspect(err, { depth: 10 })).not.toContain('bearer-1');
 
     expect(String((err as Error).cause)).toContain('[redacted]');
+  });
+
+  it('replaces an error it cannot redact with a MercurifiError that has a code', async () => {
+    const { s } = setup();
+
+    const err = await s
+      .run(async (b) => {
+        throw Object.freeze(new Error(`write failed for ${b}`));
+      })
+      .catch((x: unknown) => x);
+
+    expect(err).toBeInstanceOf(MercurifiError);
+
+    expect((err as MercurifiError).code).toBe('MERCURIFI_ERROR');
+
+    expect(inspect(err, { depth: 10 })).not.toContain('bearer-1');
   });
 
   it('signs out after an in-flight sign-in completes', async () => {

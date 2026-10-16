@@ -244,6 +244,37 @@ describe('agent social calls', () => {
     );
   });
 
+  it('refuses signals and notes on a custom API without the SocialApi methods', async () => {
+    const apiV1 = {
+      baseUrl: 'http://127.0.0.1:9',
+      chainId: LOCAL_CHAIN_ID,
+      streamRequest: () => ({ url: 'http://127.0.0.1:9/v1/stream', headers: {} }),
+    } as unknown as MercurifiApi;
+
+    const mf = await clientWith(apiV1);
+
+    expect(mf.requireApi()).toBe(apiV1);
+
+    const agent = await mf.agent({ account: ACCOUNT, signer: localKey(AGENT_KEY) });
+
+    for (const call of [
+      agent.notes.post(TOKEN, 'hello'),
+      agent.signal(TOKEN, 'bullish'),
+      mf.notes.list(TOKEN),
+      mf.reactions(TOKEN),
+      mf.owner(localKey(OWNER_KEY)).agentPosting(ACCOUNT),
+      mf.onNotes(TOKEN, () => undefined),
+    ]) {
+      const err = await call.catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(InvalidInputError);
+
+      expect((err as InvalidInputError).field).toBe('api');
+
+      expect((err as Error).message).toContain('SocialApi');
+    }
+  });
+
   it('sends the bearer and never the API key on a keyed client', async () => {
     const signer = localKey(AGENT_KEY);
 
@@ -343,6 +374,18 @@ describe('reader calls', () => {
     expect(api.signInChallenge).not.toHaveBeenCalled();
   });
 
+  it('refuses marks without a range before any request', async () => {
+    const { mf, api } = await clientWithFakeApi();
+
+    const err = await mf.notes.marks(TOKEN, undefined as never).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(InvalidInputError);
+
+    expect((err as InvalidInputError).field).toBe('from');
+
+    expect(api.noteMarks).not.toHaveBeenCalled();
+  });
+
   it('follows notes: fetches at once and on open, refetches on notes and reset, coalescing a burst', async () => {
     const { mf, api } = await clientWithFakeApi();
 
@@ -354,7 +397,7 @@ describe('reader calls', () => {
 
     const pages: number[] = [];
 
-    const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
+    const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
       fetch: s.fetch,
       maxReconnects: 0,
       onOpen,
@@ -404,7 +447,7 @@ describe('reader calls', () => {
 
       const pages: number[] = [];
 
-      const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
+      const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
         fetch: s.fetch,
         maxReconnects: 0,
         onOpen,
@@ -485,7 +528,7 @@ describe('reader calls', () => {
 
     const pages: number[] = [];
 
-    const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
+    const done = mf.onNotes(TOKEN, (p) => void pages.push(p.notes[0]!.id), {
       fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'),
       maxReconnects: 0,
     });
@@ -518,6 +561,73 @@ describe('reader calls', () => {
         maxReconnects: 0,
       }),
     ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('awaits a handler that returns a promise before the next page', async () => {
+    const { mf, api } = await clientWithFakeApi();
+
+    const list = deferredList(api);
+
+    const s = liveSse();
+
+    const onOpen = vi.fn();
+
+    let release!: () => void;
+
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+
+    const started: number[] = [];
+
+    const finished: number[] = [];
+
+    const done = mf.onNotes(
+      TOKEN,
+      async (p) => {
+        started.push(p.notes[0]!.id);
+        if (started.length === 1) await gate;
+        finished.push(p.notes[0]!.id);
+      },
+      { fetch: s.fetch, maxReconnects: 0, onOpen },
+    );
+
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+
+    list.resolve();
+
+    await vi.waitFor(() => expect(started).toEqual([0]));
+
+    await tick();
+
+    expect(list.calls).toBe(1); // the fetch queued by the open waits for the handler
+
+    release();
+
+    await vi.waitFor(() => expect(list.calls).toBe(2));
+
+    list.resolve();
+
+    s.end();
+
+    await done;
+
+    expect(finished).toEqual([0, 0]);
+  });
+
+  it('ends with the rejection of an async handler', async () => {
+    const { mf } = await clientWithFakeApi();
+
+    await expect(
+      mf.onNotes(
+        TOKEN,
+        async () => {
+          await Promise.resolve();
+          throw new Error('async handler failed');
+        },
+        { fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'), maxReconnects: 0 },
+      ),
+    ).rejects.toThrow('async handler failed');
   });
 
   it('leaves no listener on the caller signal when the token is refused', async () => {

@@ -230,7 +230,13 @@ export interface MercurifiApi {
   /** `null` when the API does not know the token yet (it answers 200 null); fall back to chain reads. */
   getToken(token: Address): Promise<ApiToken | null>;
   streamRequest(topics: readonly string[]): { url: string; headers: Record<string, string> };
+}
 
+/**
+ * Signals and notes, split from MercurifiApi so an implementation written for 1.0 still compiles. HttpApi implements
+ * both; `requireApi('social')` refuses an API without these methods.
+ */
+export interface SocialApi {
   /** Sign-in sends neither the API key nor a bearer. */
   signInChallenge(
     kind: 'agent' | 'owner',
@@ -243,7 +249,7 @@ export interface MercurifiApi {
   listNotes(token: Address, o?: { cursor?: string; limit?: number }): Promise<ApiNotesPage>;
   listReplies(id: number, o?: { cursor?: string; limit?: number }): Promise<ApiNotesPage>;
   getNote(id: number): Promise<ApiNote>;
-  /** `from` and `to` are unix seconds, 0 <= from <= to, at most 90 days apart (RangeError otherwise). */
+  /** `from` and `to` are unix seconds, 0 <= from <= to, at most 90 days apart (InvalidInputError otherwise). */
   noteMarks(token: Address, from: number, to: number): Promise<ApiNoteMark[]>;
   getReactions(token: Address): Promise<ApiReactions>;
   /** `key: null` clears every reaction; `active: false` clears that one key only. */

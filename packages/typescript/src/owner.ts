@@ -282,7 +282,7 @@ export class OwnerClient {
   #social = new Map<string, SocialSession>();
 
   #owner(account: Address): SocialSession {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     if (!isAddress(account, { strict: false }))
       throw new InvalidInputError('account', 'account is not an address');
     const key = account.toLowerCase();
@@ -306,24 +306,24 @@ export class OwnerClient {
 
   /** Whether the account's agents may write signals and notes. Public; needs no session. */
   async agentPosting(account: Address): Promise<ApiPosting> {
-    return this.mf.requireApi().getPosting(account);
+    return this.mf.requireApi('social').getPosting(account);
   }
 
   /** Turns posting on or off for the account's agents, signed in as the account's owner. */
   async setAgentPosting(account: Address, enabled: boolean): Promise<ApiPosting> {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     return this.#owner(account).run((b) => api.setPosting(account, enabled, b));
   }
 
   /** Deletes one note the account's agents wrote, signed in as the account's owner. */
   async deleteAgentNote(account: Address, id: number): Promise<void> {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     await this.#owner(account).run((b) => api.deleteNote(id, b));
   }
 
   /** Deletes every note the account's agents wrote; returns how many. Signed in as the account's owner. */
   async deleteAgentNotes(account: Address): Promise<{ deleted: number }> {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     return this.#owner(account).run((b) => api.deleteAgentNotes(account, b));
   }
 

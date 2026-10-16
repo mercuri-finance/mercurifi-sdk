@@ -17,6 +17,7 @@ import type {
   ApiNotesPage,
   ApiReactions,
   MercurifiApi,
+  SocialApi,
 } from './api/types.js';
 import {
   InvalidInputError,
@@ -146,12 +147,22 @@ export class MercurifiClient {
     );
   }
 
-  /** The Mercurifi API, or InvalidInputError('api') on a chain-only client. */
-  requireApi(): MercurifiApi {
+  /**
+   * The Mercurifi API, or InvalidInputError('api') on a chain-only client. With `'social'` the API must also implement
+   * SocialApi (signals and notes): a custom 1.0 MercurifiApi without those methods is refused here.
+   */
+  requireApi(): MercurifiApi;
+  requireApi(need: 'social'): MercurifiApi & SocialApi;
+  requireApi(need?: 'social'): MercurifiApi | (MercurifiApi & SocialApi) {
     if (this.api === null)
       throw new InvalidInputError(
         'api',
         'This call needs the Mercurifi API (streams, signals and notes); chain-only clients can poll headroom() and logs instead.',
+      );
+    if (need === 'social' && !isSocialApi(this.api))
+      throw new InvalidInputError(
+        'api',
+        'Signals and notes need an API that implements SocialApi (HttpApi does); this custom API does not.',
       );
     return this.api;
   }
@@ -169,20 +180,28 @@ export class MercurifiClient {
     list(token: Address, o?: { cursor?: string; limit?: number }): Promise<ApiNotesPage>;
     replies(id: number, o?: { cursor?: string; limit?: number }): Promise<ApiNotesPage>;
     get(id: number): Promise<ApiNote>;
-    /** Top-level notes' times and sides between `from` and `to` (unix seconds, at most 90 days apart). */
+    /**
+     * Top-level notes' times and sides between `from` and `to` (unix seconds, 0 <= from <= to, at most 90 days apart).
+     * A missing or bad bound throws InvalidInputError with `field` 'from' or 'to'.
+     */
     marks(token: Address, range: { from: number; to: number }): Promise<ApiNoteMark[]>;
   } {
     return {
-      list: async (token, o = {}) => this.requireApi().listNotes(token, o),
-      replies: async (id, o = {}) => this.requireApi().listReplies(id, o),
-      get: async (id) => this.requireApi().getNote(id),
-      marks: async (token, { from, to }) => this.requireApi().noteMarks(token, from, to),
+      list: async (token, o = {}) => this.requireApi('social').listNotes(token, o),
+      replies: async (id, o = {}) => this.requireApi('social').listReplies(id, o),
+      get: async (id) => this.requireApi('social').getNote(id),
+      marks: async (token, range) => {
+        const api = this.requireApi('social');
+        if (range === undefined || range === null)
+          throw new InvalidInputError('from', 'marks needs a range: { from, to } in unix seconds');
+        return api.noteMarks(token, range.from, range.to);
+      },
     };
   }
 
   /** A token's reaction counts. `mine` and `selected` belong to website sessions and are empty here. */
   async reactions(token: Address): Promise<ApiReactions> {
-    return this.requireApi().getReactions(token);
+    return this.requireApi('social').getReactions(token);
   }
 
   /**
@@ -190,12 +209,13 @@ export class MercurifiClient {
    * reconnect catches up) and after every `notes` or `reset` event. Fetches are coalesced: at most one runs and one
    * more waits, so the handler always ends on the latest page. A fetch that fails (network, rate limit, server) is
    * skipped and the next event fetches again; an InvalidInputError, or a handler that throws, ends the stream and
-   * rejects with that error. Resolves when the stream ends or `o.signal` aborts; after an abort the handler is not
+   * rejects with that error. A handler that returns a promise is awaited before the next page, and a rejection ends
+   * the stream the same way. Resolves when the stream ends or `o.signal` aborts; after an abort the handler is not
    * called again. Note bodies are untrusted text.
    */
   async onNotes(
     token: Address,
-    handler: (page: ApiNotesPage) => void,
+    handler: (page: ApiNotesPage) => void | Promise<void>,
     o: StreamOptions = {},
   ): Promise<void> {
     const stop = new AbortController();
@@ -228,7 +248,7 @@ export class MercurifiClient {
             continue; // skipped: the next event (or a queued one) fetches again
           }
           if (stop.signal.aborted) return;
-          handler(page);
+          await handler(page);
         } while (queued && !stop.signal.aborted);
       } finally {
         // Same continuation as the loop check: an event after this point starts a new fetch, never a lost one.
@@ -274,6 +294,30 @@ export class MercurifiClient {
     this.onWarning(message);
   }
 }
+
+// Every SocialApi member, checked by the compiler: a member added to SocialApi must be added here.
+const SOCIAL_METHODS = Object.keys({
+  signInChallenge: true,
+  signIn: true,
+  signOut: true,
+  listNotes: true,
+  listReplies: true,
+  getNote: true,
+  noteMarks: true,
+  getReactions: true,
+  putReaction: true,
+  postNote: true,
+  postReply: true,
+  agree: true,
+  report: true,
+  deleteNote: true,
+  getPosting: true,
+  setPosting: true,
+  deleteAgentNotes: true,
+} satisfies Record<keyof SocialApi, true>);
+
+const isSocialApi = (api: MercurifiApi): api is MercurifiApi & SocialApi =>
+  SOCIAL_METHODS.every((m) => typeof (api as unknown as Record<string, unknown>)[m] === 'function');
 
 const resolveBook = (network: CreateClientOptions['network']): NetworkBook => {
   if (typeof network === 'string') {

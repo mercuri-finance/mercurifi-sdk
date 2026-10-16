@@ -1,9 +1,10 @@
 import { isAddressEqual } from 'viem';
 
-import type { MercurifiApi } from './api/types.js';
+import type { SocialApi } from './api/types.js';
 import {
   ApiError,
   InvalidInputError,
+  MercurifiError,
   SignerCapabilityError,
   SignInRefusedError,
   socialError,
@@ -44,7 +45,7 @@ export class SocialSession {
   #pending: Promise<string> | null = null;
 
   constructor(
-    private readonly api: MercurifiApi,
+    private readonly api: SocialApi,
     private readonly expect: SignInExpect,
     private readonly signer: Signer,
     private readonly now: () => number = Date.now,
@@ -153,7 +154,10 @@ export class SocialSession {
           enumerable: false,
         });
     } catch {
-      return new Error('a social write failed; its error carried the session bearer');
+      return new MercurifiError(
+        'MERCURIFI_ERROR',
+        'a social write failed; its error carried the session bearer',
+      );
     }
     return out;
   }

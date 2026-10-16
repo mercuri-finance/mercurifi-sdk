@@ -8,7 +8,7 @@ import {
 } from 'viem';
 
 import { checkBody } from './api/http.js';
-import type { ApiNote, BuiltTx, MercurifiApi, NoteSide } from './api/types.js';
+import type { ApiNote, BuiltTx, MercurifiApi, NoteSide, SocialApi } from './api/types.js';
 import { BuildMismatchError } from './errors.js';
 import { snapshotExpectation, verifyBuiltTx, type BuildExpectation } from './api/verifyBuild.js';
 import type { ImageUpload } from './api/types.js';
@@ -167,7 +167,7 @@ export class AgentClient {
 
   /** This account's social session, built on first use; it signs in on the first write. */
   #session(): SocialSession {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     this.#social ??= new SocialSession(
       api,
       {
@@ -190,7 +190,7 @@ export class AgentClient {
   async signal(token: Address, side: NoteSide | null): Promise<void> {
     if (side !== null && side !== 'bullish' && side !== 'bearish')
       throw new InvalidInputError('side', "side must be 'bullish', 'bearish' or null");
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     await this.#session().run(async (b) => {
       if (side !== null) return api.putReaction(token, side, b);
       // Clear each side by key: a null key would clear every reaction the account holds.
@@ -201,7 +201,7 @@ export class AgentClient {
 
   /** Sets (or with `active: false` clears) one of the token's other offered reactions. Use signal() for a side. */
   async react(token: Address, key: string, active = true): Promise<void> {
-    const api = this.mf.requireApi();
+    const api = this.mf.requireApi('social');
     await this.#session().run((b) => api.putReaction(token, key, b, active));
   }
 
@@ -216,8 +216,10 @@ export class AgentClient {
     report(id: number): Promise<void>;
     delete(id: number): Promise<void>;
   } {
-    const write = async <T>(run: (api: MercurifiApi, bearer: string) => Promise<T>): Promise<T> => {
-      const api = this.mf.requireApi();
+    const write = async <T>(
+      run: (api: MercurifiApi & SocialApi, bearer: string) => Promise<T>,
+    ): Promise<T> => {
+      const api = this.mf.requireApi('social');
       return this.#session().run((b) => run(api, b));
     };
     return {

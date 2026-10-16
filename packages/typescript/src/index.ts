@@ -39,6 +39,12 @@ export {
 } from './gas.js';
 export { NonceManager } from './nonce.js';
 export { SocialSession } from './social.js';
+export {
+  buildSignInMessage,
+  checkSignInMessage,
+  type SignInExpect,
+  type SignInKind,
+} from './signin.js';
 export { chainDeadline } from './time.js';
 export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';
 export {

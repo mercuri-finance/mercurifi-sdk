@@ -23,7 +23,7 @@ const SIGN_IN_WARNING = 'Sign this only in the Mercurifi SDK, never on a website
 
 const stamp = (d: Date): string => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-/** The exact text the API issues (backend agent_auth_message.go); pinned by fixtures/vectors/agentsignin.json. */
+/** The exact text the API issues; pinned by fixtures/vectors/agentsignin.json. */
 export const buildSignInMessage = (
   e: SignInExpect,
   nonce: string,

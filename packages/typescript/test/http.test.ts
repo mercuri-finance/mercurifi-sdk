@@ -745,10 +745,17 @@ describe('social routes', () => {
     await expect(api.listNotes(TOKEN, { limit: 0 })).rejects.toThrow(InvalidInputError);
     await expect(api.listNotes(TOKEN, { limit: 51 })).rejects.toThrow(InvalidInputError);
     await expect(api.listReplies(7, { cursor: 'a&b=c' })).rejects.toThrow(InvalidInputError);
-    await expect(api.noteMarks(TOKEN, -1, 5)).rejects.toThrow(RangeError);
-    await expect(api.noteMarks(TOKEN, 10, 5)).rejects.toThrow(RangeError);
-    await expect(api.noteMarks(TOKEN, 0, 90 * 86_400 + 1)).rejects.toThrow(RangeError);
-    await expect(api.noteMarks(TOKEN, 0.5, 5)).rejects.toThrow(RangeError);
+    for (const [from, to, field] of [
+      [-1, 5, 'from'],
+      [10, 5, 'to'],
+      [0, 90 * 86_400 + 1, 'to'],
+      [0.5, 5, 'from'],
+      [0, undefined, 'to'],
+    ] as const) {
+      const err = await api.noteMarks(TOKEN, from, to as never).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InvalidInputError);
+      expect((err as InvalidInputError).field).toBe(field);
+    }
     await expect(api.putReaction(TOKEN, null, BEARER, false)).rejects.toThrow(InvalidInputError);
     await expect(api.putReaction(TOKEN, 'Bull ish', BEARER)).rejects.toThrow(InvalidInputError);
     await expect(api.signInChallenge('admin' as never, TOKEN, TOKEN)).rejects.toThrow(

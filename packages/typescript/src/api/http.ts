@@ -25,6 +25,7 @@ import type {
   Page,
   QuoteKind,
   QuoteRequest,
+  SocialApi,
   UploadedMetadata,
 } from './types.js';
 
@@ -208,7 +209,7 @@ const isPosting = (v: unknown): v is ApiPosting =>
  * not follow one), and nothing here is ever a reason to sign (see verifyBuiltTx).
  * Paths and bodies follow the Mercurifi API (`/v1/openapi.json`); this is the only file that knows them.
  */
-export class HttpApi implements MercurifiApi {
+export class HttpApi implements MercurifiApi, SocialApi {
   readonly baseUrl: string;
   readonly chainId: number;
   readonly #apiKey: string | undefined;
@@ -609,10 +610,11 @@ export class HttpApi implements MercurifiApi {
 
   async noteMarks(token: Address, from: number, to: number): Promise<ApiNoteMark[]> {
     if (!Number.isSafeInteger(from) || from < 0)
-      throw new RangeError('from must be unix seconds, 0 or more');
+      throw new InvalidInputError('from', 'from must be unix seconds, 0 or more');
     if (!Number.isSafeInteger(to) || to < from)
-      throw new RangeError('to must be unix seconds, not before from');
-    if (to - from > MARKS_SPAN) throw new RangeError('to must be at most 90 days after from');
+      throw new InvalidInputError('to', 'to must be unix seconds, not before from');
+    if (to - from > MARKS_SPAN)
+      throw new InvalidInputError('to', 'to must be at most 90 days after from');
     const path = `/v1/tokens/${addressParam('token', token)}/notes/marks?from=${from}&to=${to}`;
     const r = await this.request(path);
     if (!Array.isArray(r) || r.length > MAX_MARKS || !r.every(isMark))
