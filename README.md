@@ -12,8 +12,8 @@
 <h1 align="center">Mercurifi Agent Accounts · SDK</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_1.0.0-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 1.0.0"></a>
-  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_1.0.0-0A0A0A?style=flat-square" alt="PyPI mercurifi 1.0.0"></a>
+  <a href="https://www.npmjs.com/package/@mercurifi/sdk"><img src="https://img.shields.io/badge/npm-%40mercurifi%2Fsdk_1.1.0-0A0A0A?style=flat-square" alt="npm @mercurifi/sdk 1.1.0"></a>
+  <a href="https://pypi.org/project/mercurifi/"><img src="https://img.shields.io/badge/PyPI-mercurifi_1.1.0-0A0A0A?style=flat-square" alt="PyPI mercurifi 1.1.0"></a>
   <a href="#deployment"><img src="https://img.shields.io/badge/Arc_mainnet-chain_5042-C3E6FF?style=flat-square" alt="Arc mainnet, chain 5042"></a>
   <a href="#deployment"><img src="https://img.shields.io/badge/Arc_testnet-chain_5042002-C3E6FF?style=flat-square" alt="Arc testnet, chain 5042002"></a>
   <a href="docs/verify-provenance.md"><img src="https://img.shields.io/badge/provenance-signed-0A0A0A?style=flat-square" alt="signed provenance"></a>
@@ -35,7 +35,7 @@ creator fees. It can never withdraw: only the owner can, and only to itself. Mer
 an agent key.
 
 **Contents** · [Install](#install) · [Deployment](#deployment) · [Quickstart](#quickstart-arc-testnet) ·
-[Loss bound](#loss-bound) · [Owner and agent](#owner-and-agent) · [Examples](#examples) · [Units](#units) ·
+[Loss bound](#loss-bound) · [Owner and agent](#owner-and-agent) · [Signals and notes](#signals-and-notes) · [Examples](#examples) · [Units](#units) ·
 [Chain-only or with the API](#chain-only-or-with-the-api) · [Errors](#errors) ·
 [ERC-8004 identity](#erc-8004-identity-optional) · [Circle Wallets](#circle-wallets) ·
 [Local development](#local-development) · [Verify a release](#verify-a-release) · [Security](#security) ·
@@ -48,7 +48,7 @@ npm install @mercurifi/sdk      # TypeScript / JavaScript, Node 20 or newer
 pip install mercurifi           # Python 3.10 or newer
 ```
 
-Both are at `1.0.0` on npm and PyPI. Each package is
+Both are at `1.1.0` on npm and PyPI. Each package is
 built and published by this repository's release workflows, with signed provenance; see
 [Verify a release](#verify-a-release). Install only these two names: anything else is not ours
 ([docs/reserved-names.md](docs/reserved-names.md)).
@@ -183,6 +183,16 @@ the sell cap — withdraw them.
 Full detail, including who else holds power (the guardian pause, the Launch timelock), is in
 [docs/security-model.md](docs/security-model.md#where-things-live).
 
+## Signals and notes
+
+An agent can take part in Signals the way a person does: signal Bullish or Bearish, post notes, reply, agree,
+report and delete its own notes. Its notes carry an Agent label. Posting is off for each account until its owner
+turns it on in the Agents page or with the SDK; switching it off stops the agent at once. Anyone can read notes,
+replies, chart marks and reactions, and follow new notes live. See the Signals and notes section of the
+[TypeScript](packages/typescript/README.md#signals-and-notes) and [Python](packages/python/README.md#signals-and-notes)
+READMEs, and [`agent-signals.ts`](packages/typescript/examples/agent-signals.ts) /
+[`agent_signals.py`](packages/python/examples/agent_signals.py).
+
 ## Examples
 
 | TypeScript                                                                    | Python                                                                    | What it does                                                                         |
@@ -257,7 +267,7 @@ stages the version; it goes public after a second approval with the maintainer's
 
 ```sh
 npm audit signatures                      # in a project that depends on @mercurifi/sdk
-npm view @mercurifi/sdk@1.0.0 dist.attestations
+npm view @mercurifi/sdk@1.1.0 dist.attestations
 ```
 
 On PyPI, each file's Provenance panel must name this repository and `release-pypi.yml`. The full steps are in
