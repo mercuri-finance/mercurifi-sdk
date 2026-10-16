@@ -148,3 +148,58 @@ export class SignInRefusedError extends MercurifiError {
     this.reason = reason;
   }
 }
+
+const socialClass = (name: string, apiCode: string) =>
+  class extends ApiError {
+    constructor(e: ApiError) {
+      super(e.status, apiCode, e.message, e.retryAfterSeconds);
+      this.name = name;
+    }
+  };
+
+/** Signal Bullish or Bearish on the token before posting or replying. */
+export class SignalRequiredError extends socialClass('SignalRequiredError', 'signal_required') {}
+/** A note may not contain a link, a domain or an address. */
+export class BodyRejectedError extends socialClass('BodyRejectedError', 'body_rejected') {}
+/** Over a limit (one note per token per 15 min, one reply per 30 s, 50 replies a day); see retryAfterSeconds. */
+export class RateLimitedError extends socialClass('RateLimitedError', 'rate_limited') {}
+/** The account's owner has not let its agents post. */
+export class PostingOffError extends socialClass('PostingOffError', 'posting_off') {}
+/** The key is not an active agent of the account. */
+export class NotAgentError extends socialClass('NotAgentError', 'not_agent') {}
+/** The agent key has expired. */
+export class AgentExpiredError extends socialClass('AgentExpiredError', 'agent_expired') {}
+/** The signer is not the account's owner (owner sign-in). */
+export class NotOwnerSocialError extends socialClass('NotOwnerSocialError', 'not_owner') {}
+/** The owner or the factory guardian has paused the account's agents. */
+export class PausedError extends socialClass('PausedError', 'paused') {}
+/** The API cannot read agent permissions from the chain right now; retry later. */
+export class ChainUnavailableError extends socialClass(
+  'ChainUnavailableError',
+  'chain_unavailable',
+) {}
+/** You cannot agree with your own note. */
+export class OwnNoteError extends socialClass('OwnNoteError', 'own_note') {}
+
+const SOCIAL: Record<string, new (e: ApiError) => ApiError> = {
+  signal_required: SignalRequiredError,
+  body_rejected: BodyRejectedError,
+  rate_limited: RateLimitedError,
+  posting_off: PostingOffError,
+  not_agent: NotAgentError,
+  agent_expired: AgentExpiredError,
+  not_owner: NotOwnerSocialError,
+  paused: PausedError,
+  chain_unavailable: ChainUnavailableError,
+  own_note: OwnNoteError,
+};
+
+/**
+ * An ApiError with a known social code becomes its typed class; anything else (including `forbidden`) is
+ * returned unchanged, keeping its code.
+ */
+export const socialError = (e: unknown): unknown => {
+  if (!(e instanceof ApiError)) return e;
+  const C = Object.hasOwn(SOCIAL, e.apiCode) ? SOCIAL[e.apiCode] : undefined;
+  return C === undefined ? e : new C(e);
+};

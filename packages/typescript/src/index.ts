@@ -38,6 +38,7 @@ export {
   GRADUATION_GAS_LIMIT,
 } from './gas.js';
 export { NonceManager } from './nonce.js';
+export { SocialSession } from './social.js';
 export { chainDeadline } from './time.js';
 export { TxSender, type WriteRequest, type SentTx, type SenderDeps } from './tx.js';
 export {
