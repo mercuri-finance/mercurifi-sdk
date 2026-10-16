@@ -1,7 +1,9 @@
 import {
+  hashMessage,
   hexToBigInt,
   isAddressEqual,
   keccak256,
+  recoverMessageAddress,
   recoverTransactionAddress,
   serializeTransaction,
   type Address,
@@ -12,10 +14,15 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 
 import { InvalidInputError, MercurifiError } from './errors.js';
 
-/** Signs Arc transactions. The SDK never sees more of a signer than this. */
+/** Signs Arc transactions, and (optionally) the SDK's own sign-in text. The SDK never sees more of a signer than this. */
 export interface Signer {
   readonly address: Address;
   signTransaction(tx: TransactionSerializableEIP1559): Promise<Hex>;
+  /**
+   * Signs a sign-in message as an EIP-191 personal message. The SDK only ever passes text it built and
+   * checked itself (see `signin.ts`). Optional: a signer without it still trades.
+   */
+  signSignIn?(message: string): Promise<Hex>;
 }
 
 const KEY_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -59,7 +66,11 @@ export const localKey = (privateKey: string): Signer => {
     );
   }
   return redacted(
-    { address: account.address, signTransaction: (tx) => account.signTransaction(tx) },
+    {
+      address: account.address,
+      signTransaction: (tx) => account.signTransaction(tx),
+      signSignIn: (message) => account.signMessage({ message }),
+    },
     'LocalKeySigner',
   );
 };
@@ -102,6 +113,45 @@ const word = (v: bigint): Hex => `0x${v.toString(16).padStart(64, '0')}`;
 const mismatch = (message: string): MercurifiError =>
   new MercurifiError('KMS_SIGNATURE_MISMATCH', message);
 
+/**
+ * Validates a KMS r and s, folds a high s to its low twin and tries the parity (given, or both). `attempt`
+ * builds the final output for one parity and reports the address it recovers to; the first that matches wins.
+ */
+const resolveKmsSignature = async <T>(
+  signature: { r: Hex; s: Hex; yParity?: 0 | 1 },
+  address: Address,
+  attempt: (
+    r: bigint,
+    s: bigint,
+    yParity: 0 | 1,
+  ) => Promise<{ value: T; recovered: Address | undefined }>,
+): Promise<T> => {
+  let r: bigint;
+  let s: bigint;
+  try {
+    r = hexToBigInt(signature.r);
+    s = hexToBigInt(signature.s);
+  } catch {
+    throw mismatch('The KMS signature has a malformed r or s.');
+  }
+  if (r <= 0n || r >= N || s <= 0n || s >= N)
+    throw mismatch('The KMS signature has an r or s outside 1..n-1.');
+  let given: 0 | 1 | undefined = signature.yParity;
+  if (given !== undefined && given !== 0 && given !== 1)
+    throw mismatch('The KMS signature has an invalid yParity.');
+  if (s > HALF_N) {
+    s = N - s;
+    if (given !== undefined) given = given === 0 ? 1 : 0;
+  }
+  for (const parity of given === undefined ? ([0, 1] as const) : ([given] as const)) {
+    const { value, recovered } = await attempt(r, s, parity);
+    if (recovered !== undefined && isAddressEqual(recovered, address)) return value;
+  }
+  throw mismatch(
+    'The KMS signature does not recover to the configured address (wrong key or wrong digest).',
+  );
+};
+
 /** Wraps a KmsAdapter; every signature is recovered and checked against the adapter's address. */
 export const kmsSigner = (adapter: KmsAdapter): Signer => {
   const address = adapter.address;
@@ -110,33 +160,23 @@ export const kmsSigner = (adapter: KmsAdapter): Signer => {
       address,
       async signTransaction(tx) {
         const signature = await adapter.signDigest(keccak256(serializeTransaction(tx)));
-        let r: bigint;
-        let s: bigint;
-        try {
-          r = hexToBigInt(signature.r);
-          s = hexToBigInt(signature.s);
-        } catch {
-          throw mismatch('The KMS signature has a malformed r or s.');
-        }
-        if (r <= 0n || r >= N || s <= 0n || s >= N)
-          throw mismatch('The KMS signature has an r or s outside 1..n-1.');
-        let given: 0 | 1 | undefined = signature.yParity;
-        if (given !== undefined && given !== 0 && given !== 1)
-          throw mismatch('The KMS signature has an invalid yParity.');
-        if (s > HALF_N) {
-          s = N - s;
-          if (given !== undefined) given = given === 0 ? 1 : 0;
-        }
-        for (const parity of given === undefined ? ([0, 1] as const) : ([given] as const)) {
-          const raw = serializeTransaction(tx, { r: word(r), s: word(s), yParity: parity });
+        return resolveKmsSignature(signature, address, async (r, s, yParity) => {
+          const raw = serializeTransaction(tx, { r: word(r), s: word(s), yParity });
           const recovered = await recoverTransactionAddress({
             serializedTransaction: raw as never,
           }).catch(() => undefined);
-          if (recovered !== undefined && isAddressEqual(recovered, address)) return raw;
-        }
-        throw mismatch(
-          'The KMS signature does not recover to the configured address (wrong key or wrong digest).',
-        );
+          return { value: raw, recovered };
+        });
+      },
+      async signSignIn(message) {
+        const signature = await adapter.signDigest(hashMessage(message));
+        return resolveKmsSignature(signature, address, async (r, s, yParity) => {
+          const sig = `${word(r)}${word(s).slice(2)}${yParity === 0 ? '1b' : '1c'}` as Hex;
+          const recovered = await recoverMessageAddress({ message, signature: sig }).catch(
+            () => undefined,
+          );
+          return { value: sig, recovered };
+        });
       },
     },
     'KmsSigner',

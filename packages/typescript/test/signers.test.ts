@@ -1,15 +1,18 @@
 import { inspect } from 'node:util';
 import {
   parseTransaction,
+  recoverMessageAddress,
   recoverTransactionAddress,
   type TransactionSerializableEIP1559,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { privateKeyToAccount, sign } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
 
+import { SignerCapabilityError } from '../src/errors.js';
 import { generateAgentKey, kmsSigner, localKey } from '../src/signers.js';
 
 const KEY = '0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d';
+const HALF = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0n;
 const SECRET = KEY.slice(2, 20);
 const TX: TransactionSerializableEIP1559 = {
   type: 'eip1559',
@@ -24,6 +27,47 @@ const TX: TransactionSerializableEIP1559 = {
 };
 
 describe('signers', () => {
+  it('signs a sign-in message that recovers to the key, with a low s', async () => {
+    const s = localKey(KEY);
+
+    const sig = await s.signSignIn!('Agent sign-in test');
+
+    const address = await recoverMessageAddress({
+      message: 'Agent sign-in test',
+      signature: sig,
+    });
+
+    expect(address).toBe(privateKeyToAccount(KEY).address);
+
+    expect(BigInt(`0x${sig.slice(66, 130)}`) <= HALF).toBe(true);
+  });
+
+  it('signs a sign-in message through a KMS digest signer', async () => {
+    const account = privateKeyToAccount(KEY);
+
+    const kms = kmsSigner({
+      address: account.address,
+      signDigest: async (digest) => {
+        const sig = await sign({ hash: digest, privateKey: KEY });
+        return { r: sig.r, s: sig.s };
+      },
+    });
+
+    const sig = await kms.signSignIn!('Owner sign-in test');
+
+    expect(await recoverMessageAddress({ message: 'Owner sign-in test', signature: sig })).toBe(
+      account.address,
+    );
+  });
+
+  it('carries the capability error code and the missing method', () => {
+    const e = new SignerCapabilityError('signSignIn');
+
+    expect(e.code).toBe('SIGNER_CAPABILITY');
+    expect(e.method).toBe('signSignIn');
+    expect(e.message).toContain('signSignIn()');
+  });
+
   it('never exposes the key through JSON, inspect, enumeration or errors', () => {
     const s = localKey(KEY);
     expect(JSON.stringify(s)).not.toContain(SECRET);
@@ -42,7 +86,7 @@ describe('signers', () => {
       expect(inspect((s as never)[k as never], { showHidden: true, depth: 5 })).not.toContain(
         SECRET,
       );
-    expect(Object.keys(s).sort()).toEqual(['address', 'signTransaction']);
+    expect(Object.keys(s).sort()).toEqual(['address', 'signSignIn', 'signTransaction']);
     let message = '';
     try {
       localKey(`${KEY}zz`);

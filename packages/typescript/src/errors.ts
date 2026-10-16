@@ -123,3 +123,17 @@ export class UnexpectedChainStateError extends MercurifiError {
     this.name = 'UnexpectedChainStateError';
   }
 }
+
+/** The signer cannot do what this call needs (for example a custom signer without `signSignIn`). */
+export class SignerCapabilityError extends MercurifiError {
+  readonly method: string;
+
+  constructor(method: string) {
+    super(
+      'SIGNER_CAPABILITY',
+      `This signer has no ${method}(); signals and notes need it. localKey and kmsSigner have it.`,
+    );
+    this.name = 'SignerCapabilityError';
+    this.method = method;
+  }
+}
