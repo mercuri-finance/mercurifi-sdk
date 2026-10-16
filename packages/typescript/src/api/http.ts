@@ -7,13 +7,21 @@ import type {
   ApiAccount,
   ApiAccountSummary,
   ApiAction,
+  ApiNote,
+  ApiNoteMark,
+  ApiNotesPage,
+  ApiPosting,
   ApiQuote,
+  ApiReactions,
+  ApiSignInChallenge,
+  ApiSocialSession,
   ApiToken,
   BuildRequest,
   BuiltTx,
   ImageUpload,
   LaunchMetadata,
   MercurifiApi,
+  NoteSide,
   Page,
   QuoteKind,
   QuoteRequest,
@@ -36,7 +44,15 @@ interface Answer {
   body: unknown;
   headers: Headers;
 }
-type Init = { method?: string; json?: unknown; form?: FormData };
+type Init = {
+  method?: string;
+  json?: unknown;
+  form?: FormData;
+  /** A social session's bearer: sent as Authorization, redacted from errors, and the API key is left off. */
+  bearer?: string;
+  /** Sign-in: send neither the API key nor Authorization. */
+  anonymous?: boolean;
+};
 
 /** A response larger than this is refused unread (the largest legitimate answer is a page of actions). */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -46,6 +62,16 @@ const MAX_CURSOR = 256;
 const MAX_LIST_PAGES = 10;
 const CURSOR = /^[A-Za-z0-9_\-.:=~]+$/;
 const DECIMAL = /^\d{1,78}$/;
+/** RFC 6750 token68: header-safe, so a bearer can never inject a header. */
+const BEARER = /^[A-Za-z0-9\-._~+/]{1,512}=*$/;
+const NONCE = /^[A-Za-z0-9]{1,128}$/;
+const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
+const REACTION_KEY = /^[a-z_]{1,32}$/;
+const MAX_PAGE = 50;
+/** The API serves at most this many marks per range. */
+const MAX_MARKS = 2_000;
+const MARKS_SPAN = 90 * 86_400;
+const NOTE_MAX = 280;
 const INSPECT = Symbol.for('nodejs.util.inspect.custom');
 
 const bad = (path: string, what: string): MercurifiError =>
@@ -74,6 +100,107 @@ const addressParam = (field: string, value: unknown): string => {
   if (!isAddr(value)) throw new InvalidInputError(field, `${field} is not an address`);
   return value.toLowerCase();
 };
+
+const checkCursor = (cursor: unknown): void => {
+  if (
+    cursor !== undefined &&
+    (typeof cursor !== 'string' || cursor.length > MAX_CURSOR || !CURSOR.test(cursor))
+  )
+    throw new InvalidInputError('cursor', 'cursor is not one the API issued');
+};
+
+/** `?cursor=…&limit=…` from the defined fields, checked first. */
+const pageQuery = (o: { cursor?: string; limit?: number }): string => {
+  checkCursor(o.cursor);
+  if (
+    o.limit !== undefined &&
+    (!Number.isSafeInteger(o.limit) || o.limit < 1 || o.limit > MAX_PAGE)
+  )
+    throw new InvalidInputError('limit', `limit must be 1 to ${MAX_PAGE}`);
+  const parts = [
+    ...(o.cursor === undefined ? [] : [`cursor=${encodeURIComponent(o.cursor)}`]),
+    ...(o.limit === undefined ? [] : [`limit=${o.limit}`]),
+  ];
+  return parts.length === 0 ? '' : `?${parts.join('&')}`;
+};
+
+const noteId = (id: unknown): number => {
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 1)
+    throw new InvalidInputError('id', 'id must be a positive integer note id');
+  return id;
+};
+
+/** Never echoes the value: a malformed bearer may be a secret with a stray character. */
+const bearerParam = (bearer: unknown): string => {
+  if (typeof bearer !== 'string' || !BEARER.test(bearer))
+    throw new InvalidInputError('bearer', 'bearer is not a session token');
+  return bearer;
+};
+
+const codePoints = (s: string): number => [...s].length;
+
+/**
+ * A note body as the API will store it: control and format characters and line or paragraph separators removed,
+ * trimmed, 1 to 280 characters (code points). Throws RangeError otherwise. The API also refuses links and addresses.
+ */
+export const checkBody = (body: string): string => {
+  if (typeof body !== 'string') throw new RangeError('a note body must be text');
+  const clean = body.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim();
+  const n = codePoints(clean);
+  if (n < 1 || n > NOTE_MAX)
+    throw new RangeError(`a note body must be 1 to ${NOTE_MAX} characters`);
+  return clean;
+};
+
+const isCount = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 0;
+const isSide = (v: unknown): v is NoteSide => v === 'bullish' || v === 'bearish';
+
+const isNote = (v: unknown): v is ApiNote =>
+  isObject(v) &&
+  Number.isSafeInteger(v.id) &&
+  (v.id as number) > 0 &&
+  isAddr(v.address) &&
+  isSide(v.side) &&
+  (v.holdBps === null || isCount(v.holdBps)) &&
+  typeof v.body === 'string' &&
+  codePoints(v.body) <= NOTE_MAX &&
+  isCount(v.createdAt) &&
+  (v.replyCount === undefined || isCount(v.replyCount)) &&
+  isCount(v.agreeCount) &&
+  typeof v.agreed === 'boolean' &&
+  typeof v.agent === 'boolean';
+
+const isNotesPage = (v: unknown): v is ApiNotesPage =>
+  isObject(v) &&
+  Array.isArray(v.notes) &&
+  v.notes.length <= MAX_PAGE &&
+  v.notes.every(isNote) &&
+  (v.nextCursor === null ||
+    (typeof v.nextCursor === 'string' &&
+      v.nextCursor.length <= MAX_CURSOR &&
+      CURSOR.test(v.nextCursor)));
+
+const isMark = (v: unknown): v is ApiNoteMark =>
+  isObject(v) &&
+  Number.isSafeInteger(v.id) &&
+  (v.id as number) > 0 &&
+  isCount(v.createdAt) &&
+  isSide(v.side) &&
+  typeof v.agent === 'boolean';
+
+const isReactions = (v: unknown): v is ApiReactions =>
+  isObject(v) &&
+  isObject(v.counts) &&
+  Object.values(v.counts).every(isCount) &&
+  isCount(v.total) &&
+  isCount(v.holders) &&
+  (v.mine === null || typeof v.mine === 'string') &&
+  Array.isArray(v.selected) &&
+  v.selected.every((k) => typeof k === 'string') &&
+  typeof v.brandLookalike === 'boolean';
+
+const isPosting = (v: unknown): v is ApiPosting =>
+  isObject(v) && typeof v.enabled === 'boolean' && (v.updatedAt === null || isCount(v.updatedAt));
 
 /**
  * fetch-based MercurifiApi. Sends `X-Api-Key` when given; never sends anything that could sign or move funds.
@@ -142,16 +269,20 @@ export class HttpApi implements MercurifiApi {
     return `HttpApi { baseUrl: '${this.baseUrl}', chainId: ${this.chainId}, apiKey: ${this.#apiKey === undefined ? 'none' : '[redacted]'} }`;
   }
 
-  /** Text with every occurrence of the API key replaced, so no error can carry it. */
-  private keyless(text: string): string {
-    return this.#apiKey === undefined ? text : text.split(this.#apiKey).join('[redacted]');
+  /** Text with every occurrence of the API key and the request's bearer replaced, so no error can carry them. */
+  private keyless(text: string, bearer?: string): string {
+    let out = text;
+    // An empty needle would splice the marker between every character.
+    for (const secret of [this.#apiKey, bearer])
+      if (secret !== undefined && secret !== '') out = out.split(secret).join('[redacted]');
+    return out;
   }
 
-  private headers(extra: Record<string, string> = {}): Record<string, string> {
+  private headers(extra: Record<string, string> = {}, noKey = false): Record<string, string> {
     return {
       Accept: 'application/json',
       'Accept-Encoding': 'identity',
-      ...(this.#apiKey === undefined ? {} : { 'X-Api-Key': this.#apiKey }),
+      ...(this.#apiKey === undefined || noKey ? {} : { 'X-Api-Key': this.#apiKey }),
       ...extra,
     };
   }
@@ -193,7 +324,11 @@ export class HttpApi implements MercurifiApi {
       const response = await this.#fetch(`${this.baseUrl}${path}`, {
         method: init.method ?? 'GET',
         headers: this.headers(
-          init.json === undefined ? {} : { 'Content-Type': 'application/json' },
+          {
+            ...(init.json === undefined ? {} : { 'Content-Type': 'application/json' }),
+            ...(init.bearer === undefined ? {} : { Authorization: `Bearer ${init.bearer}` }),
+          },
+          init.bearer !== undefined || init.anonymous === true,
         ),
         body: init.form ?? (init.json === undefined ? undefined : JSON.stringify(init.json)),
         redirect: 'error',
@@ -211,11 +346,13 @@ export class HttpApi implements MercurifiApi {
         // A server (or a proxy in front of it) may echo the request headers: the key is cut from its words before anything else.
         const rawCode = isObject(e) && typeof e.code === 'string' ? e.code : '';
         const code =
-          /^[a-z0-9_.-]{1,64}$/i.test(rawCode) && this.keyless(rawCode) === rawCode
+          /^[a-z0-9_.-]{1,64}$/i.test(rawCode) && this.keyless(rawCode, init.bearer) === rawCode
             ? rawCode
             : 'http_error';
         const said =
-          isObject(e) && typeof e.message === 'string' ? cleanText(this.keyless(e.message)) : '';
+          isObject(e) && typeof e.message === 'string'
+            ? cleanText(this.keyless(e.message, init.bearer))
+            : '';
         const message = said !== '' ? said : `HTTP ${response.status} from ${path}`;
         const retry = Number(response.headers.get('Retry-After'));
         throw new ApiError(
@@ -240,7 +377,7 @@ export class HttpApi implements MercurifiApi {
       throw new ApiError(
         0,
         timedOut ? 'timeout' : 'network',
-        `Request to ${path} failed: ${cleanText(this.keyless(String(reason)))}`,
+        `Request to ${path} failed: ${cleanText(this.keyless(String(reason), init.bearer))}`,
         null,
       );
     } finally {
@@ -303,11 +440,7 @@ export class HttpApi implements MercurifiApi {
   }
 
   async listActions(account: Address, cursor?: string): Promise<Page<ApiAction>> {
-    if (
-      cursor !== undefined &&
-      (typeof cursor !== 'string' || cursor.length > MAX_CURSOR || !CURSOR.test(cursor))
-    )
-      throw new InvalidInputError('cursor', 'cursor is not one the API issued');
+    checkCursor(cursor);
     const q = cursor === undefined ? '' : `?cursor=${encodeURIComponent(cursor)}`;
     return await this.page<ApiAction>(
       `/v1/agent-accounts/${addressParam('account', account)}/actions${q}`,
@@ -378,6 +511,200 @@ export class HttpApi implements MercurifiApi {
     if (!isObject(r) || !isAddr(r.address) || r.address.toLowerCase() !== t)
       throw bad(path, 'not the requested token');
     return r as unknown as ApiToken;
+  }
+
+  async signInChallenge(
+    kind: 'agent' | 'owner',
+    account: Address,
+    signer: Address,
+  ): Promise<ApiSignInChallenge> {
+    if (kind !== 'agent' && kind !== 'owner')
+      throw new InvalidInputError('kind', "kind must be 'agent' or 'owner'");
+    const json = {
+      kind,
+      account: addressParam('account', account),
+      signer: addressParam('signer', signer),
+    };
+    const path = '/v1/agent-auth/nonce';
+    const r = await this.request(path, { method: 'POST', json, anonymous: true });
+    if (
+      !isObject(r) ||
+      typeof r.nonce !== 'string' ||
+      !NONCE.test(r.nonce) ||
+      typeof r.message !== 'string' ||
+      r.message.length > 1_024 ||
+      !isCount(r.issuedAt) ||
+      !isCount(r.expiresAt)
+    )
+      throw bad(path, 'not a sign-in challenge');
+    return { nonce: r.nonce, message: r.message, issuedAt: r.issuedAt, expiresAt: r.expiresAt };
+  }
+
+  async signIn(nonce: string, signature: Hex): Promise<ApiSocialSession> {
+    if (typeof nonce !== 'string' || !NONCE.test(nonce))
+      throw new InvalidInputError('nonce', 'nonce is not one the API issued');
+    if (typeof signature !== 'string' || !SIGNATURE.test(signature))
+      throw new InvalidInputError('signature', 'signature must be 65 bytes of hex');
+    const path = '/v1/agent-auth/session';
+    const r = await this.request(path, {
+      method: 'POST',
+      json: { nonce, signature },
+      anonymous: true,
+    });
+    if (
+      !isObject(r) ||
+      typeof r.token !== 'string' ||
+      !BEARER.test(r.token) ||
+      (r.kind !== 'agent' && r.kind !== 'owner') ||
+      !isAddr(r.account) ||
+      !isCount(r.expiresAt)
+    )
+      throw bad(path, 'not a session');
+    return { token: r.token, kind: r.kind, account: r.account, expiresAt: r.expiresAt };
+  }
+
+  async signOut(bearer: string): Promise<void> {
+    await this.request('/v1/agent-auth/session', {
+      method: 'DELETE',
+      bearer: bearerParam(bearer),
+    });
+  }
+
+  async listNotes(
+    token: Address,
+    o: { cursor?: string; limit?: number } = {},
+  ): Promise<ApiNotesPage> {
+    const path = `/v1/tokens/${addressParam('token', token)}/notes${pageQuery(o)}`;
+    const r = await this.request(path);
+    if (!isNotesPage(r)) throw bad(path, 'not a page of notes');
+    return r;
+  }
+
+  async listReplies(
+    id: number,
+    o: { cursor?: string; limit?: number } = {},
+  ): Promise<ApiNotesPage> {
+    const path = `/v1/notes/${noteId(id)}/replies${pageQuery(o)}`;
+    const r = await this.request(path);
+    if (!isNotesPage(r)) throw bad(path, 'not a page of replies');
+    return r;
+  }
+
+  async getNote(id: number): Promise<ApiNote> {
+    const path = `/v1/notes/${noteId(id)}`;
+    const r = await this.request(path);
+    if (!isNote(r) || r.id !== id) throw bad(path, 'not the requested note');
+    return r;
+  }
+
+  async noteMarks(token: Address, from: number, to: number): Promise<ApiNoteMark[]> {
+    if (!Number.isSafeInteger(from) || from < 0)
+      throw new RangeError('from must be unix seconds, 0 or more');
+    if (!Number.isSafeInteger(to) || to < from)
+      throw new RangeError('to must be unix seconds, not before from');
+    if (to - from > MARKS_SPAN) throw new RangeError('to must be at most 90 days after from');
+    const path = `/v1/tokens/${addressParam('token', token)}/notes/marks?from=${from}&to=${to}`;
+    const r = await this.request(path);
+    if (!Array.isArray(r) || r.length > MAX_MARKS || !r.every(isMark))
+      throw bad(path, 'not a list of marks');
+    return r;
+  }
+
+  async getReactions(token: Address): Promise<ApiReactions> {
+    const path = `/v1/tokens/${addressParam('token', token)}/reactions`;
+    const r = await this.request(path);
+    if (!isReactions(r)) throw bad(path, 'not reactions');
+    return r;
+  }
+
+  async putReaction(
+    token: Address,
+    key: string | null,
+    bearer: string,
+    active?: boolean,
+  ): Promise<void> {
+    if (key !== null && (typeof key !== 'string' || !REACTION_KEY.test(key)))
+      throw new InvalidInputError('key', 'key is not a reaction name');
+    if (active !== undefined && (typeof active !== 'boolean' || key === null))
+      throw new InvalidInputError('active', 'active must be true or false, with a key');
+    await this.request(`/v1/tokens/${addressParam('token', token)}/reactions`, {
+      method: 'PUT',
+      json: active === undefined ? { key } : { key, active },
+      bearer: bearerParam(bearer),
+    });
+  }
+
+  async postNote(token: Address, body: string, bearer: string): Promise<ApiNote> {
+    const path = `/v1/tokens/${addressParam('token', token)}/notes`;
+    const r = await this.request(path, {
+      method: 'POST',
+      json: { body },
+      bearer: bearerParam(bearer),
+    });
+    if (!isNote(r)) throw bad(path, 'not a note');
+    return r;
+  }
+
+  async postReply(id: number, body: string, bearer: string): Promise<ApiNote> {
+    const path = `/v1/notes/${noteId(id)}/replies`;
+    const r = await this.request(path, {
+      method: 'POST',
+      json: { body },
+      bearer: bearerParam(bearer),
+    });
+    if (!isNote(r)) throw bad(path, 'not a reply');
+    return r;
+  }
+
+  async agree(id: number, active: boolean, bearer: string): Promise<void> {
+    if (typeof active !== 'boolean')
+      throw new InvalidInputError('active', 'active must be true or false');
+    await this.request(`/v1/notes/${noteId(id)}/agree`, {
+      method: 'PUT',
+      json: { active },
+      bearer: bearerParam(bearer),
+    });
+  }
+
+  async report(id: number, bearer: string): Promise<void> {
+    await this.request(`/v1/notes/${noteId(id)}/report`, {
+      method: 'POST',
+      bearer: bearerParam(bearer),
+    });
+  }
+
+  async deleteNote(id: number, bearer: string): Promise<void> {
+    await this.request(`/v1/notes/${noteId(id)}`, {
+      method: 'DELETE',
+      bearer: bearerParam(bearer),
+    });
+  }
+
+  async getPosting(account: Address): Promise<ApiPosting> {
+    const path = `/v1/agent-accounts/${addressParam('account', account)}/posting`;
+    const r = await this.request(path);
+    if (!isPosting(r)) throw bad(path, 'not a posting switch');
+    return r;
+  }
+
+  async setPosting(account: Address, enabled: boolean, bearer: string): Promise<ApiPosting> {
+    if (typeof enabled !== 'boolean')
+      throw new InvalidInputError('enabled', 'enabled must be true or false');
+    const path = `/v1/agent-accounts/${addressParam('account', account)}/posting`;
+    const r = await this.request(path, {
+      method: 'PUT',
+      json: { enabled },
+      bearer: bearerParam(bearer),
+    });
+    if (!isPosting(r)) throw bad(path, 'not a posting switch');
+    return r;
+  }
+
+  async deleteAgentNotes(account: Address, bearer: string): Promise<{ deleted: number }> {
+    const path = `/v1/agent-accounts/${addressParam('account', account)}/notes`;
+    const r = await this.request(path, { method: 'DELETE', bearer: bearerParam(bearer) });
+    if (!isObject(r) || !isCount(r.deleted)) throw bad(path, 'not a delete count');
+    return { deleted: r.deleted };
   }
 
   /** The returned headers contain the API key: pass them to the stream client and never log or serialise this object. */

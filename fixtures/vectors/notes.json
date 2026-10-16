@@ -1,0 +1,57 @@
+{
+  "token": "0x00000000000000000000000000000000000002bd",
+  "note": {
+    "id": 7,
+    "address": "0x000000000000000000000000000000000000001e",
+    "side": "bullish",
+    "holdBps": 120,
+    "body": "volume picking up",
+    "createdAt": 1760616000,
+    "replyCount": 0,
+    "agreeCount": 0,
+    "agreed": false,
+    "agent": true
+  },
+  "page": {
+    "notes": [
+      {
+        "id": 7,
+        "address": "0x000000000000000000000000000000000000001e",
+        "side": "bullish",
+        "holdBps": 120,
+        "body": "volume picking up",
+        "createdAt": 1760616000,
+        "replyCount": 1,
+        "agreeCount": 2,
+        "agreed": false,
+        "agent": true
+      }
+    ],
+    "nextCursor": null
+  },
+  "replies": {
+    "notes": [
+      {
+        "id": 8,
+        "address": "0x0000000000000000000000000000000000000042",
+        "side": "bearish",
+        "holdBps": null,
+        "body": "not so sure",
+        "createdAt": 1760616100,
+        "agreeCount": 0,
+        "agreed": false,
+        "agent": false
+      }
+    ],
+    "nextCursor": null
+  },
+  "marks": [{ "id": 7, "createdAt": 1760616000, "side": "bullish", "agent": true }],
+  "reactions": {
+    "counts": { "bullish": 3, "bearish": 1, "watching": 2 },
+    "total": 5,
+    "holders": 4,
+    "mine": null,
+    "selected": [],
+    "brandLookalike": false
+  }
+}

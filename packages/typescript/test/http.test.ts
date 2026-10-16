@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { inspect } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { HttpApi } from '../src/api/http.js';
+import { checkBody, HttpApi } from '../src/api/http.js';
 import { createClient } from '../src/client.js';
 import { ApiError, InvalidInputError } from '../src/errors.js';
 import { testnetRpc } from './helpers/testnet.js';
@@ -475,5 +476,339 @@ describe('HttpApi hardening', () => {
     }).listAccounts(ADDR);
     expect(out).toHaveLength(10);
     expect(warnings[0]).toMatch(/cut off/);
+  });
+});
+
+const VECTORS = JSON.parse(
+  readFileSync(new URL('../../../fixtures/vectors/notes.json', import.meta.url), 'utf8'),
+);
+const TOKEN = VECTORS.token as `0x${string}`;
+const NOTE = VECTORS.note;
+const PAGE = VECTORS.page;
+const BEARER = 'bearer-secret';
+const headersOf = (f: ReturnType<typeof fakeFetch>, i = 0) =>
+  f.mock.calls[i]![1]!.headers as Record<string, string>;
+const social = (f: ReturnType<typeof fakeFetch>, apiKey: string | undefined = 'mfk_test_abc') =>
+  new HttpApi({
+    baseUrl: 'https://x.example',
+    chainId: 1,
+    fetch: f,
+    ...(apiKey === undefined ? {} : { apiKey }),
+  });
+
+describe('social routes', () => {
+  it('sends the bearer, never the API key, on a social write', async () => {
+    const f = fakeFetch(201, NOTE);
+    await social(f).postNote(TOKEN, 'volume picking up', BEARER);
+    expect(String(f.mock.calls[0]![0])).toBe(`https://x.example/v1/tokens/${TOKEN}/notes`);
+    expect(f.mock.calls[0]![1]!.method).toBe('POST');
+    expect(sentJson(f)).toEqual({ body: 'volume picking up' });
+    expect(headersOf(f).Authorization).toBe(`Bearer ${BEARER}`);
+    expect(headersOf(f)['X-Api-Key']).toBeUndefined();
+  });
+
+  it('keeps the API key on public note reads, with no Authorization', async () => {
+    const f = fakeFetch(200, PAGE);
+    await social(f).listNotes(TOKEN);
+    expect(headersOf(f)['X-Api-Key']).toBe('mfk_test_abc');
+    expect(headersOf(f).Authorization).toBeUndefined();
+  });
+
+  it('cuts the bearer out of an echoed error', async () => {
+    const f = fakeFetch(400, { error: { code: 'bad', message: `saw ${BEARER} here` } });
+    const err = (await social(f)
+      .postNote(TOKEN, 'x', BEARER)
+      .catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.message).toContain('[redacted]');
+    expect(err.message).not.toContain(BEARER);
+    expect(err.apiCode).toBe('bad');
+    const echoed = fakeFetch(401, { error: { code: BEARER, message: 'no' } });
+    const coded = (await social(echoed)
+      .signOut(BEARER)
+      .catch((e: unknown) => e)) as ApiError;
+    expect(coded.apiCode).toBe('http_error');
+    const leaky = vi.fn(async () => {
+      throw new Error(`Illegal header value Bearer ${BEARER}`);
+    });
+    const net = (await social(leaky as never)
+      .agree(7, true, BEARER)
+      .catch((e: unknown) => e)) as ApiError;
+    expect(net.message).not.toContain(BEARER);
+  });
+
+  it('reads the shared note vectors', async () => {
+    const page = await social(fakeFetch(200, PAGE)).listNotes(TOKEN);
+    expect(page.notes[0]!.agent).toBe(true);
+    expect(page).toEqual(PAGE);
+    const replies = await social(fakeFetch(200, VECTORS.replies)).listReplies(7);
+    expect(replies.notes[0]!.holdBps).toBeNull();
+    expect(await social(fakeFetch(200, VECTORS.marks)).noteMarks(TOKEN, 0, 100)).toEqual(
+      VECTORS.marks,
+    );
+    expect(await social(fakeFetch(200, VECTORS.reactions)).getReactions(TOKEN)).toEqual(
+      VECTORS.reactions,
+    );
+    expect(await social(fakeFetch(200, NOTE)).getNote(7)).toEqual(NOTE);
+  });
+
+  it('signs in with neither the API key nor Authorization', async () => {
+    const challenge = {
+      nonce: '0123456789abcdef0123456789abcdef',
+      message: 'Agent sign-in for account ...',
+      issuedAt: 1760616000,
+      expiresAt: 1760616300,
+    };
+    const f = fakeFetch(200, challenge);
+    expect(
+      await social(f).signInChallenge('agent', NOTE.address, VECTORS.replies.notes[0].address),
+    ).toEqual(challenge);
+    expect(String(f.mock.calls[0]![0])).toBe('https://x.example/v1/agent-auth/nonce');
+    expect(sentJson(f)).toEqual({
+      kind: 'agent',
+      account: NOTE.address,
+      signer: VECTORS.replies.notes[0].address,
+    });
+    expect(headersOf(f)['X-Api-Key']).toBeUndefined();
+    expect(headersOf(f).Authorization).toBeUndefined();
+    const session = {
+      token: 'A'.repeat(43),
+      kind: 'agent',
+      account: NOTE.address,
+      expiresAt: 1760619600,
+    };
+    const g = fakeFetch(200, session);
+    expect(await social(g).signIn(challenge.nonce, `0x${'11'.repeat(65)}`)).toEqual(session);
+    expect(String(g.mock.calls[0]![0])).toBe('https://x.example/v1/agent-auth/session');
+    expect(sentJson(g)).toEqual({ nonce: challenge.nonce, signature: `0x${'11'.repeat(65)}` });
+    expect(headersOf(g)['X-Api-Key']).toBeUndefined();
+    expect(headersOf(g).Authorization).toBeUndefined();
+  });
+
+  it('keeps a sign-in refusal code intact', async () => {
+    const f = fakeFetch(403, { error: { code: 'posting_off', message: 'posting is off' } });
+    const err = (await social(f)
+      .signIn('0123456789abcdef0123456789abcdef', `0x${'11'.repeat(65)}`)
+      .catch((e: unknown) => e)) as ApiError;
+    expect([err.status, err.apiCode, err.message]).toEqual([403, 'posting_off', 'posting is off']);
+  });
+
+  it('sends each write to its route with its body', async () => {
+    const A = NOTE.address;
+    const cases: [string, (api: HttpApi) => Promise<unknown>, unknown, string, string, unknown][] =
+      [
+        [
+          'signOut',
+          (api) => api.signOut(BEARER),
+          undefined,
+          'DELETE',
+          '/v1/agent-auth/session',
+          undefined,
+        ],
+        [
+          'putReaction',
+          (api) => api.putReaction(TOKEN, 'bullish', BEARER),
+          undefined,
+          'PUT',
+          `/v1/tokens/${TOKEN}/reactions`,
+          { key: 'bullish' },
+        ],
+        [
+          'putReaction off',
+          (api) => api.putReaction(TOKEN, 'bearish', BEARER, false),
+          undefined,
+          'PUT',
+          `/v1/tokens/${TOKEN}/reactions`,
+          { key: 'bearish', active: false },
+        ],
+        [
+          'putReaction null',
+          (api) => api.putReaction(TOKEN, null, BEARER),
+          undefined,
+          'PUT',
+          `/v1/tokens/${TOKEN}/reactions`,
+          { key: null },
+        ],
+        [
+          'postReply',
+          (api) => api.postReply(7, 'not so sure', BEARER),
+          VECTORS.replies.notes[0],
+          'POST',
+          '/v1/notes/7/replies',
+          { body: 'not so sure' },
+        ],
+        [
+          'agree',
+          (api) => api.agree(7, true, BEARER),
+          undefined,
+          'PUT',
+          '/v1/notes/7/agree',
+          { active: true },
+        ],
+        [
+          'report',
+          (api) => api.report(7, BEARER),
+          undefined,
+          'POST',
+          '/v1/notes/7/report',
+          undefined,
+        ],
+        [
+          'deleteNote',
+          (api) => api.deleteNote(7, BEARER),
+          undefined,
+          'DELETE',
+          '/v1/notes/7',
+          undefined,
+        ],
+        [
+          'setPosting',
+          (api) => api.setPosting(A, true, BEARER),
+          { enabled: true, updatedAt: 1760616000 },
+          'PUT',
+          `/v1/agent-accounts/${A}/posting`,
+          { enabled: true },
+        ],
+        [
+          'deleteAgentNotes',
+          (api) => api.deleteAgentNotes(A, BEARER),
+          { deleted: 3 },
+          'DELETE',
+          `/v1/agent-accounts/${A}/notes`,
+          undefined,
+        ],
+      ];
+    for (const [name, call, answer, method, path, body] of cases) {
+      const f =
+        answer === undefined
+          ? (vi.fn(
+              async (_url: string | URL | Request, _init?: RequestInit) =>
+                new Response(null, { status: 204 }),
+            ) as ReturnType<typeof fakeFetch>)
+          : fakeFetch(200, answer);
+      await call(social(f));
+      const init = f.mock.calls[0]![1]!;
+      expect([name, String(f.mock.calls[0]![0]), init.method]).toEqual([
+        name,
+        `https://x.example${path}`,
+        method,
+      ]);
+      expect(init.body === undefined ? undefined : sentJson(f)).toEqual(body);
+      expect(headersOf(f).Authorization).toBe(`Bearer ${BEARER}`);
+      expect(headersOf(f)['X-Api-Key']).toBeUndefined();
+    }
+    expect(await social(fakeFetch(200, { deleted: 3 })).deleteAgentNotes(A, BEARER)).toEqual({
+      deleted: 3,
+    });
+  });
+
+  it('reads pages, marks and the posting switch from their routes', async () => {
+    const f = fakeFetch(200, PAGE);
+    await social(f).listNotes(TOKEN, { cursor: 'eyJzIjoibm90ZXMifQ', limit: 50 });
+    expect(String(f.mock.calls[0]![0])).toBe(
+      `https://x.example/v1/tokens/${TOKEN}/notes?cursor=eyJzIjoibm90ZXMifQ&limit=50`,
+    );
+    const g = fakeFetch(200, VECTORS.replies);
+    await social(g).listReplies(7, { limit: 5 });
+    expect(String(g.mock.calls[0]![0])).toBe('https://x.example/v1/notes/7/replies?limit=5');
+    const m = fakeFetch(200, []);
+    await social(m).noteMarks(TOKEN, 100, 100 + 90 * 86_400);
+    expect(String(m.mock.calls[0]![0])).toBe(
+      `https://x.example/v1/tokens/${TOKEN}/notes/marks?from=100&to=${100 + 90 * 86_400}`,
+    );
+    const p = fakeFetch(200, { enabled: false, updatedAt: null });
+    expect(await social(p).getPosting(NOTE.address)).toEqual({ enabled: false, updatedAt: null });
+    expect(String(p.mock.calls[0]![0])).toBe(
+      `https://x.example/v1/agent-accounts/${NOTE.address}/posting`,
+    );
+    expect(headersOf(p).Authorization).toBeUndefined();
+  });
+
+  it('refuses bad arguments before any request', async () => {
+    const f = fakeFetch(200, {});
+    const api = social(f);
+    for (const id of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN])
+      await expect(api.getNote(id)).rejects.toThrow(InvalidInputError);
+    await expect(api.listNotes(TOKEN, { limit: 0 })).rejects.toThrow(InvalidInputError);
+    await expect(api.listNotes(TOKEN, { limit: 51 })).rejects.toThrow(InvalidInputError);
+    await expect(api.listReplies(7, { cursor: 'a&b=c' })).rejects.toThrow(InvalidInputError);
+    await expect(api.noteMarks(TOKEN, -1, 5)).rejects.toThrow(RangeError);
+    await expect(api.noteMarks(TOKEN, 10, 5)).rejects.toThrow(RangeError);
+    await expect(api.noteMarks(TOKEN, 0, 90 * 86_400 + 1)).rejects.toThrow(RangeError);
+    await expect(api.noteMarks(TOKEN, 0.5, 5)).rejects.toThrow(RangeError);
+    await expect(api.putReaction(TOKEN, null, BEARER, false)).rejects.toThrow(InvalidInputError);
+    await expect(api.putReaction(TOKEN, 'Bull ish', BEARER)).rejects.toThrow(InvalidInputError);
+    await expect(api.signInChallenge('admin' as never, TOKEN, TOKEN)).rejects.toThrow(
+      InvalidInputError,
+    );
+    await expect(api.signIn('nonce', 'nothex' as never)).rejects.toThrow(InvalidInputError);
+    for (const bearer of ['', 'a b', 'x\r\nX-Evil: 1', 'é'])
+      await expect(api.report(7, bearer)).rejects.toThrow(InvalidInputError);
+    const bad = (await api.report(7, 'x\r\nX-Evil: 1').catch((e: unknown) => e)) as Error;
+    expect(bad.message).not.toContain('X-Evil');
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('validates social response shapes', async () => {
+    const wrong = (body: unknown) => social(fakeFetch(200, body));
+    const reject = { code: 'API_BAD_RESPONSE' };
+    await expect(wrong({ ...NOTE, side: 'neutral' }).getNote(7)).rejects.toMatchObject(reject);
+    await expect(wrong({ ...NOTE, id: 8 }).getNote(7)).rejects.toMatchObject(reject);
+    await expect(wrong({ ...NOTE, address: 'nope' }).getNote(7)).rejects.toMatchObject(reject);
+    await expect(wrong({ ...NOTE, body: 'x'.repeat(281) }).getNote(7)).rejects.toMatchObject(
+      reject,
+    );
+    expect((await wrong({ ...NOTE, body: '🚀'.repeat(280) }).getNote(7)).body).toHaveLength(560);
+    await expect(
+      wrong({ notes: Array.from({ length: 51 }, () => NOTE), nextCursor: null }).listNotes(TOKEN),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ ...PAGE, nextCursor: 'bad cursor!' }).listNotes(TOKEN),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong([{ id: 1, createdAt: 2, side: 'up', agent: false }]).noteMarks(TOKEN, 0, 1),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ ...VECTORS.reactions, mine: 5 }).getReactions(TOKEN),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ ...VECTORS.reactions, selected: [1] }).getReactions(TOKEN),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ enabled: 'yes', updatedAt: null }).getPosting(TOKEN),
+    ).rejects.toMatchObject(reject);
+    await expect(wrong({ deleted: -1 }).deleteAgentNotes(TOKEN, BEARER)).rejects.toMatchObject(
+      reject,
+    );
+    await expect(
+      wrong({ nonce: 'n', message: 7, issuedAt: 1, expiresAt: 2 }).signInChallenge(
+        'owner',
+        TOKEN,
+        TOKEN,
+      ),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ token: 'a b', kind: 'agent', account: TOKEN, expiresAt: 1 }).signIn(
+        'n',
+        `0x${'11'.repeat(65)}`,
+      ),
+    ).rejects.toMatchObject(reject);
+    await expect(
+      wrong({ token: 'abc', kind: 'agent', account: 'nope', expiresAt: 1 }).signIn(
+        'n',
+        `0x${'11'.repeat(65)}`,
+      ),
+    ).rejects.toMatchObject(reject);
+  });
+});
+
+describe('checkBody', () => {
+  it('strips control and format characters, trims and counts code points like the API', () => {
+    expect(checkBody('  volume\u200b picking up\u0007 \n')).toBe('volume picking up');
+    expect(checkBody('a\u2028b\u2029c')).toBe('abc');
+    expect(checkBody('🚀'.repeat(280))).toBe('🚀'.repeat(280));
+    expect(() => checkBody('🚀'.repeat(281))).toThrow(RangeError);
+    expect(() => checkBody(' \u200b\t ')).toThrow(RangeError);
+    expect(() => checkBody(5 as never)).toThrow(RangeError);
   });
 });
