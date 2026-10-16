@@ -537,6 +537,19 @@ describe('social routes', () => {
     expect(net.message).not.toContain(BEARER);
   });
 
+  it('cuts a bearer or key split by a zero-width character out of an echoed error', async () => {
+    const split = (secret: string) => `${secret.slice(0, 4)}\u200b${secret.slice(4)}`;
+    const f = fakeFetch(400, {
+      error: { code: 'bad', message: `saw ${split(BEARER)} and ${split('mfk_test_abc')}` },
+    });
+    const err = (await social(f)
+      .postNote(TOKEN, 'x', BEARER)
+      .catch((e: unknown) => e)) as ApiError;
+    expect(err.message).not.toContain(BEARER);
+    expect(err.message).not.toContain('mfk_test_abc');
+    expect(err.message).toBe('saw [redacted] and [redacted]');
+  });
+
   it('reads the shared note vectors', async () => {
     const page = await social(fakeFetch(200, PAGE)).listNotes(TOKEN);
     expect(page.notes[0]!.agent).toBe(true);
@@ -807,8 +820,17 @@ describe('checkBody', () => {
     expect(checkBody('  volume\u200b picking up\u0007 \n')).toBe('volume picking up');
     expect(checkBody('a\u2028b\u2029c')).toBe('abc');
     expect(checkBody('🚀'.repeat(280))).toBe('🚀'.repeat(280));
-    expect(() => checkBody('🚀'.repeat(281))).toThrow(RangeError);
-    expect(() => checkBody(' \u200b\t ')).toThrow(RangeError);
-    expect(() => checkBody(5 as never)).toThrow(RangeError);
+    for (const bad of ['🚀'.repeat(281), ' \u200b\t ', 5 as never]) {
+      const err = (() => {
+        try {
+          checkBody(bad);
+        } catch (e) {
+          return e;
+        }
+        return undefined;
+      })() as InvalidInputError;
+      expect(err).toBeInstanceOf(InvalidInputError);
+      expect(err.field).toBe('body');
+    }
   });
 });

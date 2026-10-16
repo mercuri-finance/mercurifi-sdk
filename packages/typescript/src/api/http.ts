@@ -141,14 +141,14 @@ const codePoints = (s: string): number => [...s].length;
 
 /**
  * A note body as the API will store it: control and format characters and line or paragraph separators removed,
- * trimmed, 1 to 280 characters (code points). Throws RangeError otherwise. The API also refuses links and addresses.
+ * trimmed, 1 to 280 characters (code points). Throws InvalidInputError('body') otherwise. The API also refuses links and addresses.
  */
 export const checkBody = (body: string): string => {
-  if (typeof body !== 'string') throw new RangeError('a note body must be text');
+  const refused = new InvalidInputError('body', `a note body must be 1 to ${NOTE_MAX} characters`);
+  if (typeof body !== 'string') throw refused;
   const clean = body.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim();
   const n = codePoints(clean);
-  if (n < 1 || n > NOTE_MAX)
-    throw new RangeError(`a note body must be 1 to ${NOTE_MAX} characters`);
+  if (n < 1 || n > NOTE_MAX) throw refused;
   return clean;
 };
 
@@ -278,6 +278,16 @@ export class HttpApi implements MercurifiApi {
     return out;
   }
 
+  /**
+   * Server or transport text made safe to show: secrets cut, control and format characters removed, then secrets cut
+   * again (a secret split by a zero-width character is whole once it is removed), and only then bounded.
+   */
+  private untrusted(text: string, bearer?: string): string {
+    return cleanText(
+      this.keyless(cleanText(this.keyless(text, bearer), Number.MAX_SAFE_INTEGER), bearer),
+    );
+  }
+
   private headers(extra: Record<string, string> = {}, noKey = false): Record<string, string> {
     return {
       Accept: 'application/json',
@@ -351,7 +361,7 @@ export class HttpApi implements MercurifiApi {
             : 'http_error';
         const said =
           isObject(e) && typeof e.message === 'string'
-            ? cleanText(this.keyless(e.message, init.bearer))
+            ? this.untrusted(e.message, init.bearer)
             : '';
         const message = said !== '' ? said : `HTTP ${response.status} from ${path}`;
         const retry = Number(response.headers.get('Retry-After'));
@@ -377,7 +387,7 @@ export class HttpApi implements MercurifiApi {
       throw new ApiError(
         0,
         timedOut ? 'timeout' : 'network',
-        `Request to ${path} failed: ${cleanText(this.keyless(String(reason), init.bearer))}`,
+        `Request to ${path} failed: ${this.untrusted(String(reason), init.bearer)}`,
         null,
       );
     } finally {
