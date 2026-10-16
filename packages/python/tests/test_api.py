@@ -3,13 +3,14 @@ import copy
 import json
 import logging
 import pickle
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
 from mercurifi.agent import ImageUpload
-from mercurifi.api import MAX_BODY_BYTES, HttpApi
+from mercurifi.api import MAX_BODY_BYTES, HttpApi, _check_body
 from mercurifi.client import create_client
 from mercurifi.errors import ApiError, InvalidInputError, MercurifiError
 
@@ -548,3 +549,333 @@ async def test_http_clients_ignore_the_environment(monkeypatch: pytest.MonkeyPat
     assert (
         api._http._trust_env is False
     )  # no env proxies, netrc or SSL_CERT_* for a client that carries a key
+
+
+VECTORS: dict[str, Any] = json.loads(
+    (Path(__file__).parents[3] / "fixtures/vectors/notes.json").read_text()
+)
+TOKEN: str = VECTORS["token"]
+NOTE: dict[str, Any] = VECTORS["note"]
+PAGE: dict[str, Any] = VECTORS["page"]
+BEARER = "bearer-secret"
+SOCIAL_KEY = "mfk_test_abc"
+NONCE = "0123456789abcdef0123456789abcdef"
+SIG = "0x" + "11" * 65
+
+
+def social(t: httpx.AsyncBaseTransport, api_key: str | None = SOCIAL_KEY) -> HttpApi:
+    return HttpApi("https://x.example", 1, api_key=api_key, transport=t)
+
+
+async def test_social_write_sends_the_bearer_not_the_key() -> None:
+    seen: list[httpx.Request] = []
+    await social(transport(201, NOTE, seen=seen)).post_note(TOKEN, "volume picking up", BEARER)
+    assert str(seen[0].url) == f"https://x.example/v1/tokens/{TOKEN}/notes"
+    assert seen[0].method == "POST"
+    assert json.loads(seen[0].content) == {"body": "volume picking up"}
+    assert seen[0].headers["Authorization"] == f"Bearer {BEARER}"
+    assert "X-Api-Key" not in seen[0].headers
+
+
+async def test_public_read_keeps_the_key_with_no_authorization() -> None:
+    seen: list[httpx.Request] = []
+    page = await social(transport(200, PAGE, seen=seen)).list_notes(TOKEN)
+    assert seen[0].headers["X-Api-Key"] == SOCIAL_KEY
+    assert "Authorization" not in seen[0].headers
+    assert page["notes"][0]["agent"] is True
+
+
+async def test_bearer_is_cut_from_echoed_errors() -> None:
+    echo = transport(400, {"error": {"code": "bad", "message": f"saw {BEARER} here"}})
+    with pytest.raises(ApiError) as e:
+        await social(echo).post_note(TOKEN, "x", BEARER)
+    assert BEARER not in str(e.value) and "[redacted]" in str(e.value)
+    assert e.value.api_code == "bad"
+    coded = transport(401, {"error": {"code": BEARER, "message": "no"}})
+    with pytest.raises(ApiError) as c:
+        await social(coded).sign_out(BEARER)
+    assert c.value.api_code == "http_error"
+
+    def leaky(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"Illegal header value b'Bearer {BEARER}'")
+
+    with pytest.raises(ApiError) as n:
+        await social(httpx.MockTransport(leaky)).agree(7, True, BEARER)
+    assert n.value.api_code == "network" and BEARER not in str(n.value)
+
+
+async def test_bearer_or_key_split_by_a_zero_width_character_is_cut() -> None:
+    def split(secret: str) -> str:
+        return f"{secret[:4]}\u200b{secret[4:]}"
+
+    echo = transport(
+        400, {"error": {"code": "bad", "message": f"saw {split(BEARER)} and {split(SOCIAL_KEY)}"}}
+    )
+    with pytest.raises(ApiError) as e:
+        await social(echo).post_note(TOKEN, "x", BEARER)
+    assert str(e.value) == "saw [redacted] and [redacted]"
+
+
+async def test_reads_the_shared_note_vectors() -> None:
+    page = await social(transport(200, PAGE)).list_notes(TOKEN)
+    assert page == PAGE
+    replies = await social(transport(200, VECTORS["replies"])).list_replies(7)
+    assert replies["notes"][0]["holdBps"] is None
+    assert (
+        await social(transport(200, VECTORS["marks"])).note_marks(TOKEN, 0, 100)
+        == (VECTORS["marks"])
+    )
+    reactions = await social(transport(200, VECTORS["reactions"])).get_reactions(TOKEN)
+    assert reactions == VECTORS["reactions"]
+    assert await social(transport(200, NOTE)).get_note(7) == NOTE
+
+
+async def test_sign_in_sends_neither_the_key_nor_authorization() -> None:
+    challenge = {
+        "nonce": NONCE,
+        "message": "Agent sign-in for account ...",
+        "issuedAt": 1760616000,
+        "expiresAt": 1760616300,
+    }
+    signer = VECTORS["replies"]["notes"][0]["address"]
+    seen: list[httpx.Request] = []
+    got = await social(transport(200, challenge, seen=seen)).sign_in_challenge(
+        "agent", NOTE["address"], signer
+    )
+    assert got == challenge
+    assert str(seen[0].url) == "https://x.example/v1/agent-auth/nonce"
+    assert json.loads(seen[0].content) == {
+        "kind": "agent",
+        "account": NOTE["address"],
+        "signer": signer,
+    }
+    assert "X-Api-Key" not in seen[0].headers and "Authorization" not in seen[0].headers
+    session = {"token": "A" * 43, "kind": "agent", "account": NOTE["address"], "expiresAt": 1}
+    seen.clear()
+    assert await social(transport(200, session, seen=seen)).sign_in(NONCE, SIG) == session
+    assert str(seen[0].url) == "https://x.example/v1/agent-auth/session"
+    assert json.loads(seen[0].content) == {"nonce": NONCE, "signature": SIG}
+    assert "X-Api-Key" not in seen[0].headers and "Authorization" not in seen[0].headers
+
+
+async def test_a_sign_in_refusal_keeps_its_code() -> None:
+    off = transport(403, {"error": {"code": "posting_off", "message": "posting is off"}})
+    with pytest.raises(ApiError) as e:
+        await social(off).sign_in(NONCE, SIG)
+    assert (e.value.status, e.value.api_code, str(e.value)) == (
+        403,
+        "posting_off",
+        "posting is off",
+    )
+
+
+async def test_each_write_goes_to_its_route_with_its_body() -> None:
+    a = NOTE["address"]
+    cases: list[tuple[str, Any, object, str, str, object]] = [
+        (
+            "sign_out",
+            lambda api: api.sign_out(BEARER),
+            None,
+            "DELETE",
+            "/v1/agent-auth/session",
+            None,
+        ),
+        (
+            "put_reaction",
+            lambda api: api.put_reaction(TOKEN, "bullish", BEARER),
+            None,
+            "PUT",
+            f"/v1/tokens/{TOKEN}/reactions",
+            {"key": "bullish"},
+        ),
+        (
+            "put_reaction off",
+            lambda api: api.put_reaction(TOKEN, "bearish", BEARER, False),
+            None,
+            "PUT",
+            f"/v1/tokens/{TOKEN}/reactions",
+            {"key": "bearish", "active": False},
+        ),
+        (
+            "put_reaction none",
+            lambda api: api.put_reaction(TOKEN, None, BEARER),
+            None,
+            "PUT",
+            f"/v1/tokens/{TOKEN}/reactions",
+            {"key": None},
+        ),
+        (
+            "post_reply",
+            lambda api: api.post_reply(7, "not so sure", BEARER),
+            VECTORS["replies"]["notes"][0],
+            "POST",
+            "/v1/notes/7/replies",
+            {"body": "not so sure"},
+        ),
+        (
+            "agree",
+            lambda api: api.agree(7, True, BEARER),
+            None,
+            "PUT",
+            "/v1/notes/7/agree",
+            {"active": True},
+        ),
+        ("report", lambda api: api.report(7, BEARER), None, "POST", "/v1/notes/7/report", None),
+        (
+            "delete_note",
+            lambda api: api.delete_note(7, BEARER),
+            None,
+            "DELETE",
+            "/v1/notes/7",
+            None,
+        ),
+        (
+            "set_posting",
+            lambda api: api.set_posting(a, True, BEARER),
+            {"enabled": True, "updatedAt": 1760616000},
+            "PUT",
+            f"/v1/agent-accounts/{a.lower()}/posting",
+            {"enabled": True},
+        ),
+        (
+            "delete_agent_notes",
+            lambda api: api.delete_agent_notes(a, BEARER),
+            {"deleted": 3},
+            "DELETE",
+            f"/v1/agent-accounts/{a.lower()}/notes",
+            None,
+        ),
+    ]
+    for name, call, answer, method, path, body in cases:
+        seen: list[httpx.Request] = []
+        t = transport(204, None, seen=seen) if answer is None else transport(200, answer, seen=seen)
+        out = await call(social(t))
+        req = seen[0]
+        assert (name, str(req.url), req.method) == (name, f"https://x.example{path}", method)
+        assert (name, json.loads(req.content) if req.content else None) == (name, body)
+        assert req.headers["Authorization"] == f"Bearer {BEARER}", name
+        assert "X-Api-Key" not in req.headers, name
+        if answer is not None:
+            assert out == answer, name
+
+
+async def test_reads_pages_marks_and_the_posting_switch_from_their_routes() -> None:
+    seen: list[httpx.Request] = []
+    await social(transport(200, PAGE, seen=seen)).list_notes(
+        TOKEN, cursor="eyJzIjoibm90ZXMifQ", limit=50
+    )
+    await social(transport(200, VECTORS["replies"], seen=seen)).list_replies(7, limit=5)
+    await social(transport(200, [], seen=seen)).note_marks(TOKEN, 100, 100 + 90 * 86_400)
+    posting = await social(
+        transport(200, {"enabled": False, "updatedAt": None}, seen=seen)
+    ).get_posting(NOTE["address"])
+    assert posting == {"enabled": False, "updatedAt": None}
+    assert [str(r.url) for r in seen] == [
+        f"https://x.example/v1/tokens/{TOKEN}/notes?cursor=eyJzIjoibm90ZXMifQ&limit=50",
+        "https://x.example/v1/notes/7/replies?limit=5",
+        f"https://x.example/v1/tokens/{TOKEN}/notes/marks?from=100&to={100 + 90 * 86_400}",
+        f"https://x.example/v1/agent-accounts/{NOTE['address'].lower()}/posting",
+    ]
+    for r in seen:
+        assert r.headers["X-Api-Key"] == SOCIAL_KEY and "Authorization" not in r.headers
+
+
+async def test_social_arguments_are_refused_before_any_request() -> None:
+    seen: list[httpx.Request] = []
+    api = social(transport(200, {}, seen=seen))
+    for nid in (0, -1, 1.5, True, 2**53, "7"):
+        with pytest.raises(InvalidInputError):
+            await api.get_note(nid)  # type: ignore[arg-type]
+    for limit in (0, 51, True):
+        with pytest.raises(InvalidInputError):
+            await api.list_notes(TOKEN, limit=limit)
+    with pytest.raises(InvalidInputError):
+        await api.list_replies(7, cursor="a&b=c")
+    with pytest.raises(InvalidInputError):
+        await api.list_notes("nope")
+    for start, end in ((-1, 5), (10, 5), (0, 90 * 86_400 + 1), (0.5, 5), (True, 5)):
+        with pytest.raises(ValueError):
+            await api.note_marks(TOKEN, start, end)  # type: ignore[arg-type]
+    with pytest.raises(InvalidInputError):
+        await api.put_reaction(TOKEN, None, BEARER, False)
+    with pytest.raises(InvalidInputError):
+        await api.put_reaction(TOKEN, "Bull ish", BEARER)
+    with pytest.raises(InvalidInputError):
+        await api.put_reaction(TOKEN, "bullish", BEARER, 1)  # type: ignore[arg-type]
+    with pytest.raises(InvalidInputError):
+        await api.agree(7, 1, BEARER)  # type: ignore[arg-type]
+    with pytest.raises(InvalidInputError):
+        await api.set_posting(TOKEN, "yes", BEARER)  # type: ignore[arg-type]
+    with pytest.raises(InvalidInputError):
+        await api.sign_in_challenge("admin", TOKEN, TOKEN)
+    with pytest.raises(InvalidInputError):
+        await api.sign_in("nonce", "nothex")
+    with pytest.raises(InvalidInputError):
+        await api.sign_in("bad nonce!", SIG)
+    for bearer in ("", "a b", "x\r\nX-Evil: 1", "é", None):
+        with pytest.raises(InvalidInputError) as e:
+            await api.report(7, bearer)  # type: ignore[arg-type]
+        assert "X-Evil" not in str(e.value)
+    assert seen == []
+
+
+async def test_social_response_shapes_are_validated() -> None:
+    def wrong(body: object) -> HttpApi:
+        return social(transport(200, body))
+
+    cases: list[Any] = [
+        wrong({**NOTE, "side": "neutral"}).get_note(7),
+        wrong({**NOTE, "id": 8}).get_note(7),
+        wrong({**NOTE, "address": "nope"}).get_note(7),
+        wrong({**NOTE, "body": "x" * 281}).get_note(7),
+        wrong({**NOTE, "agreeCount": -1}).get_note(7),
+        wrong({**NOTE, "agent": 1}).get_note(7),
+        wrong({**NOTE, "holdBps": "120"}).get_note(7),
+        wrong({"notes": [NOTE] * 51, "nextCursor": None}).list_notes(TOKEN),
+        wrong({**PAGE, "nextCursor": "bad cursor!"}).list_notes(TOKEN),
+        wrong([{"id": 1, "createdAt": 2, "side": "up", "agent": False}]).note_marks(TOKEN, 0, 1),
+        wrong([VECTORS["marks"][0]] * 2_001).note_marks(TOKEN, 0, 1),
+        wrong({**VECTORS["reactions"], "mine": 5}).get_reactions(TOKEN),
+        wrong({**VECTORS["reactions"], "selected": [1]}).get_reactions(TOKEN),
+        wrong({**VECTORS["reactions"], "counts": {"bullish": -1}}).get_reactions(TOKEN),
+        wrong({"enabled": "yes", "updatedAt": None}).get_posting(TOKEN),
+        wrong({"deleted": -1}).delete_agent_notes(TOKEN, BEARER),
+        wrong({"nonce": "n", "message": 7, "issuedAt": 1, "expiresAt": 2}).sign_in_challenge(
+            "owner", TOKEN, TOKEN
+        ),
+        wrong(
+            {"nonce": "n", "message": "m" * 1_025, "issuedAt": 1, "expiresAt": 2}
+        ).sign_in_challenge("owner", TOKEN, TOKEN),
+        wrong({"token": "a b", "kind": "agent", "account": TOKEN, "expiresAt": 1}).sign_in(
+            NONCE, SIG
+        ),
+        wrong({"token": "abc", "kind": "agent", "account": "nope", "expiresAt": 1}).sign_in(
+            NONCE, SIG
+        ),
+        wrong({"token": "abc", "kind": "admin", "account": TOKEN, "expiresAt": 1}).sign_in(
+            NONCE, SIG
+        ),
+        wrong(NOTE).post_reply(7, "x", BEARER),
+        wrong({**NOTE, "side": None}).post_note(TOKEN, "x", BEARER),
+    ]
+    for case in cases[:-2]:
+        with pytest.raises(MercurifiError) as e:
+            await case
+        assert e.value.code == "API_BAD_RESPONSE"
+    assert (await cases[-2])["id"] == 7  # a reply is a note: post_reply accepts it
+    with pytest.raises(MercurifiError) as e:
+        await cases[-1]
+    assert e.value.code == "API_BAD_RESPONSE"
+    rockets = await wrong({**NOTE, "body": "\U0001f680" * 280}).get_note(7)
+    assert len(rockets["body"]) == 280
+
+
+def test_check_body_strips_trims_and_counts_code_points_like_the_api() -> None:
+    assert _check_body("  volume\u200b picking up\x07 \n") == "volume picking up"
+    assert _check_body("a\u2028b\u2029c") == "abc"
+    assert _check_body("\U0001f680" * 280) == "\U0001f680" * 280
+    for bad in ("\U0001f680" * 281, " \u200b\t ", 5):
+        with pytest.raises(InvalidInputError) as e:
+            _check_body(bad)  # type: ignore[arg-type]
+        assert e.value.field == "body"
+        assert str(e.value) == "a note body must be 1 to 280 characters"
