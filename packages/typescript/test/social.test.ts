@@ -1,5 +1,6 @@
 import { inspect } from 'node:util';
 
+import type { Address } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -262,8 +263,10 @@ describe('SocialSession', () => {
     expect(api.signIn).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['another kind', { kind: 'owner' as const }, /another account/],
+  it.each<
+    [string, Partial<{ kind: 'agent' | 'owner'; account: Address; expiresAt: number }>, RegExp]
+  >([
+    ['another kind', { kind: 'owner' }, /another account/],
     [
       'another account',
       { account: '0x000000000000000000000000000000000000dEaD' },
