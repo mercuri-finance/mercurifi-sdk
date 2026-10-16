@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 
+from mercurifi.agent import AgentClient
 from mercurifi.client import create_client
 from mercurifi.identity import get_agent
 from mercurifi.networks import TESTNET
@@ -50,9 +51,11 @@ HAS_AGENT = (
 @pytest.mark.skipif(not HAS_AGENT, reason="needs the MERCURIFI_TEST_AGENT_* and TOKEN variables")
 async def test_agent_signals_posts_reads_the_note_back_and_cleans_up() -> None:
     mf = await create_client("testnet")
-    agent = await mf.agent(AGENT_ACCOUNT, local_key(AGENT_KEY))
+    agent: AgentClient | None = None
     note_id: int | None = None
     try:
+        # Built inside the try so the client is closed even if the account check fails.
+        agent = await mf.agent(AGENT_ACCOUNT, local_key(AGENT_KEY))
         await agent.signal(TOKEN, "bullish")
         note = await agent.notes.post(TOKEN, f"sdk live check {int(time.time() * 1000)}")
         note_id = note["id"]
@@ -69,11 +72,13 @@ async def test_agent_signals_posts_reads_the_note_back_and_cleans_up() -> None:
             except Exception as e:
                 errors.append(e)
 
-        if note_id is not None:
-            last = note_id
-            await attempt(lambda: agent.notes.delete(last))
-        await attempt(lambda: agent.signal(TOKEN, None))
-        await attempt(agent.sign_out)
+        if agent is not None:
+            a = agent
+            if note_id is not None:
+                last = note_id
+                await attempt(lambda: a.notes.delete(last))
+            await attempt(lambda: a.signal(TOKEN, None))
+            await attempt(a.sign_out)
         await attempt(mf.aclose)
         if errors:
             raise errors[0]
