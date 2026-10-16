@@ -1,7 +1,13 @@
 import { isAddressEqual } from 'viem';
 
 import type { MercurifiApi } from './api/types.js';
-import { ApiError, InvalidInputError, SignerCapabilityError, socialError } from './errors.js';
+import {
+  ApiError,
+  InvalidInputError,
+  SignerCapabilityError,
+  SignInRefusedError,
+  socialError,
+} from './errors.js';
 import { checkSignInMessage, type SignInExpect } from './signin.js';
 import type { Signer } from './signers.js';
 
@@ -13,6 +19,15 @@ const cut = (text: string, bearers: readonly string[]): string => {
   let out = text;
   for (const b of bearers) if (b !== '') out = out.split(b).join('[redacted]');
   return out;
+};
+
+/** A cause as text; one that cannot be printed cannot carry a bearer into output either. */
+const causeText = (cause: unknown): string => {
+  try {
+    return String(cause);
+  } catch {
+    return '';
+  }
 };
 
 const carries = (text: unknown, bearers: readonly string[]): boolean =>
@@ -73,12 +88,27 @@ export class SocialSession {
 
       const s = await this.api.signIn(c.nonce, await signSignIn.call(this.signer, c.message));
 
+      if (s.kind !== this.expect.kind || !isAddressEqual(s.account, this.expect.account))
+        await this.#refuse(s.token, 'the API opened a session for another account');
+
+      if (s.expiresAt * 1000 - RENEW_MS <= this.now())
+        await this.#refuse(
+          s.token,
+          'the API opened a session that expires within five minutes (check the clock on this machine)',
+        );
+
       this.#bearer = s.token;
       this.#expiresMs = s.expiresAt * 1000;
       return s.token;
     } catch (e) {
       throw socialError(e);
     }
+  }
+
+  /** Ends a session the SDK will not use (best effort) and refuses it; the bearer is never kept. */
+  async #refuse(token: string, message: string): Promise<never> {
+    await this.api.signOut(token).catch(() => undefined);
+    throw new SignInRefusedError('text', message);
   }
 
   /**
@@ -102,32 +132,36 @@ export class SocialSession {
     }
   }
 
-  /** A write's error, typed, with any bearer the server echoed cut out. */
+  /** A write's error, typed, with any bearer the server echoed cut out of its message, stack and cause. */
   #surface(e: unknown, bearers: readonly string[]): unknown {
-    if (e instanceof ApiError) {
-      if (!carries(e.message, bearers) && !carries(e.apiCode, bearers)) return socialError(e);
-      return socialError(
-        new ApiError(
-          e.status,
-          cut(e.apiCode, bearers),
-          cut(e.message, bearers),
-          e.retryAfterSeconds,
-        ),
-      );
+    let out = e;
+    if (e instanceof ApiError && carries(e.apiCode, bearers))
+      out = new ApiError(e.status, cut(e.apiCode, bearers), e.message, e.retryAfterSeconds);
+    out = socialError(out);
+    if (!(out instanceof Error)) return out;
+    const cause = out.cause === undefined ? '' : causeText(out.cause);
+    if (!carries(out.message, bearers) && !carries(out.stack, bearers) && !carries(cause, bearers))
+      return out;
+    try {
+      out.message = cut(out.message, bearers);
+      if (out.stack !== undefined) out.stack = cut(out.stack, bearers);
+      if (carries(cause, bearers))
+        Object.defineProperty(out, 'cause', {
+          value: cut(cause, bearers),
+          writable: true,
+          configurable: true,
+          enumerable: false,
+        });
+    } catch {
+      return new Error('a social write failed; its error carried the session bearer');
     }
-    if (e instanceof Error && (carries(e.message, bearers) || carries(e.stack, bearers))) {
-      try {
-        e.message = cut(e.message, bearers);
-        if (e.stack !== undefined) e.stack = cut(e.stack, bearers);
-      } catch {
-        return new Error('a social write failed; its error carried the session bearer');
-      }
-    }
-    return e;
+    return out;
   }
 
   /** Ends the session on the server (best effort) and forgets the bearer. */
   async signOut(): Promise<void> {
+    const p = this.#pending;
+    if (p !== null) await p.catch(() => undefined);
     const b = this.#bearer;
     this.#bearer = null;
     this.#expiresMs = 0;

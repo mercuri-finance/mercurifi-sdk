@@ -138,11 +138,11 @@ describe('SocialSession', () => {
   it('does not retry a 401 from sign-in itself', async () => {
     const { api, s } = setup();
 
-    api.signIn.mockRejectedValueOnce(new ApiError(401, 'bad_signature', 'no', null));
+    api.signIn.mockRejectedValueOnce(unauth('bad signature'));
 
     const write = vi.fn(async (b: string) => b);
 
-    await expect(s.run(write)).rejects.toMatchObject({ status: 401, apiCode: 'bad_signature' });
+    await expect(s.run(write)).rejects.toMatchObject({ status: 401, apiCode: 'unauthenticated' });
 
     expect(api.signIn).toHaveBeenCalledTimes(1);
 
@@ -262,6 +262,41 @@ describe('SocialSession', () => {
     expect(api.signIn).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['another kind', { kind: 'owner' as const }, /another account/],
+    [
+      'another account',
+      { account: '0x000000000000000000000000000000000000dEaD' },
+      /another account/,
+    ],
+    ['an expiry inside the renewal window', { expiresAt: T0 / 1000 + 300 }, /expires within/],
+  ])('refuses and signs out a session for %s', async (_, patch, why) => {
+    const { api, s } = setup();
+
+    const real = api.signIn.getMockImplementation()!;
+
+    api.signIn.mockImplementationOnce(async (nonce, sig) => ({
+      ...(await real(nonce, sig)),
+      ...patch,
+    }));
+
+    const write = vi.fn(async (b: string) => b);
+
+    const err = await s.run(write).catch((x: unknown) => x);
+
+    expect(err).toBeInstanceOf(SignInRefusedError);
+
+    expect((err as Error).message).toMatch(why);
+
+    expect(api.signOut).toHaveBeenCalledWith('bearer-1');
+
+    expect(write).not.toHaveBeenCalled();
+
+    expect(JSON.stringify(s)).toContain('"signedIn":false');
+
+    expect(await s.run(write)).toBe('bearer-2');
+  });
+
   it('never shows the bearer', async () => {
     const { s } = setup();
 
@@ -308,6 +343,55 @@ describe('SocialSession', () => {
     expect(err).toBeInstanceOf(PausedError);
 
     expect((err as Error).message).not.toContain('bearer-1');
+  });
+
+  it('cuts the bearer from an error cause', async () => {
+    const { s } = setup();
+
+    const err = await s
+      .run(async (b) => {
+        throw new Error('write failed', { cause: new Error(`upstream saw ${b}`) });
+      })
+      .catch((x: unknown) => x);
+
+    expect(String((err as Error).cause)).not.toContain('bearer-1');
+
+    expect(inspect(err, { depth: 10 })).not.toContain('bearer-1');
+
+    expect(String((err as Error).cause)).toContain('[redacted]');
+  });
+
+  it('signs out after an in-flight sign-in completes', async () => {
+    const { api, s } = setup();
+
+    let release!: () => void;
+
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+
+    const real = api.signIn.getMockImplementation()!;
+
+    api.signIn.mockImplementationOnce(async (nonce, sig) => {
+      await held;
+      return real(nonce, sig);
+    });
+
+    const signingIn = s.bearer();
+
+    await vi.waitFor(() => expect(api.signIn).toHaveBeenCalledTimes(1));
+
+    const out = s.signOut();
+
+    release();
+
+    await out;
+
+    expect(await signingIn).toBe('bearer-1');
+
+    expect(api.signOut).toHaveBeenCalledWith('bearer-1');
+
+    expect(await s.bearer()).toBe('bearer-2');
   });
 
   it('signs out once and forgets the bearer', async () => {
