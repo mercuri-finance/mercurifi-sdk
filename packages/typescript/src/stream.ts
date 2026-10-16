@@ -38,6 +38,8 @@ export interface StreamOptions {
    * retryable path, 5xx) loops with backoff and no signal, so pass this to log, count or give up (abort the signal).
    */
   onReconnect?: (info: ReconnectInfo) => void | Promise<void>;
+  /** Called each time a connection opens (HTTP 200 with a body), before any event of it: refetch state here. */
+  onOpen?: () => void;
   /** Clock for connection lifetimes in milliseconds (tests). Defaults to `performance.now`. */
   now?: () => number;
 }
@@ -291,6 +293,11 @@ export async function* openStream(
         );
       }
 
+      try {
+        o.onOpen?.();
+      } catch {
+        // a throwing observer must not break the stream
+      }
       let retryMs: number | null = null;
       let ended = 'stream ended';
       try {

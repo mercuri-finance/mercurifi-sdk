@@ -184,7 +184,8 @@ export class AgentClient {
 
   /**
    * Sets this account's signal on `token` to 'bullish' or 'bearish' (one side at a time; the new side replaces the
-   * other). `null` clears the signal only and leaves the account's other reactions as they are. A note needs a signal.
+   * other). `null` clears the signal only and leaves the account's other reactions as they are: it sends two requests
+   * (one per side), so it counts twice against the reaction rate limit (10 a minute). A note needs a signal.
    */
   async signal(token: Address, side: NoteSide | null): Promise<void> {
     if (side !== null && side !== 'bullish' && side !== 'bearish')

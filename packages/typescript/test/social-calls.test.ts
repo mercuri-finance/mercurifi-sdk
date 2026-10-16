@@ -95,6 +95,48 @@ const sse = (text: string) =>
       ),
   );
 
+const tick = () => new Promise<void>((r) => setTimeout(r, 5));
+
+/** An SSE response the test writes to chunk by chunk. */
+const liveSse = () => {
+  let ctl!: ReadableStreamDefaultController<Uint8Array>;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      ctl = c;
+    },
+  });
+
+  return {
+    // Like a real fetch, an aborted request errors its body.
+    fetch: vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      init?.signal?.addEventListener('abort', () => ctl.error(new Error('aborted')));
+      return new Response(stream, { status: 200 });
+    }),
+    push: (text: string) => ctl.enqueue(new TextEncoder().encode(text)),
+    end: () => ctl.close(),
+  };
+};
+
+/** listNotes calls that wait for the test; each answers with the page id `version` held when it was called. */
+const deferredList = (api: ReturnType<typeof fakeApi>) => {
+  const waiting: (() => void)[] = [];
+
+  const state = {
+    version: 0,
+    calls: 0,
+    resolve: () => waiting.shift()!(),
+  };
+
+  api.listNotes.mockImplementation(() => {
+    state.calls += 1;
+    const v = state.version;
+    return new Promise<ApiNotesPage>((r) => waiting.push(() => r(page(v))));
+  });
+
+  return state;
+};
+
 describe('agent social calls', () => {
   it('signals and posts as the account through one session', async () => {
     const { mf, api } = await clientWithFakeApi();
@@ -301,62 +343,195 @@ describe('reader calls', () => {
     expect(api.signInChallenge).not.toHaveBeenCalled();
   });
 
-  it('follows notes: refetches on notes and reset, coalescing a burst into one queued refetch', async () => {
+  it('follows notes: fetches at once and on open, refetches on notes and reset, coalescing a burst', async () => {
     const { mf, api } = await clientWithFakeApi();
 
-    let release!: () => void;
+    const list = deferredList(api);
 
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
+    const s = liveSse();
 
-    api.listNotes
-      .mockImplementationOnce(async () => page(1))
-      .mockImplementationOnce(async () => {
-        await gate;
-        return page(2);
-      })
-      .mockImplementationOnce(async () => page(3));
-
-    const fetch = sse(
-      'id: 1\nevent: notes\ndata: {}\n\nid: 2\nevent: trade\ndata: {}\n\n' +
-        'id: 3\nevent: notes\ndata: {}\n\nid: 4\nevent: reset\ndata: {}\n\nid: 5\nevent: notes\ndata: {}\n\n',
-    );
+    const onOpen = vi.fn();
 
     const pages: number[] = [];
 
     const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
-      fetch,
+      fetch: s.fetch,
       maxReconnects: 0,
+      onOpen,
     });
 
-    await vi.waitFor(() => expect(api.listNotes).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
 
-    release();
+    expect(list.calls).toBe(1); // the open is queued behind the first fetch
+
+    s.push('id: 1\nevent: notes\ndata: {}\n\nid: 2\nevent: trade\ndata: {}\n\n');
+
+    s.push('id: 3\nevent: notes\ndata: {}\n\nid: 4\nevent: reset\ndata: {}\n\n');
+
+    await tick();
+
+    list.version = 1;
+
+    list.resolve();
+
+    await vi.waitFor(() => expect(list.calls).toBe(2)); // the whole burst became one refetch
+
+    list.resolve();
+
+    await tick();
+
+    expect(list.calls).toBe(2);
+
+    s.end();
 
     await done;
 
-    expect(pages).toEqual([1, 2, 3]);
-
-    expect(api.listNotes).toHaveBeenCalledTimes(3);
+    expect(pages).toEqual([0, 1]);
 
     expect(api.streamRequest).toHaveBeenCalledWith([`token:${TOKEN.toLowerCase()}`]);
   });
 
-  it('ends with the error when a refetch fails', async () => {
-    const { mf, api } = await clientWithFakeApi();
+  it.each(Array.from({ length: 16 }, (_, k) => k))(
+    'never drops an event that lands %i microtasks around the end of a refetch',
+    async (k) => {
+      const { mf, api } = await clientWithFakeApi();
 
-    api.listNotes
-      .mockImplementationOnce(async () => page(1))
-      .mockImplementationOnce(async () => {
-        throw new Error('refetch failed');
+      const list = deferredList(api);
+
+      const s = liveSse();
+
+      const onOpen = vi.fn();
+
+      const pages: number[] = [];
+
+      const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
+        fetch: s.fetch,
+        maxReconnects: 0,
+        onOpen,
       });
 
-    const fetch = sse('id: 1\nevent: notes\ndata: {}\n\n');
+      await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
 
-    await expect(mf.onNotes(TOKEN, () => undefined, { fetch, maxReconnects: 0 })).rejects.toThrow(
-      'refetch failed',
-    );
+      list.resolve(); // the first fetch; the fetch queued by the open starts
+
+      await vi.waitFor(() => expect(list.calls).toBe(2));
+
+      // That fetch read version 0. A new note arrives while it finishes: its event must cause one more fetch.
+      list.version = 1;
+
+      s.push('id: 1\nevent: notes\ndata: {}\n\n');
+
+      for (let i = 0; i < k; i += 1) await Promise.resolve();
+
+      list.resolve();
+
+      await vi.waitFor(() => expect(list.calls).toBe(3));
+
+      list.resolve();
+
+      s.end();
+
+      await done;
+
+      expect(pages).toEqual([0, 0, 1]);
+    },
+  );
+
+  it('stops calling the handler once the caller aborts, and drops a queued refetch', async () => {
+    const { mf, api } = await clientWithFakeApi();
+
+    const list = deferredList(api);
+
+    const s = liveSse();
+
+    const onOpen = vi.fn();
+
+    const ac = new AbortController();
+
+    const handler = vi.fn();
+
+    const done = mf.onNotes(TOKEN, handler, {
+      fetch: s.fetch,
+      maxReconnects: 0,
+      onOpen,
+      signal: ac.signal,
+    });
+
+    await vi.waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+
+    ac.abort();
+
+    list.resolve();
+
+    await done;
+
+    await tick();
+
+    expect(handler).not.toHaveBeenCalled();
+
+    expect(list.calls).toBe(1);
+  });
+
+  it('skips a failed fetch and fetches again on the next event', async () => {
+    const { mf, api } = await clientWithFakeApi();
+
+    let n = 0;
+
+    api.listNotes.mockImplementation(async () => {
+      n += 1;
+      if (n <= 2) throw new Error('temporarily down');
+      return page(n);
+    });
+
+    const pages: number[] = [];
+
+    const done = mf.onNotes(TOKEN, (p) => pages.push(p.notes[0]!.id), {
+      fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'),
+      maxReconnects: 0,
+    });
+
+    await done;
+
+    expect(pages.at(-1)).toBe(n);
+
+    expect(n).toBeGreaterThanOrEqual(3);
+  });
+
+  it('ends with the error when the handler throws or the request is invalid', async () => {
+    const { mf, api } = await clientWithFakeApi();
+
+    await expect(
+      mf.onNotes(
+        TOKEN,
+        () => {
+          throw new Error('handler failed');
+        },
+        { fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'), maxReconnects: 0 },
+      ),
+    ).rejects.toThrow('handler failed');
+
+    api.listNotes.mockRejectedValue(new InvalidInputError('limit', 'limit is out of range'));
+
+    await expect(
+      mf.onNotes(TOKEN, () => undefined, {
+        fetch: sse('id: 1\nevent: notes\ndata: {}\n\n'),
+        maxReconnects: 0,
+      }),
+    ).rejects.toThrow(InvalidInputError);
+  });
+
+  it('leaves no listener on the caller signal when the token is refused', async () => {
+    const { mf } = await clientWithFakeApi();
+
+    const ac = new AbortController();
+
+    const add = vi.spyOn(ac.signal, 'addEventListener');
+
+    await expect(
+      mf.onNotes('nope' as Address, () => undefined, { signal: ac.signal }),
+    ).rejects.toThrow(InvalidInputError);
+
+    expect(add).not.toHaveBeenCalled();
   });
 });
 

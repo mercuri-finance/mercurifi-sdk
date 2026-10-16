@@ -186,10 +186,12 @@ export class MercurifiClient {
   }
 
   /**
-   * Calls `handler` with the first page of `token`'s notes now, and again after every `notes` or `reset` event on the
-   * token's stream. Bursts are coalesced: at most one refetch runs and one more waits, so the handler always ends on
-   * the latest page. Resolves when the stream ends or `o.signal` aborts; a failed refetch, or a handler that throws,
-   * ends the stream and rejects with that error. Note bodies are untrusted text.
+   * Calls `handler` with the first page of `token`'s notes now, and again whenever the token's stream opens (so a
+   * reconnect catches up) and after every `notes` or `reset` event. Fetches are coalesced: at most one runs and one
+   * more waits, so the handler always ends on the latest page. A fetch that fails (network, rate limit, server) is
+   * skipped and the next event fetches again; an InvalidInputError, or a handler that throws, ends the stream and
+   * rejects with that error. Resolves when the stream ends or `o.signal` aborts; after an abort the handler is not
+   * called again. Note bodies are untrusted text.
    */
   async onNotes(
     token: Address,
@@ -197,38 +199,59 @@ export class MercurifiClient {
     o: StreamOptions = {},
   ): Promise<void> {
     const stop = new AbortController();
-    const onAbort = () => stop.abort();
-    if (o.signal?.aborted === true) stop.abort();
-    o.signal?.addEventListener('abort', onAbort, { once: true });
+    // Built (and validated) before the caller's signal is touched, so a refusal leaves no listener behind.
     const events = this.stream([`token:${String(token).toLowerCase()}`], {
       ...o,
       signal: stop.signal,
+      onOpen: () => {
+        try {
+          o.onOpen?.();
+        } catch {
+          // a throwing observer must not break the stream
+        }
+        kick();
+      },
     });
     let failed: { error: unknown } | null = null;
-    let running: Promise<void> | null = null;
+    let busy = false;
     let queued = false;
+    let running: Promise<void> = Promise.resolve();
     const refetch = async (): Promise<void> => {
-      do {
-        queued = false;
-        handler(await this.notes.list(token));
-      } while (queued && failed === null);
+      try {
+        do {
+          queued = false;
+          let page: ApiNotesPage;
+          try {
+            page = await this.notes.list(token);
+          } catch (error) {
+            if (error instanceof InvalidInputError) throw error;
+            continue; // skipped: the next event (or a queued one) fetches again
+          }
+          if (stop.signal.aborted) return;
+          handler(page);
+        } while (queued && !stop.signal.aborted);
+      } finally {
+        // Same continuation as the loop check: an event after this point starts a new fetch, never a lost one.
+        busy = false;
+      }
     };
     const kick = () => {
-      if (running !== null) {
+      if (stop.signal.aborted) return;
+      if (busy) {
         queued = true;
         return;
       }
-      running = refetch()
-        .catch((error: unknown) => {
-          failed ??= { error };
-          stop.abort();
-        })
-        .finally(() => {
-          running = null;
-        });
+      busy = true;
+      running = refetch().catch((error: unknown) => {
+        failed ??= { error };
+        stop.abort();
+      });
     };
+    const onAbort = () => stop.abort();
     try {
-      handler(await this.notes.list(token));
+      if (o.signal?.aborted === true) stop.abort();
+      o.signal?.addEventListener('abort', onAbort, { once: true });
+      kick();
       for await (const ev of events) {
         if (stop.signal.aborted) break;
         if (ev.type === 'notes' || ev.type === 'reset') kick();
@@ -238,7 +261,7 @@ export class MercurifiClient {
     } finally {
       o.signal?.removeEventListener('abort', onAbort);
     }
-    while (running !== null) await running;
+    while (busy) await running;
     if (failed !== null) throw (failed as { error: unknown }).error;
   }
 

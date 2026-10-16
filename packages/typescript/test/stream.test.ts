@@ -51,6 +51,22 @@ describe('openStream', () => {
     expect((f.mock.calls[1]![1] as Init).headers['X-Api-Key']).toBe('mfk_test_k');
   });
 
+  it('calls onOpen once per opened connection, before its events, and survives a throwing one', async () => {
+    const log: string[] = [];
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(sse(503))
+      .mockResolvedValueOnce(sse(200, ['id: 1\nevent: trade\ndata: 1\n\n']))
+      .mockResolvedValueOnce(sse(200, ['id: 2\nevent: trade\ndata: 2\n\n']));
+    const onOpen = vi.fn(() => {
+      log.push('open');
+      throw new Error('observer failed');
+    });
+    for await (const ev of openStream(REQ, { fetch: f, maxReconnects: 2, sleep: nosleep, onOpen }))
+      log.push(String(ev.id));
+    expect(log).toEqual(['open', '1', 'open', '2']);
+  });
+
   it('surfaces a reset as an explicit event', async () => {
     const f = vi.fn(async () => sse(200, ['event: reset\ndata: {}\n\n']));
     expect(await collect(openStream(REQ, { fetch: f, maxReconnects: 0, sleep: nosleep }))).toEqual([
