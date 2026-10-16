@@ -133,3 +133,15 @@ class ClientClosedError(MercurifiError):
     already have been broadcast: re-read the position or headroom before retrying."""
 
     code = "CLIENT_CLOSED"
+
+
+class SignerCapabilityError(MercurifiError):
+    """The signer cannot do what this call needs (a custom signer without sign_sign_in)."""
+
+    code = "SIGNER_CAPABILITY"
+
+    def __init__(self, method: str) -> None:
+        super().__init__(
+            f"This signer has no {method}(); signals and notes need it. local_key and kms_signer have it."
+        )
+        self.method = method

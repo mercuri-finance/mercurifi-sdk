@@ -5,6 +5,7 @@ from ._version import __version__
 from .agent import AgentClient, ImageUpload
 from .build_verify import verify_built_owner_tx, verify_built_tx
 from .client import AsyncClient, create_client
+from .errors import SignerCapabilityError
 from .networks import MAINNET, TESTNET, local_network
 from .owner import AccountManager, FirstAgent, OwnerClient
 from .policy import DEFAULT_POLICY, ChainPolicy
@@ -30,6 +31,7 @@ __all__ = [
     "ImageUpload",
     "MAINNET",
     "OwnerClient",
+    "SignerCapabilityError",
     "TESTNET",
     "TxRevertedError",
     "__version__",

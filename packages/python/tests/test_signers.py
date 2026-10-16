@@ -8,8 +8,9 @@ from typing import Any
 
 import pytest
 from eth_account import Account
+from eth_account.messages import encode_defunct
 
-from mercurifi.errors import InvalidInputError, MercurifiError
+from mercurifi.errors import InvalidInputError, MercurifiError, SignerCapabilityError
 from mercurifi.signers import (
     AgentKey,
     KmsSigner,
@@ -213,3 +214,72 @@ async def test_kms_rejects_malformed_signatures(mutate: Any) -> None:
     with pytest.raises(MercurifiError) as e:
         await kms_signer(Adapter(mutate)).sign_transaction(TX)
     assert e.value.code == "KMS_SIGNATURE_MISMATCH"
+
+
+HALF_N = N // 2
+SIGN_IN = "Agent sign-in test"
+
+
+def _recovers(sig: bytes, address: str) -> bool:
+    return bool(Account.recover_message(encode_defunct(text=SIGN_IN), signature=sig) == address)
+
+
+def _is_personal_message_signature(sig: bytes) -> bool:
+    return len(sig) == 65 and sig[64] in (27, 28) and int.from_bytes(sig[32:64], "big") <= HALF_N
+
+
+async def test_sign_in_message_recovers_with_low_s() -> None:
+    s = local_key(OWNER_KEY)
+    sig = await s.sign_sign_in(SIGN_IN)
+    assert _recovers(sig, s.address)
+    assert _is_personal_message_signature(sig)
+
+
+async def test_kms_sign_in_recovers_with_low_s() -> None:
+    address = Account.from_key(OWNER_KEY).address
+    sig = await kms_signer(Adapter()).sign_sign_in(SIGN_IN)
+    assert _recovers(sig, address)
+    assert _is_personal_message_signature(sig)
+    assert sig == await local_key(OWNER_KEY).sign_sign_in(SIGN_IN)
+
+
+async def test_kms_sign_in_normalises_a_high_s_and_finds_the_parity() -> None:
+    address = Account.from_key(OWNER_KEY).address
+    flipped = await kms_signer(Adapter(lambda r, s, p: (r, N - s, 1 - p))).sign_sign_in(SIGN_IN)
+    assert _recovers(flipped, address) and _is_personal_message_signature(flipped)
+    for flip in (False, True):
+        sig = await kms_signer(
+            Adapter(lambda r, s, p, flip=flip: (r, N - s if flip else s, None))
+        ).sign_sign_in(SIGN_IN)
+        assert _recovers(sig, address) and _is_personal_message_signature(sig)
+
+
+async def test_kms_sign_in_refuses_a_wrong_key_and_malformed_signatures() -> None:
+    with pytest.raises(MercurifiError, match="does not recover") as e:
+        await kms_signer(
+            Adapter(address="0x0000000000000000000000000000000000000002")
+        ).sign_sign_in(SIGN_IN)
+    assert e.value.code == "KMS_SIGNATURE_MISMATCH"
+    for bad in ((0, 1, 0), (1, N, 0), (1, 1, 2), (1, 1)):
+        with pytest.raises(MercurifiError) as e2:
+            await kms_signer(Adapter(lambda r, s, p, bad=bad: bad)).sign_sign_in(SIGN_IN)
+        assert e2.value.code == "KMS_SIGNATURE_MISMATCH"
+
+
+async def test_sign_in_failure_and_repr_leave_no_secret() -> None:
+    s = local_key(OWNER_KEY)
+    assert SECRET not in repr(s) and SECRET not in repr(kms_signer(Adapter()))
+    with pytest.raises(MercurifiError) as e:
+        await s.sign_sign_in(None)  # type: ignore[arg-type]
+    assert e.value.code == "SIGNER_ERROR"
+    assert SECRET not in f"{e.value}{_frames_text(e.value)}"
+
+
+def test_signer_capability_error_carries_code_method_and_pickles() -> None:
+    e = SignerCapabilityError("sign_sign_in")
+    assert e.code == "SIGNER_CAPABILITY"
+    assert e.method == "sign_sign_in"
+    assert "sign_sign_in()" in e.message
+    back = pickle.loads(pickle.dumps(e))
+    assert isinstance(back, SignerCapabilityError)
+    assert (back.code, back.method, back.message) == (e.code, e.method, e.message)

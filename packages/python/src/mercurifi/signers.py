@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any, NoReturn, Protocol
 
 from eth_account import Account
+from eth_account.messages import _hash_eip191_message, encode_defunct
 from eth_account.signers.local import LocalAccount
 from eth_account.typed_transactions.typed_transaction import TypedTransaction
 
@@ -25,6 +26,9 @@ class Signer(Protocol):
     address: str
 
     async def sign_transaction(self, tx: dict[str, Any]) -> bytes: ...
+
+    # Optional: `async def sign_sign_in(self, message: str) -> bytes` signs the SDK's sign-in text as an EIP-191
+    # personal message (65 bytes, low s, v 27 or 28). Callers check with getattr(signer, "sign_sign_in", None).
 
 
 class _Sealed:
@@ -72,21 +76,39 @@ class LocalKeySigner(_Sealed):
     """Signs with a key held in this process. The key lives only in a closure: not an attribute, not in any message.
     Build one with `local_key`."""
 
-    __slots__ = ("address", "_sign")
+    __slots__ = ("address", "_sign", "_sign_text")
     address: str
     _sign: Callable[[dict[str, Any]], bytes]
+    _sign_text: Callable[[str], bytes]
 
     def __init__(self, account: LocalAccount) -> None:
         def sign(tx: dict[str, Any]) -> bytes:
             return bytes(account.sign_transaction(tx).raw_transaction)
 
-        _set(self, address=account.address, _sign=sign)
+        def sign_text(message: str) -> bytes:
+            return bytes(account.sign_message(encode_defunct(text=message)).signature)
+
+        _set(self, address=account.address, _sign=sign, _sign_text=sign_text)
 
     async def sign_transaction(self, tx: dict[str, Any]) -> bytes:
         failure: MercurifiError | None = None
         try:
             return self._sign(tx)
         except Exception as exc:  # eth_account frames hold the key: raise a fresh error outside, with no traceback into them
+            failure = MercurifiError(
+                f"The signer failed: {redact_urls_in(first_line(str(exc) or type(exc).__name__))}",
+                code="SIGNER_ERROR",
+            )
+        raise failure
+
+    async def sign_sign_in(self, message: str) -> bytes:
+        """Signs the SDK's own sign-in text as an EIP-191 personal message (low s, v 27 or 28)."""
+        failure: MercurifiError | None = None
+        try:
+            return self._sign_text(message)
+        except (
+            Exception
+        ) as exc:  # eth_account frames hold the key: raise a fresh error outside them
             failure = MercurifiError(
                 f"The signer failed: {redact_urls_in(first_line(str(exc) or type(exc).__name__))}",
                 code="SIGNER_ERROR",
@@ -170,6 +192,37 @@ class KmsSigner(_Sealed):
 
     async def sign_transaction(self, tx: dict[str, Any]) -> bytes:
         digest = bytes(TypedTransaction.from_dict(dict(tx)).hash())
+        return await self._signed(
+            digest,
+            lambda r, s, parity: bytes(
+                TypedTransaction.from_dict({**tx, "v": parity, "r": r, "s": s}).encode()
+            ),
+            self._recover,
+        )
+
+    async def sign_sign_in(self, message: str) -> bytes:
+        """Signs the SDK's own sign-in text as an EIP-191 personal message (low s, v 27 or 28)."""
+        signable = encode_defunct(text=message)
+
+        def assemble(r: int, s: int, parity: int) -> bytes:
+            return r.to_bytes(32, "big") + s.to_bytes(32, "big") + bytes([27 + parity])
+
+        def recover(sig: bytes) -> str | None:
+            try:
+                return str(Account.recover_message(signable, signature=sig))
+            except Exception:
+                return None
+
+        return await self._signed(bytes(_hash_eip191_message(signable)), assemble, recover)
+
+    async def _signed(
+        self,
+        digest: bytes,
+        assemble: Callable[[int, int, int], bytes],
+        recover: Callable[[bytes], str | None],
+    ) -> bytes:
+        """Asks the adapter to sign the digest, validates and low-s-normalises (r, s), then returns the assembled
+        signature for the parity that recovers to the adapter's address."""
         signature = await self._adapter.sign_digest(digest)
         if not isinstance(signature, tuple) or len(signature) != 3:
             raise _mismatch("The KMS signature is malformed: expected (r, s, y_parity).")
@@ -185,8 +238,8 @@ class KmsSigner(_Sealed):
             if given is not None:
                 given = 1 - given
         for parity in (0, 1) if given is None else (given,):
-            raw = bytes(TypedTransaction.from_dict({**tx, "v": parity, "r": r, "s": s}).encode())
-            recovered = self._recover(raw)
+            raw = assemble(r, s, parity)
+            recovered = recover(raw)
             if recovered is not None and recovered.lower() == self.address.lower():
                 return raw
         raise _mismatch(
