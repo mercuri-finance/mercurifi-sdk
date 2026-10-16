@@ -59,3 +59,61 @@ class FakeSocialApi:
             "account": self._last[1],
             "expiresAt": int(self._now() + self._expires_in),
         }
+
+
+NOTE: dict[str, Any] = {
+    "id": 7,
+    "address": "0x" + "00" * 19 + "aa",
+    "side": "bullish",
+    "holdBps": None,
+    "body": "volume picking up",
+    "createdAt": 1_790_000_000,
+    "replyCount": 0,
+    "agreeCount": 0,
+    "agreed": False,
+    "agent": True,
+}
+
+
+def page(n: int) -> dict[str, Any]:
+    return {"notes": [{**NOTE, "id": n}], "nextCursor": None}
+
+
+class FakeNotesApi(FakeSocialApi):
+    """The sign-in fake plus every social route as an AsyncMock, and a stream request (for client tests)."""
+
+    def __init__(self, **kw: Any) -> None:
+        super().__init__(**kw)
+        self.base_url = "http://127.0.0.1:9"
+        self.put_reaction = AsyncMock(return_value=None)
+        self.post_note = AsyncMock(side_effect=lambda token, body, b: {**NOTE, "body": body})
+        self.post_reply = AsyncMock(
+            side_effect=lambda id, body, b: {**NOTE, "id": id + 1, "body": body}
+        )
+        self.agree = AsyncMock(return_value=None)
+        self.report = AsyncMock(return_value=None)
+        self.delete_note = AsyncMock(return_value=None)
+        self.list_notes = AsyncMock(return_value=page(1))
+        self.list_replies = AsyncMock(return_value=page(2))
+        self.get_note = AsyncMock(return_value=NOTE)
+        self.note_marks = AsyncMock(return_value=[])
+        self.get_reactions = AsyncMock(
+            return_value={
+                "counts": {"bullish": 1},
+                "total": 1,
+                "holders": 1,
+                "mine": None,
+                "selected": [],
+                "brandLookalike": False,
+            }
+        )
+        self.get_posting = AsyncMock(return_value={"enabled": True, "updatedAt": None})
+        self.set_posting = AsyncMock(
+            side_effect=lambda account, enabled, b: {"enabled": enabled, "updatedAt": 1}
+        )
+        self.delete_agent_notes = AsyncMock(return_value={"deleted": 3})
+        self.topics: list[list[str]] = []
+
+    def stream_request(self, topics: list[str]) -> tuple[str, dict[str, str]]:
+        self.topics.append(list(topics))
+        return f"{self.base_url}/v1/stream?topics={','.join(topics)}", {}

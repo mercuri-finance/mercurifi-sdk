@@ -20,6 +20,7 @@ from .abi import (
     LAUNCH_FACTORY,
     LAUNCH_TOKEN,
 )
+from .api import _is_addr
 from .codec import Contract
 from .errors import InvalidInputError, MercurifiError, NetworkMismatchError, NotOwnerError
 from .networks import AgentBook
@@ -52,6 +53,8 @@ from .reads import (
 )
 from .revert import _time
 from .signers import Signer
+from .signin import SignInExpect
+from .social import SocialSession
 from .tx import WriteRequest
 from .units import resolve_token_amount, resolve_usdc6, usdc6_to_wei
 
@@ -231,6 +234,55 @@ class OwnerClient:
     def __init__(self, mf: AsyncClient, signer: Signer) -> None:
         self._mf = mf
         self.signer = signer
+        # One owner session per agent account (the sign-in names the account), built on first use.
+        self._social: dict[str, SocialSession] = {}
+
+    def _owner_session(self, account: str) -> SocialSession:
+        api = self._mf.require_api()
+        if not _is_addr(account):
+            raise InvalidInputError("account", "account is not an address")
+        key = account.lower()
+        session = self._social.get(key)
+        if session is None:
+            session = SocialSession(
+                api,
+                SignInExpect("owner", account, self.signer.address, api.chain_id, "launch"),
+                self.signer,
+            )
+            self._social[key] = session
+        return session
+
+    async def agent_posting(self, account: str) -> dict[str, Any]:
+        """Whether the account's agents may write signals and notes. Public; needs no session."""
+        result: dict[str, Any] = await self._mf.require_api().get_posting(account)
+        return result
+
+    async def set_agent_posting(self, account: str, enabled: bool) -> dict[str, Any]:
+        """Turns posting on or off for the account's agents, signed in as the account's owner."""
+        api = self._mf.require_api()
+        result: dict[str, Any] = await self._owner_session(account).run(
+            lambda b: api.set_posting(account, enabled, b)
+        )
+        return result
+
+    async def delete_agent_note(self, account: str, id: int) -> None:
+        """Deletes one note the account's agents wrote, signed in as the account's owner."""
+        api = self._mf.require_api()
+        await self._owner_session(account).run(lambda b: api.delete_note(id, b))
+
+    async def delete_agent_notes(self, account: str) -> dict[str, Any]:
+        """Deletes every note the account's agents wrote; returns {"deleted": n}. Signed in as the account's owner."""
+        api = self._mf.require_api()
+        result: dict[str, Any] = await self._owner_session(account).run(
+            lambda b: api.delete_agent_notes(account, b)
+        )
+        return result
+
+    async def sign_out(self) -> None:
+        """Ends every owner session this client opened (best effort)."""
+        sessions = list(self._social.values())
+        self._social.clear()
+        await asyncio.gather(*(s.sign_out() for s in sessions))
 
     async def create_account(
         self,

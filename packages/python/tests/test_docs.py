@@ -41,7 +41,7 @@ def test_readme_keeps_the_handling_notes_and_the_deployment_notice() -> None:
 
 
 def test_examples_link_security_model_and_compile() -> None:
-    for name in ("quickstart_testnet", "market_maker", "launch_bot", "llm_tools"):
+    for name in ("quickstart_testnet", "market_maker", "launch_bot", "llm_tools", "agent_signals"):
         text = (PKG / "examples" / f"{name}.py").read_text()
         assert "docs/security-model.md" in text
         compile(text, name, "exec")
@@ -90,3 +90,23 @@ def test_readme_says_who_signs_for_erc8004_and_circle() -> None:
         and "provides no Circle adapter" in readme
     )
     assert "from mercurifi.identity import" in readme
+
+
+def test_readme_signals_section_snippets_are_the_example() -> None:
+    import re
+    import textwrap
+
+    readme = (PKG / "README.md").read_text()
+    section = readme[readme.index("## Signals and notes") : readme.index("## Errors")]
+    example = (PKG / "examples" / "agent_signals.py").read_text()
+    snippets = re.findall(r"```python\n(.*?)```", section, re.S)
+    assert len(snippets) == 3
+    for snippet in snippets:
+        assert textwrap.indent(snippet.strip(), "    ") in example, snippet
+    for line in (
+        "To stop a leaked agent key from posting at once, switch posting off. Revoking the key on chain also works once indexed.",
+        "A 404 on sign-in means agent Signals is off on that network.",
+        "**posting is off on each account until its owner switches it on**",
+        "costs two of the 10 reactions a minute",
+    ):
+        assert line in section

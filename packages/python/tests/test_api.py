@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from mercurifi.agent import ImageUpload
-from mercurifi.api import MAX_BODY_BYTES, HttpApi, _check_body
+from mercurifi.api import MAX_BODY_BYTES, HttpApi, check_body
 from mercurifi.client import create_client
 from mercurifi.errors import ApiError, InvalidInputError, MercurifiError
 
@@ -870,12 +870,25 @@ async def test_social_response_shapes_are_validated() -> None:
     assert len(rockets["body"]) == 280
 
 
-def test_check_body_strips_trims_and_counts_code_points_like_the_api() -> None:
-    assert _check_body("  volume\u200b picking up\x07 \n") == "volume picking up"
-    assert _check_body("a\u2028b\u2029c") == "abc"
-    assert _check_body("\U0001f680" * 280) == "\U0001f680" * 280
+def testcheck_body_strips_trims_and_counts_code_points_like_the_api() -> None:
+    assert check_body("  volume\u200b picking up\x07 \n") == "volume picking up"
+    assert check_body("a\u2028b\u2029c") == "abc"
+    assert check_body("\U0001f680" * 280) == "\U0001f680" * 280
     for bad in ("\U0001f680" * 281, " \u200b\t ", 5):
         with pytest.raises(InvalidInputError) as e:
-            _check_body(bad)  # type: ignore[arg-type]
+            check_body(bad)  # type: ignore[arg-type]
         assert e.value.field == "body"
         assert str(e.value) == "a note body must be 1 to 280 characters"
+
+
+async def test_check_body_maps_a_lone_surrogate_to_the_replacement_character() -> None:
+    assert check_body("up \ud800 only") == "up \ufffd only"
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={**NOTE, "body": "\ufffd"})
+
+    api = HttpApi("https://api.example", 5042002, transport=httpx.MockTransport(handle))
+    await api.post_note(TOKEN, check_body("\udfff"), BEARER)
+    assert json.loads(seen[0].content) == {"body": "\ufffd"}

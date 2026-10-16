@@ -3,6 +3,7 @@
 from . import errors
 from ._version import __version__
 from .agent import AgentClient, ImageUpload
+from .api import check_body
 from .build_verify import verify_built_owner_tx, verify_built_tx
 from .client import AsyncClient, create_client
 from .errors import SignerCapabilityError
@@ -37,6 +38,7 @@ __all__ = [
     "TESTNET",
     "TxRevertedError",
     "__version__",
+    "check_body",
     "create_client",
     "decode_revert",
     "errors",

@@ -89,7 +89,7 @@ class MercurifiApi(Protocol):
     async def note_marks(self, token: str, start: int, end: int) -> list[dict[str, Any]]: ...
     async def get_reactions(self, token: str) -> dict[str, Any]: ...
 
-    # Social writes send the bearer and never the API key. Bodies are sent as given: check them with _check_body.
+    # Social writes send the bearer and never the API key. Bodies are sent as given: check them with check_body.
     async def put_reaction(
         self, token: str, key: str | None, bearer: str, active: bool | None = None
     ) -> None: ...
@@ -199,14 +199,18 @@ def _bool_param(field: str, value: object) -> bool:
     return value
 
 
-def _check_body(body: str) -> str:
+def check_body(body: str) -> str:
     """A note body as the API will store it: control and format characters and line or paragraph separators removed,
     trimmed, 1 to 280 characters (code points). Raises InvalidInputError('body') otherwise. The API also refuses links
-    and addresses."""
+    and addresses. A lone surrogate becomes U+FFFD, as the API's JSON decoder makes it."""
     refused = InvalidInputError("body", f"a note body must be 1 to {NOTE_MAX} characters")
     if not isinstance(body, str):
         raise refused
-    clean = "".join(ch for ch in body if unicodedata.category(ch) not in _STRIPPED).strip()
+    clean = "".join(
+        "\ufffd" if cat == "Cs" else ch
+        for ch, cat in ((ch, unicodedata.category(ch)) for ch in body)
+        if cat not in _STRIPPED
+    ).strip()
     if not 1 <= len(clean) <= NOTE_MAX:
         raise refused
     return clean

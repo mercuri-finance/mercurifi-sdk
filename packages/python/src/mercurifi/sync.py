@@ -20,9 +20,9 @@ from collections.abc import Coroutine, Iterator
 from types import TracebackType
 from typing import Any, TypeVar
 
-from .agent import AgentClient
+from .agent import AgentClient, AgentNotes
 from .api import _Secret
-from .client import AsyncClient, create_client
+from .client import AsyncClient, ReaderNotes, create_client
 from .errors import ClientClosedError
 from .owner import AccountManager, OwnerClient
 
@@ -187,8 +187,13 @@ class _BlockingIterator:
         self.close()
 
 
+# Objects whose coroutine methods block in the facade too. Social sessions live on agents and owners, so every
+# sign-in and write of one session runs on the one loop thread.
+_WRAPPED = (OwnerClient, AccountManager, AgentClient, AgentNotes, ReaderNotes)
+
+
 def _wrap(value: Any, runner: _Runner) -> Any:
-    if isinstance(value, (OwnerClient, AccountManager, AgentClient)):
+    if isinstance(value, _WRAPPED):
         return _Sync(value, runner)
     if hasattr(value, "__anext__"):
         return _BlockingIterator(value, runner)
@@ -200,8 +205,8 @@ class _Sync:
     Plain (non-async) methods run on the CALLER's thread, exactly as in the async client (for example `mf.owner(signer)`
     and `owner.manage` construction, or `stream(...)` argument checks); if one returns an awaitable it is awaited on the
     loop. Results that are an owner, manager or agent object are wrapped again, and async iterators become plain
-    iterators. Only `api` is wrapped among attributes; every other attribute is returned as it is (`network`, `rpc`,
-    `settings`), so `mf.rpc` stays async. Names starting with an underscore are not reachable."""
+    iterators. Only `api` and `notes` are wrapped among attributes; every other attribute is returned as it is
+    (`network`, `rpc`, `settings`), so `mf.rpc` stays async. Names starting with an underscore are not reachable."""
 
     def __init__(self, target: Any, runner: _Runner) -> None:
         self._target = target
@@ -215,6 +220,10 @@ class _Sync:
             return _Sync(
                 attr, self._runner
             )  # client.api.get_account(account, live=True) blocks too
+        if isinstance(attr, (AgentNotes, ReaderNotes)):
+            return _Sync(
+                attr, self._runner
+            )  # mf.notes.list(...) and agent.notes.post(...) block too
         if inspect.iscoroutinefunction(attr):
             return lambda *a, **k: _wrap(self._runner.run(attr(*a, **k)), self._runner)
         if callable(attr):

@@ -182,6 +182,7 @@ def open_stream(
     healthy_after: float = 10.0,
     on_reconnect: Callable[[int, int, str], Any] | None = None,
     now: Callable[[], float] = time.monotonic,
+    on_open: Callable[[], Any] | None = None,
 ) -> AsyncIterator[StreamEvent]:
     """Server-sent events with automatic reconnect.
 
@@ -204,8 +205,10 @@ def open_stream(
 
     Arguments are validated when this is called, not on the first iteration, so a bad `last_event_id` fails where the
     call is made. `on_reconnect` may be a coroutine function: an observer that is still running when the stream ends
-    is cancelled at exit, so keep it short. The HTTP client ignores environment proxies, `.netrc` and `SSL_CERT_*`
-    variables (`trust_env=False`): the request carries an API key and must go where the address book says.
+    is cancelled at exit, so keep it short. `on_open()`, a plain function, is called each time a connection opens (an
+    HTTP 2xx), before any event of it: refetch state there; its exceptions are swallowed. The HTTP client ignores
+    environment proxies, `.netrc` and `SSL_CERT_*` variables (`trust_env=False`): the request carries an API key and
+    must go where the address book says.
     """
     if last_event_id is not None and not (
         isinstance(last_event_id, str) and _valid_id(last_event_id)
@@ -224,6 +227,7 @@ def open_stream(
         healthy_after,
         on_reconnect,
         now,
+        on_open,
     )
 
 
@@ -240,6 +244,7 @@ async def _run(
     healthy_after: float,
     on_reconnect: Callable[[int, int, str], Any] | None,
     now: Callable[[], float],
+    on_open: Callable[[], Any] | None,
 ) -> AsyncIterator[StreamEvent]:
     url, headers = request
     lo = max(0.001, float(min_backoff))
@@ -338,6 +343,11 @@ async def _run(
                         raise StreamError(
                             f"The stream at {host} was refused with HTTP {status}.", status
                         )
+                    if on_open is not None:
+                        try:
+                            on_open()
+                        except Exception:  # a throwing observer must not break the stream
+                            pass
 
                     retry_s: float | None = None
                     ended = "stream ended"

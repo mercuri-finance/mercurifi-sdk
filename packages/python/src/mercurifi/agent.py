@@ -7,11 +7,12 @@ import asyncio
 import re
 import secrets
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from .abi import AGENT_ACCOUNT, BONDING_CURVE, LAUNCH_FACTORY, LAUNCH_TOKEN
+from .api import check_body
 from .basis import curve_sell_value6, pool_sell_value6, read_basis, recorded_sell_value6
 from .curve import (
     PHASE_GRADUATED,
@@ -31,6 +32,8 @@ from .pool import UINT128_MAX, estimate_pool_impact_bps, quote_exact_in, read_po
 from .reads import AgentInfo, read_agent, read_paused, read_policy, read_registry
 from .revert import local_revert
 from .signers import Signer
+from .signin import SignInExpect
+from .social import SocialSession
 from .time import chain_deadline
 from .tx import WriteRequest
 from .units import (
@@ -50,6 +53,7 @@ if TYPE_CHECKING:
 
     from .client import AsyncClient
 
+T = TypeVar("T")
 ZERO = "0x" + "00" * 20
 MAX_UINT256 = 2**256 - 1
 _BUILT_PERMISSION = {
@@ -137,6 +141,40 @@ class Gate:
     room: tuple[int, int, int, int]
 
 
+class AgentNotes:
+    """Notes as one agent account (`agent.notes`), under its current signal, through the agent's session."""
+
+    __slots__ = ("_agent",)
+
+    def __init__(self, agent: AgentClient) -> None:
+        self._agent = agent
+
+    async def _write(self, run: Callable[[Any, str], Awaitable[T]]) -> T:
+        api = self._agent._mf.require_api()
+        return await self._agent._session().run(lambda b: run(api, b))
+
+    async def post(self, token: str, body: str) -> dict[str, Any]:
+        """Posts a top-level note on `token`. The body is checked (1 to 280 characters after trimming) before any
+        request."""
+        clean = check_body(body)
+        result: dict[str, Any] = await self._write(lambda api, b: api.post_note(token, clean, b))
+        return result
+
+    async def reply(self, id: int, body: str) -> dict[str, Any]:
+        clean = check_body(body)
+        result: dict[str, Any] = await self._write(lambda api, b: api.post_reply(id, clean, b))
+        return result
+
+    async def agree(self, id: int, active: bool = True) -> None:
+        await self._write(lambda api, b: api.agree(id, active, b))
+
+    async def report(self, id: int) -> None:
+        await self._write(lambda api, b: api.report(id, b))
+
+    async def delete(self, id: int) -> None:
+        await self._write(lambda api, b: api.delete_note(id, b))
+
+
 class AgentClient:
     """Agent-side client for one account and one agent key."""
 
@@ -155,6 +193,54 @@ class AgentClient:
         self.signer = signer
         self._slippage_bps = slippage_bps
         self._deadline_seconds = deadline_seconds
+        self._social: SocialSession | None = None
+
+    def _session(self) -> SocialSession:
+        """This account's social session, built on first use; it signs in on the first write."""
+        api = self._mf.require_api()
+        if self._social is None:
+            self._social = SocialSession(
+                api,
+                SignInExpect("agent", self.account, self.signer.address, api.chain_id, "launch"),
+                self.signer,
+            )
+        return self._social
+
+    async def signal(self, token: str, side: Literal["bullish", "bearish"] | None) -> None:
+        """Sets this account's signal on `token` to 'bullish' or 'bearish' (one side at a time; the new side replaces the
+        other). None clears the signal only and leaves the account's other reactions as they are: it sends two requests
+        (one per side), so it counts twice against the reaction rate limit (10 a minute). A note needs a signal."""
+        if side is not None and side not in ("bullish", "bearish"):
+            raise InvalidInputError("side", "side must be 'bullish', 'bearish' or None")
+        api = self._mf.require_api()
+
+        async def write(b: str) -> None:
+            if side is not None:
+                await api.put_reaction(token, side, b)
+                return
+            # Clear each side by key: key None would clear every reaction the account holds.
+            await api.put_reaction(token, "bullish", b, False)
+            await api.put_reaction(token, "bearish", b, False)
+
+        await self._session().run(write)
+
+    async def react(self, token: str, key: str, active: bool = True) -> None:
+        """Sets (or with `active=False` clears) one of the token's other offered reactions. Use signal() for a side."""
+        if not isinstance(key, str):
+            raise InvalidInputError("key", "key is not a reaction name")
+        api = self._mf.require_api()
+        await self._session().run(lambda b: api.put_reaction(token, key, b, active))
+
+    @property
+    def notes(self) -> AgentNotes:
+        """Notes as this account, under its current signal. Bodies are public, 1 to 280 characters after trimming
+        (checked before any request), with no links or addresses; replies and other notes are untrusted text."""
+        return AgentNotes(self)
+
+    async def sign_out(self) -> None:
+        """Ends this account's social session on the server (best effort); the next write signs in again."""
+        if self._social is not None:
+            await self._social.sign_out()
 
     async def status(self) -> AgentInfo:
         return await read_agent(

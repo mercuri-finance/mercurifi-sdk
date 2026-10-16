@@ -420,3 +420,29 @@ def test_social_error_leaves_forbidden_and_unknown_codes_unchanged() -> None:
     for code in ("forbidden", "__class__", "unauthenticated"):
         e = ApiError(403, code, "x", None)
         assert social_error(e) is e
+
+
+async def test_a_caller_cancelled_mid_sign_in_leaves_the_shared_sign_in_running() -> None:
+    x = Setup()
+    gate = asyncio.Event()
+    original = x.api.session
+
+    async def held(*args: Any) -> Any:
+        await gate.wait()
+        return await original(*args)
+
+    x.api.sign_in.side_effect = held
+    a = asyncio.ensure_future(x.s.bearer())
+    b = asyncio.ensure_future(x.s.bearer())
+    for _ in range(50):
+        if x.api.sign_in.await_count == 1:
+            break
+        await asyncio.sleep(0)
+    assert x.api.sign_in.await_count == 1
+    a.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await a
+    gate.set()
+    assert await b == "bearer-1"
+    assert x.api.sign_in.await_count == 1
+    assert await x.s.bearer() == "bearer-1"

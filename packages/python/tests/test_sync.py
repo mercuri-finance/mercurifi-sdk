@@ -14,6 +14,7 @@ from mercurifi.signers import local_key
 from .helpers import (
     ACCOUNT,
     AGENT_KEY,
+    OWNER_KEY,
     TOKEN,
     WAD,
     A,
@@ -22,6 +23,7 @@ from .helpers import (
     mock_account,
     mock_curve,
 )
+from .social_api import FakeNotesApi
 
 
 class FakeApi:
@@ -294,3 +296,42 @@ def test_the_api_key_is_not_left_in_the_options_and_is_validated() -> None:
             api_key="bad key!",
             on_warning=lambda m: None,
         )
+
+
+def test_social_calls_block_and_share_one_sign_in_on_the_loop_thread() -> None:
+    signer = local_key(AGENT_KEY)
+    rpc = local_rpc()
+    mock_account(rpc, owner=A(0x99), agent=signer.address)
+    api = FakeNotesApi(chain_id=31337)
+    with make(rpc, api=api) as client:
+        agent = client.agent(ACCOUNT, signer)
+        results: list[Any] = []
+
+        def work(i: int) -> None:
+            if i % 2:
+                results.append(agent.notes.post(TOKEN, f"note {i}"))
+            else:
+                results.append(agent.signal(TOKEN, "bullish"))
+
+        threads = [threading.Thread(target=work, args=(i,)) for i in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        # Values, never coroutines: six writes from six threads, one sign-in on the one loop.
+        assert sorted(r["body"] for r in results if r is not None) == ["note 1", "note 3", "note 5"]
+        assert results.count(None) == 3
+        assert api.sign_in.await_count == 1
+        assert client.notes.list(TOKEN)["notes"][0]["id"] == 1
+        assert client.reactions(TOKEN)["total"] == 1
+        owner = client.owner(local_key(OWNER_KEY))
+        assert owner.set_agent_posting(ACCOUNT, True) == {"enabled": True, "updatedAt": 1}
+        pages: list[Any] = []
+        sse = httpx.MockTransport(
+            lambda r: httpx.Response(200, content=b"id: 1\nevent: notes\ndata: {}\n\n")
+        )
+        assert client.on_notes(TOKEN, pages.append, transport=sse, max_reconnects=0) is None
+        assert len(pages) >= 1
+        agent.sign_out()
+        owner.sign_out()
+        assert [c.args[0] for c in api.sign_out.await_args_list] == ["bearer-1", "bearer-2"]

@@ -102,6 +102,21 @@ async def test_resume_and_dedupe() -> None:
     assert "Last-Event-ID" not in seen[0].headers
 
 
+async def test_on_open_runs_once_per_opened_connection_before_its_events() -> None:
+    log: list[str] = []
+
+    def opened() -> None:
+        log.append("open")
+        raise RuntimeError("observer failed")  # a throwing observer must not break the stream
+
+    t = scripted(
+        sse(503), one("id: 1\nevent: trade\ndata: 1\n\n"), one("id: 2\nevent: trade\ndata: 2\n\n")
+    )
+    async for ev in open_stream(REQ, transport=t, max_reconnects=2, sleep=no_sleep, on_open=opened):
+        log.append(str(ev.id))
+    assert log == ["open", "1", "open", "2"]
+
+
 async def test_reset_event() -> None:
     t = scripted(one("event: reset\ndata: {}\n\n"))
     assert await collect(open_stream(REQ, transport=t, max_reconnects=0, sleep=no_sleep)) == [
