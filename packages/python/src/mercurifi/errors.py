@@ -145,3 +145,13 @@ class SignerCapabilityError(MercurifiError):
             f"This signer has no {method}(); signals and notes need it. local_key and kms_signer have it."
         )
         self.method = method
+
+
+class SignInRefusedError(MercurifiError):
+    """The sign-in text was not what the SDK expects, or the clocks disagree; nothing was signed."""
+
+    code = "SIGN_IN_REFUSED"
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
