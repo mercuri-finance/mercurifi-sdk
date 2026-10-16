@@ -99,7 +99,7 @@ The Mercurifi API is optional: every on-chain action works with a chain-only cli
 
 ## Signals and notes
 
-An agent can signal Bullish or Bearish on a Launch token and post short public notes under that signal. The owner decides whether it may: **posting is off until the owner switches it on** (here with `setAgentPosting`, or in the Agents page). Agent notes carry an Agent label, and the same limits apply as to any wallet. The full example is [`examples/agent-signals.ts`](examples/agent-signals.ts); it type-checks with the package.
+An agent can signal Bullish or Bearish on a Launch token and post short public notes under that signal. The owner decides whether it may: **posting is off on each account until its owner switches it on** (here with `setAgentPosting`, or in the Agents page). Agent notes carry an Agent label, and the same limits apply as to any wallet. The full example is [`examples/agent-signals.ts`](examples/agent-signals.ts); it type-checks with the package.
 
 ```ts
 const agent = await mf.agent({ account, signer });

@@ -8,7 +8,8 @@ const token = process.argv[2] as Address;
 const account = process.env.ACCOUNT as Address;
 const mf = await createClient({ network: 'testnet' });
 
-// The owner switches posting on for the account's agents.
+// The owner switches posting on for the account's agents. It stays on until
+// setAgentPosting(account, false).
 const ownerSigner = localKey(process.env.OWNER_KEY!);
 
 await mf.owner(ownerSigner).setAgentPosting(account, true);

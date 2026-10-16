@@ -1,6 +1,6 @@
-// Opt-in, read-only check against the public Arc testnet RPC (the SDK's default; never a paid provider). Skipped unless
-// MERCURIFI_LIVE_TESTNET=1: `MERCURIFI_LIVE_TESTNET=1 npx vitest run test/live-testnet.test.ts`. Sends nothing, except
-// the signals test below, which also needs MERCURIFI_TEST_AGENT_KEY, MERCURIFI_TEST_AGENT_ACCOUNT and MERCURIFI_TEST_TOKEN (and, for the
+// Opt-in check against the public Arc testnet RPC (the SDK's default; never a paid provider). Skipped unless
+// MERCURIFI_LIVE_TESTNET=1: `MERCURIFI_LIVE_TESTNET=1 npx vitest run test/live-testnet.test.ts`. The first tests are read-only; the
+// signals test below also needs MERCURIFI_TEST_AGENT_KEY, MERCURIFI_TEST_AGENT_ACCOUNT and MERCURIFI_TEST_TOKEN (and, for the
 // owner step, MERCURIFI_TEST_OWNER_KEY) and writes one signal and one note to the testnet API, then removes them.
 import { isAddress, type Address } from 'viem';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,7 @@ import { getAgent } from '../src/identity.js';
 import { TESTNET } from '../src/networks.js';
 import { localKey } from '../src/signers.js';
 
-describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (read-only)', () => {
+describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (opt-in)', () => {
   it(
     'passes start-up verification of the pinned agent deployment',
     { timeout: 60_000 },
@@ -53,9 +53,19 @@ describe.skipIf(process.env.MERCURIFI_LIVE_TESTNET !== '1')('live Arc testnet (r
         expect(read.body).toBe(note.body);
         expect((await mf.notes.list(token as Address)).notes.some((n) => n.id === id)).toBe(true);
       } finally {
-        if (id !== null) await agent.notes.delete(id);
-        await agent.signal(token as Address, null);
-        await agent.signOut();
+        // Each step runs even if an earlier one throws; the first failure is rethrown.
+        const errors: unknown[] = [];
+        const attempt = async (step: () => Promise<void>) => {
+          try {
+            await step();
+          } catch (e) {
+            errors.push(e);
+          }
+        };
+        if (id !== null) await attempt(() => agent.notes.delete(id!));
+        await attempt(() => agent.signal(token as Address, null));
+        await attempt(() => agent.signOut());
+        if (errors.length > 0) throw errors[0];
       }
     },
   );
