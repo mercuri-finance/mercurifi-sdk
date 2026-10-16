@@ -104,13 +104,15 @@ describe('sign-in message', () => {
 
     expect(stale.reason).toBe('clock');
     expect(stale.message).toContain('Issued is more than two minutes');
+  });
 
-    // Issued within skew but Expires already behind the local clock: shorten the window to one second.
-    const brief = v.message.replace('12:05:00Z', '12:00:01Z');
+  it('accepts a short window when the local clock runs 90 s fast', () => {
+    const v = vectors[0]!;
 
-    const expired = refused(brief, issued + 90_000);
+    const issued = Date.parse(v.issued);
 
-    expect(expired.reason).toBe('clock');
-    expect(expired.message).toContain('already expired');
+    const short = v.message.replace('12:05:00Z', '12:00:30Z');
+
+    checkSignInMessage(v, v.nonce, short, issued + 90_000);
   });
 });

@@ -91,7 +91,7 @@ export const checkSignInMessage = (
       'Issued is more than two minutes from the clock on this machine; sync it (NTP) and retry',
     );
 
-  if (expires.getTime() < nowMs)
+  if (expires.getTime() < nowMs - SKEW_MS)
     throw new SignInRefusedError(
       'clock',
       'the sign-in has already expired by the clock on this machine; sync it (NTP) and retry',
