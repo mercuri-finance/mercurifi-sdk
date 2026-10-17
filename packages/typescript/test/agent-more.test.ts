@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { decodeFunctionData, encodeFunctionData, parseTransaction, type Hex } from 'viem';
 import { describe, expect, it, vi } from 'vitest';
 
-import { metadataUriProblem } from '../src/agent.js';
+import { launchMetadataUriProblem, metadataUriProblem } from '../src/agent.js';
 import { estimatePoolImpactBps } from '../src/pool.js';
 import {
   agentAccountAbi,
@@ -583,6 +583,20 @@ describe('metadata URI validation, expiry margin, ordering and balances', () => 
     return { ...t, run: t.agent.launch({ name: 'Ok', symbol: 'OK', description: 'hi' }) };
   };
 
+  it("launches with the API's sha256: content-hash URI, uploaded or supplied", async () => {
+    const sha = 'sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+    const up = await launchWith(sha);
+    await up.run;
+    expect((sentCall(up.rpc).args![0] as { metadataURI: string }).metadataURI).toBe(sha);
+    const own = await setup();
+    await own.agent.launch({ name: 'Ok', symbol: 'OK', metadataURI: sha });
+    expect((sentCall(own.rpc).args![0] as { metadataURI: string }).metadataURI).toBe(sha);
+    const bent = await launchWith(sha.toUpperCase().replace('SHA256', 'sha256'));
+    const err = await bent.run.catch((e: unknown) => e);
+    expect((err as MercurifiError).code).toBe('API_BAD_RESPONSE');
+    expect(bent.rpc.sent).toHaveLength(0);
+  });
+
   it.each([undefined, ...bad])('treats an uploaded URI as untrusted: %j', async (uri) => {
     const t = await launchWith(uri);
     const err = await t.run.catch((e: unknown) => e);
@@ -936,8 +950,15 @@ describe('AgentClient.sendBuilt', () => {
 describe('metadataUriProblem: shared metadata vectors', () => {
   const mv = JSON.parse(
     readFileSync(new URL('../../../fixtures/vectors/metadata.json', import.meta.url), 'utf8'),
-  ) as { cases: { uri: string; problem: string | null }[] };
+  ) as {
+    cases: { uri: string; problem: string | null }[];
+    launchCases: { uri: string; problem: string | null }[];
+  };
   it.each(mv.cases)('%j', (c) => {
     expect(metadataUriProblem(c.uri)).toBe(c.problem);
+    expect(launchMetadataUriProblem(c.uri)).toBe(c.problem);
+  });
+  it.each(mv.launchCases)('launch %j', (c) => {
+    expect(launchMetadataUriProblem(c.uri)).toBe(c.problem);
   });
 });

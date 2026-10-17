@@ -118,6 +118,18 @@ export const metadataUriProblem = (uri: unknown): string | null => {
   return null;
 };
 
+/**
+ * Why a launch metadata URI cannot be used, or null: the metadata URI rules, plus the API's own content-hash form
+ * `sha256:<64 lowercase hex>` (what the testnet API returns; the indexer verifies the hash against its own store).
+ */
+export const launchMetadataUriProblem = (uri: unknown): string | null => {
+  if (typeof uri === 'string' && uri.startsWith('sha256:'))
+    return /^sha256:[0-9a-f]{64}$/.test(uri)
+      ? null
+      : 'a sha256: URI must be sha256: plus 64 lowercase hex digits';
+  return metadataUriProblem(uri);
+};
+
 export interface Headroom {
   spendUsdc6: bigint;
   sellUsdc6: bigint;
@@ -476,7 +488,7 @@ export class AgentClient {
       );
     }
     if (p.metadataURI !== undefined && p.metadataURI !== '') {
-      const problem = metadataUriProblem(p.metadataURI);
+      const problem = launchMetadataUriProblem(p.metadataURI);
       if (problem !== null)
         throw new InvalidInputError('metadataURI', `metadataURI is not usable: ${problem}`);
     }
@@ -549,7 +561,7 @@ export class AgentClient {
         ...(p.links !== undefined ? { links: p.links } : {}),
       };
       metadataURI = (await this.mf.api!.uploadLaunchMetadata(meta, p.image)).metadataURI;
-      const problem = metadataUriProblem(metadataURI);
+      const problem = launchMetadataUriProblem(metadataURI);
       if (problem !== null)
         throw new MercurifiError(
           'API_BAD_RESPONSE',

@@ -7,7 +7,12 @@ import pytest
 
 from mercurifi.abi import AGENT_ACCOUNT, AGENT_ACCOUNT_FACTORY, GRADUATION_MANAGER, V4_QUOTER
 from mercurifi.abi import LAUNCH_FACTORY as LF
-from mercurifi.agent import AgentClient, ImageUpload, metadata_uri_problem
+from mercurifi.agent import (
+    AgentClient,
+    ImageUpload,
+    launch_metadata_uri_problem,
+    metadata_uri_problem,
+)
 from mercurifi.errors import BuildMismatchError, InvalidInputError, MercurifiError
 from mercurifi.policy import DEFAULT_POLICY
 from mercurifi.pool import estimate_pool_impact_bps
@@ -350,6 +355,25 @@ async def test_good_uris_pass_at_the_limit() -> None:
     await agent2.launch("Ok", "OK", metadata_uri="https://example.com/m.json")
     assert len(rpc2.sent) == 1
     assert metadata_uri_problem("https://example.com/m.json") is None
+
+
+async def test_launch_takes_the_api_sha256_content_hash_uri_uploaded_or_supplied() -> None:
+    sha = "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    rpc, agent = await setup(api=FakeApi(sha))
+    await agent.launch("Ok", "OK", description="hi")
+    assert request_of(rpc)["metadataURI"] == sha
+    rpc2, agent2 = await setup()
+    await agent2.launch("Ok", "OK", metadata_uri=sha)
+    assert request_of(rpc2)["metadataURI"] == sha
+    rpc3, agent3 = await setup(
+        api=FakeApi(
+            "sha256:" + "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".upper()
+        )
+    )
+    with pytest.raises(MercurifiError) as e:
+        await agent3.launch("Ok", "OK", description="hi")
+    assert e.value.code == "API_BAD_RESPONSE"
+    assert rpc3.sent == []
 
 
 async def test_an_empty_user_supplied_uri_is_sent_but_warns() -> None:
@@ -866,3 +890,11 @@ _META = json.loads(
 @pytest.mark.parametrize("case", _META["cases"], ids=[c["uri"][:40] for c in _META["cases"]])
 def test_metadata_uri_vectors(case: dict[str, Any]) -> None:
     assert metadata_uri_problem(case["uri"]) == case["problem"]
+    assert launch_metadata_uri_problem(case["uri"]) == case["problem"]
+
+
+@pytest.mark.parametrize(
+    "case", _META["launchCases"], ids=[c["uri"][:40] for c in _META["launchCases"]]
+)
+def test_launch_metadata_uri_vectors(case: dict[str, Any]) -> None:
+    assert launch_metadata_uri_problem(case["uri"]) == case["problem"]

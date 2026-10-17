@@ -129,5 +129,36 @@
       "uri": "ipfs://\u2028",
       "problem": "it contains whitespace or control characters"
     }
+  ],
+  "_launchNote": "launchMetadataUriProblem / launch_metadata_uri_problem: the metadata URI rules above (every case in cases gives the same answer), plus the API's content-hash form sha256:<64 lowercase hex>.",
+  "launchCases": [
+    {
+      "uri": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "problem": null
+    },
+    {
+      "uri": "sha256:9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08",
+      "problem": "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+    },
+    {
+      "uri": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a0",
+      "problem": "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+    },
+    {
+      "uri": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a080",
+      "problem": "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+    },
+    {
+      "uri": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08\n",
+      "problem": "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+    },
+    {
+      "uri": "sha256:",
+      "problem": "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+    },
+    {
+      "uri": "SHA256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "problem": "it must start with https:// or ipfs://"
+    }
   ]
 }

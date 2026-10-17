@@ -105,6 +105,16 @@ def metadata_uri_problem(uri: object) -> str | None:
     return None
 
 
+def launch_metadata_uri_problem(uri: object) -> str | None:
+    """Why a launch metadata URI cannot be used, or None: the metadata URI rules, plus the API's own content-hash form
+    sha256:<64 lowercase hex> (what the testnet API returns; the indexer verifies the hash against its own store)."""
+    if isinstance(uri, str) and uri.startswith("sha256:"):
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", uri) is None:
+            return "a sha256: URI must be sha256: plus 64 lowercase hex digits"
+        return None
+    return metadata_uri_problem(uri)
+
+
 @dataclass(frozen=True)
 class Headroom:
     spend_usdc6: int
@@ -456,7 +466,7 @@ class AgentClient:
                 "metadata_uri is empty: the launch is valid, but tokens without Mercurifi-hosted metadata are hidden from the Mercurifi board."
             )
         if metadata_uri is not None and metadata_uri != "":
-            problem = metadata_uri_problem(metadata_uri)
+            problem = launch_metadata_uri_problem(metadata_uri)
             if problem is not None:
                 raise InvalidInputError("metadata_uri", f"metadata_uri is not usable: {problem}")
         if metadata_uri is None and has_metadata and self._mf.api is None:
@@ -514,7 +524,7 @@ class AgentClient:
             # The API is untrusted: its answer is checked like user input, and never echoed.
             response = await self._mf.api.upload_launch_metadata(meta, image)
             uri = response.get("metadataURI") if isinstance(response, Mapping) else None  # type: ignore[assignment]
-            problem = metadata_uri_problem(uri)
+            problem = launch_metadata_uri_problem(uri)
             if problem is not None:
                 raise MercurifiError(
                     f"The API returned a metadata URI that cannot be used ({problem}); nothing was signed.",
